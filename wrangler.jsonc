@@ -1,0 +1,48 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tpf-mcp-worker",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-05-07",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "TPF_MCP_SESSIONS",
+        "class_name": "BriefSessionDurableObject"
+      }
+    ]
+  },
+  "kv_namespaces": [
+    {
+      "binding": "TPF_MCP_SESSION_SNAPSHOTS",
+      "id": "3d4b15e99ff146f4b0a088967a3d622a"
+    },
+    {
+      "binding": "TPF_MCP_QUOTAS",
+      "id": "f1ea670219ea4a3391a95ddd40e27406"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "TPF_MCP_ARTIFACTS",
+      "bucket_name": "sessions",
+      "preview_bucket_name": "sessions-dev"
+    }
+  ],
+  "routes": [
+    {
+      "pattern": "mcp.pipelineframework.org",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "TPF_MCP_BASE_URL": "https://mcp.pipelineframework.org",
+    "TPF_MCP_ALLOWED_ORIGIN": "https://app.pipelineframework.org"
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["BriefSessionDurableObject"]
+    }
+  ]
+}

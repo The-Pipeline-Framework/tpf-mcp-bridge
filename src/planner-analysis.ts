@@ -1,0 +1,587 @@
+import YAML from "js-yaml";
+import type {
+  AnalyzeResult,
+  AspectConfig,
+  BriefInput,
+  BusinessStep,
+  ContractQuestion,
+  CouplingFinding,
+  DerivedConfig,
+  MessageCatalogEntry,
+  MessageDefinition,
+  MessageField,
+  PlannerDraft,
+  PipelineStep,
+  Question,
+  RuntimeLayout,
+  RuntimeLayoutAlternative,
+  SessionStartInput,
+  StepFlowRole,
+  StepKind,
+  StepContract
+} from "./types.js";
+
+export function analyzePlannerDraft(
+  input: BriefInput | SessionStartInput,
+  draft: PlannerDraft
+): AnalyzeResult {
+  const title = draft.title.trim();
+  const transport = input.transport || draft.transport || "REST";
+  const platform = input.platform || draft.platform || "COMPUTE";
+  const runtimeLayout = input.runtimeLayout || draft.runtimeLayout || "MONOLITH";
+  const appName = input.appName?.trim() || defaultAppName(title);
+  const basePackage = input.basePackage?.trim() || defaultBasePackage(title);
+
+  const messageCatalog = normalizeMessageCatalog(draft.messageCatalog);
+  const messages = Object.fromEntries(
+    messageCatalog.map((message) => [
+      message.name,
+      { fields: message.fields } satisfies MessageDefinition
+    ])
+  );
+  const businessSteps = normalizeBusinessSteps(draft.businessSteps, messages);
+  const stepContracts = normalizeStepContracts(draft.stepContracts, businessSteps, messages);
+  const inferredSteps = normalizePipelineSteps(draft.pipelineSteps);
+  const explicitQuestions = normalizeQuestions(draft.questions || []);
+  const contractQuestions = normalizeContractQuestions(draft.contractQuestions);
+  const questions = [...explicitQuestions];
+  const resolvedAspects = resolveAspects(input.aspects, draft.aspects) || {};
+  const hasAwaitSteps = inferredSteps.some((step) => normalizeStepKind(step.kind) === "await");
+
+  if (!input.basePackage && !isLikelyJavaPackage(basePackage)) {
+    questions.push({
+      id: "question.base-package",
+      key: "basePackage",
+      prompt: "No stable Java base package could be inferred from the brief. Provide 'basePackage' explicitly."
+    });
+  }
+
+  const derivedConfig: DerivedConfig = {
+    version: 2,
+    appName,
+    basePackage,
+    transport,
+    platform,
+    runtimeLayout: runtimeLayoutToConfig(runtimeLayout),
+    messages,
+    steps: inferredSteps.map(({ id, ...step }) => step),
+    ...(Object.keys(resolvedAspects).length > 0 ? { aspects: resolvedAspects } : {})
+  };
+
+  assertPlannerSemantics(businessSteps, stepContracts, inferredSteps, resolvedAspects, platform);
+
+  const couplingFindings = draft.couplingFindings?.length ? draft.couplingFindings : deriveCouplingFindings(businessSteps);
+  const status = questions.length > 0 || contractQuestions.length > 0 ? "needs_input" : "ready";
+
+  return {
+    status,
+    questions,
+    contractQuestions,
+    assumptions: draft.assumptions,
+    pipelineSummary: {
+      title,
+      primaryGoal: draft.primaryGoal,
+      asyncMode: hasAwaitSteps ? "CALLBACK_CAPABLE" : "UNSPECIFIED",
+      transport,
+      platform,
+      runtimeLayout,
+      selectedRuntimeLayout: runtimeLayout,
+      runtimeLayoutAlternatives: buildRuntimeLayoutAlternatives(runtimeLayout),
+      outputArtifact: draft.outputArtifact
+    },
+    businessSteps,
+    stepBreakdownRationale: businessSteps.map((step) => `${step.name}: ${step.purpose}`),
+    futureStepCandidates: draft.futureStepCandidates,
+    selectedRuntimeLayout: runtimeLayout,
+    runtimeLayoutAlternatives: buildRuntimeLayoutAlternatives(runtimeLayout),
+    messageCatalog,
+    stepContracts,
+    couplingFindings,
+    technicalConcerns: draft.technicalConcerns || [],
+    inferredMessages: messageCatalog,
+    inferredSteps,
+    aspects: resolvedAspects,
+    derivedConfig,
+    derivedConfigYaml: YAML.dump(derivedConfig, { lineWidth: -1 })
+  };
+}
+
+function normalizeMessageCatalog(messages: MessageCatalogEntry[]): MessageCatalogEntry[] {
+  const seen = new Set<string>();
+  return messages.map((message) => {
+    if (seen.has(message.name)) {
+      throw new Error(`Planner draft defines duplicate message '${message.name}'.`);
+    }
+    seen.add(message.name);
+    return {
+      id: message.id || `message.${message.name.toLowerCase()}`,
+      name: message.name,
+      fields: renumberFields(message.fields)
+    };
+  });
+}
+
+function normalizeBusinessSteps(
+  steps: BusinessStep[],
+  messages: Record<string, MessageDefinition>
+): BusinessStep[] {
+  const seen = new Set<string>();
+  return steps.map((step) => {
+    const id = step.id || stepId(step.name);
+    if (seen.has(id)) {
+      throw new Error(`Planner draft defines duplicate business step '${id}'.`);
+    }
+    seen.add(id);
+    const inputFields = step.inputFields.length > 0 ? renumberFields(step.inputFields) : messages[step.inputTypeName]?.fields || [];
+    const outputFields = step.outputFields.length > 0 ? renumberFields(step.outputFields) : messages[step.outputTypeName]?.fields || [];
+    return {
+      ...step,
+      id,
+      kind: normalizeStepKind(step.kind),
+      timeout: step.timeout?.trim() || undefined,
+      idempotencyKeyFields: normalizeIdempotencyKeyFields(step.idempotencyKeyFields),
+      await: normalizeAwaitConfig(step.await),
+      inputFields,
+      outputFields
+    };
+  });
+}
+
+function normalizeStepContracts(
+  contracts: StepContract[],
+  steps: BusinessStep[],
+  messages: Record<string, MessageDefinition>
+): StepContract[] {
+  const stepById = new Map(steps.map((step) => [step.id, step]));
+  return contracts.map((contract) => {
+    const step = stepById.get(contract.stepId);
+    if (!step) {
+      throw new Error(`Planner draft references unknown step contract '${contract.stepId}'.`);
+    }
+    return {
+      ...contract,
+      kind: normalizeStepKind(contract.kind),
+      timeout: contract.timeout?.trim() || undefined,
+      idempotencyKeyFields: normalizeIdempotencyKeyFields(contract.idempotencyKeyFields),
+      await: normalizeAwaitConfig(contract.await),
+      inputFields: contract.inputFields.length > 0 ? renumberFields(contract.inputFields) : messages[contract.inputTypeName]?.fields || step.inputFields,
+      outputFields: contract.outputFields.length > 0 ? renumberFields(contract.outputFields) : messages[contract.outputTypeName]?.fields || step.outputFields,
+      continuity: contract.continuity || "coherent"
+    };
+  });
+}
+
+function normalizePipelineSteps(steps: AnalyzeResult["inferredSteps"]): AnalyzeResult["inferredSteps"] {
+  const seen = new Set<string>();
+  return steps.map((step) => {
+    const id = step.id || stepId(step.name);
+    if (seen.has(id)) {
+      throw new Error(`Planner draft defines duplicate pipeline step '${id}'.`);
+    }
+    seen.add(id);
+    return {
+      ...step,
+      id,
+      kind: normalizeStepKind(step.kind),
+      timeout: step.timeout?.trim() || undefined,
+      idempotencyKeyFields: normalizeIdempotencyKeyFields(step.idempotencyKeyFields),
+      await: normalizeAwaitConfig(step.await)
+    };
+  });
+}
+
+function normalizeQuestions(questions: Question[]): Question[] {
+  return questions.map((question) => ({ ...question }));
+}
+
+function normalizeContractQuestions(questions: ContractQuestion[]): ContractQuestion[] {
+  return questions.map((question) => ({
+    ...question,
+    resolutionModes: question.resolutionModes || (question.proposedAnswer ? ["confirm", "edit", "replace"] : ["replace", "edit"])
+  }));
+}
+
+function renumberFields(fields: MessageField[]): MessageField[] {
+  return fields.map((field, index) => ({ ...field, number: index + 1 }));
+}
+
+function assertPlannerSemantics(
+  businessSteps: BusinessStep[],
+  stepContracts: StepContract[],
+  pipelineSteps: PipelineStep[],
+  aspects: Record<string, AspectConfig>,
+  platform: "COMPUTE" | "FUNCTION"
+): void {
+  const contractById = new Map(stepContracts.map((contract) => [contract.stepId, contract]));
+  const pipelineById = new Map(pipelineSteps.map((step) => [step.id || stepId(step.name), step]));
+  const persistenceEnabled = Boolean(aspects.persistence?.enabled);
+
+  for (const businessStep of businessSteps) {
+    const role = inferFlowRole(businessStep.flowRole, businessStep.name, businessStep.inputTypeName, businessStep.outputTypeName);
+    const contract = contractById.get(businessStep.id);
+    const kind = normalizeStepKind(businessStep.kind);
+
+    if (isExplicitPersistenceStep(businessStep.name, businessStep.purpose)) {
+      throw new Error(
+        `Planner draft violates TPF semantics: '${businessStep.name}' materializes persistence as a business step. ` +
+        "Persistence must be modeled as an aspect/plugin concern."
+      );
+    }
+
+    if (role === "resume" || role === "query") {
+      if (pipelineById.has(businessStep.id)) {
+        throw new Error(
+          `Planner draft violates TPF semantics: '${businessStep.name}' is a ${role} surface and must not appear in the main pipeline step sequence.`
+        );
+      }
+      if (!contract) {
+        throw new Error(`Planner draft is missing a step contract for non-forward surface '${businessStep.name}'.`);
+      }
+      continue;
+    }
+
+    if (!contract) {
+      throw new Error(`Planner draft is missing a step contract for business step '${businessStep.name}'.`);
+    }
+
+    const pipelineStep = pipelineById.get(businessStep.id);
+    if (!pipelineStep) {
+      throw new Error(`Planner draft is missing a pipeline step for business step '${businessStep.name}'.`);
+    }
+
+    assertCoherentStepViews(businessStep, contract, pipelineStep);
+    assertAwaitSemantics(businessStep.name, kind, businessStep, contract, pipelineStep);
+    if (kind === "await" && platform === "FUNCTION") {
+      throw new Error(
+        `Planner draft violates TPF semantics: await step '${businessStep.name}' is not supported for FUNCTION pipelines.`
+      );
+    }
+
+    if (
+      persistenceEnabled &&
+      (looksLikePersistedStateType(businessStep.outputTypeName) || looksLikePersistedStateType(contract.outputTypeName))
+    ) {
+      throw new Error(
+        `Planner draft violates TPF semantics: '${businessStep.name}' emits persisted-state output '${businessStep.outputTypeName}'. ` +
+        "Persistence outputs must not be modeled as explicit business-step results."
+      );
+    }
+  }
+
+  for (const pipelineStep of pipelineSteps) {
+    const role = inferFlowRole(pipelineStep.flowRole, pipelineStep.name, pipelineStep.inputTypeName, pipelineStep.outputTypeName, pipelineStep.cardinality);
+    const kind = normalizeStepKind(pipelineStep.kind);
+    if (role === "resume" || role === "query") {
+      throw new Error(
+        `Planner draft violates TPF semantics: '${pipelineStep.name}' is marked as ${role} but still appears in the main pipeline step sequence.`
+      );
+    }
+    if (isExplicitPersistenceStep(pipelineStep.name)) {
+      throw new Error(
+        `Planner draft violates TPF semantics: '${pipelineStep.name}' materializes persistence as a pipeline step.`
+      );
+    }
+    if (kind === "await" && !pipelineStep.await) {
+      throw new Error(`Planner draft defines await step '${pipelineStep.name}' without await configuration.`);
+    }
+  }
+
+  const forwardSteps = businessSteps.filter((step) => inferFlowRole(step.flowRole, step.name, step.inputTypeName, step.outputTypeName) === "forward");
+  for (let index = 1; index < forwardSteps.length; index += 1) {
+    const previous = forwardSteps[index - 1];
+    const current = forwardSteps[index];
+    if (current.inputTypeName !== previous.outputTypeName) {
+      throw new Error(
+        `Planner draft violates TPF semantics: forward step '${current.name}' consumes '${current.inputTypeName}' but the previous forward step ` +
+        `'${previous.name}' outputs '${previous.outputTypeName}'.`
+      );
+    }
+  }
+}
+
+function assertCoherentStepViews(
+  businessStep: BusinessStep,
+  contract: StepContract,
+  pipelineStep: PipelineStep
+): void {
+  if (contract.stepName !== businessStep.name || pipelineStep.name !== businessStep.name) {
+    throw new Error(`Planner draft defines inconsistent names for business step '${businessStep.id}'.`);
+  }
+  const businessKind = normalizeStepKind(businessStep.kind);
+  const contractKind = normalizeStepKind(contract.kind);
+  const pipelineKind = normalizeStepKind(pipelineStep.kind);
+  if (businessKind !== contractKind || businessKind !== pipelineKind) {
+    throw new Error(`Planner draft defines inconsistent step kinds for business step '${businessStep.name}'.`);
+  }
+  if (contract.inputTypeName !== businessStep.inputTypeName || pipelineStep.inputTypeName !== businessStep.inputTypeName) {
+    throw new Error(`Planner draft defines inconsistent input types for business step '${businessStep.name}'.`);
+  }
+  if (contract.outputTypeName !== businessStep.outputTypeName || pipelineStep.outputTypeName !== businessStep.outputTypeName) {
+    throw new Error(`Planner draft defines inconsistent output types for business step '${businessStep.name}'.`);
+  }
+  const businessRole = inferFlowRole(businessStep.flowRole, businessStep.name, businessStep.inputTypeName, businessStep.outputTypeName);
+  const contractRole = inferFlowRole(contract.flowRole, contract.stepName, contract.inputTypeName, contract.outputTypeName);
+  const pipelineRole = inferFlowRole(pipelineStep.flowRole, pipelineStep.name, pipelineStep.inputTypeName, pipelineStep.outputTypeName, pipelineStep.cardinality);
+  if (businessRole !== contractRole || businessRole !== pipelineRole) {
+    throw new Error(`Planner draft defines inconsistent flow roles for business step '${businessStep.name}'.`);
+  }
+  if ((businessStep.timeout || "") !== (contract.timeout || "") || (businessStep.timeout || "") !== (pipelineStep.timeout || "")) {
+    throw new Error(`Planner draft defines inconsistent await timeouts for business step '${businessStep.name}'.`);
+  }
+}
+
+function inferFlowRole(
+  explicitRole: StepFlowRole | undefined,
+  stepName: string,
+  inputTypeName: string,
+  outputTypeName: string,
+  cardinality?: PipelineStep["cardinality"]
+): StepFlowRole {
+  if (explicitRole) {
+    return explicitRole;
+  }
+  if (/\bresume\b/i.test(stepName) || /\bresume\b/i.test(inputTypeName) || /\bresume\b/i.test(outputTypeName)) {
+    return "resume";
+  }
+  if (/\bquery\b/i.test(stepName) || /\blookup\b/i.test(stepName) || /\bread\b/i.test(stepName)) {
+    return "query";
+  }
+  if (cardinality === "EXPANSION") {
+    return "expansion";
+  }
+  if (cardinality === "REDUCTION") {
+    return "reduction";
+  }
+  return "forward";
+}
+
+function isExplicitPersistenceStep(stepName: string, purpose?: string): boolean {
+  const persistenceVerb = /^(save|persist|store|commit)\b/i;
+  return persistenceVerb.test(stepName.trim()) || Boolean(purpose && persistenceVerb.test(purpose.trim()));
+}
+
+function looksLikePersistedStateType(typeName: string): boolean {
+  return /(Saved|Persisted|Stored)(State)?$/.test(typeName);
+}
+
+function normalizeStepKind(kind: StepKind | undefined): StepKind {
+  return kind || "internal";
+}
+
+function normalizeIdempotencyKeyFields(fields: string[] | undefined): string[] | undefined {
+  if (!fields || fields.length === 0) {
+    return undefined;
+  }
+  const normalized = fields.map((field) => field.trim()).filter(Boolean);
+  return normalized.length > 0 ? [...new Set(normalized)] : undefined;
+}
+
+function normalizeAwaitConfig(
+  value: BusinessStep["await"] | StepContract["await"] | PipelineStep["await"] | undefined
+): BusinessStep["await"] | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return {
+    ...(value.dispatch?.mode ? { dispatch: { mode: value.dispatch.mode } } : {}),
+    correlation: { strategy: value.correlation.strategy },
+    transport: {
+      type: value.transport.type,
+      ...(value.transport.request ? { request: value.transport.request } : {}),
+      ...(value.transport.callback ? { callback: value.transport.callback } : {}),
+      ...(value.transport.response ? { response: value.transport.response } : {}),
+      ...(value.transport.consumer ? { consumer: value.transport.consumer } : {}),
+      ...(value.transport.headers ? { headers: value.transport.headers } : {})
+    }
+  };
+}
+
+function assertAwaitSemantics(
+  stepName: string,
+  kind: StepKind,
+  businessStep: BusinessStep,
+  contract: StepContract,
+  pipelineStep: PipelineStep
+): void {
+  const awaitDeclared = Boolean(businessStep.await || contract.await || pipelineStep.await);
+  const timeoutDeclared = Boolean(businessStep.timeout || contract.timeout || pipelineStep.timeout);
+  const idempotencyDeclared = Boolean(
+    (businessStep.idempotencyKeyFields && businessStep.idempotencyKeyFields.length > 0)
+      || (contract.idempotencyKeyFields && contract.idempotencyKeyFields.length > 0)
+      || (pipelineStep.idempotencyKeyFields && pipelineStep.idempotencyKeyFields.length > 0)
+  );
+  if (kind !== "await" && (awaitDeclared || timeoutDeclared || idempotencyDeclared)) {
+    throw new Error(
+      `Planner draft violates TPF semantics: '${stepName}' declares await-step fields without kind 'await'.`
+    );
+  }
+  if (kind !== "await") {
+    return;
+  }
+  const role = inferFlowRole(businessStep.flowRole, businessStep.name, businessStep.inputTypeName, businessStep.outputTypeName);
+  if (role !== "forward" && role !== "expansion" && role !== "reduction" && role !== "merge") {
+    throw new Error(`Planner draft violates TPF semantics: await step '${stepName}' must remain in the main pipeline flow.`);
+  }
+  if (!businessStep.timeout || !contract.timeout || !pipelineStep.timeout) {
+    throw new Error(`Planner draft violates TPF semantics: await step '${stepName}' must declare timeout in every step view.`);
+  }
+  if (!businessStep.await || !contract.await || !pipelineStep.await) {
+    throw new Error(`Planner draft violates TPF semantics: await step '${stepName}' must declare await config in every step view.`);
+  }
+  if (!businessStep.idempotencyKeyFields?.length || !contract.idempotencyKeyFields?.length || !pipelineStep.idempotencyKeyFields?.length) {
+    throw new Error(
+      `Planner draft violates TPF semantics: await step '${stepName}' must declare idempotencyKeyFields in every step view.`
+    );
+  }
+  if (businessStep.await.correlation.strategy !== contract.await.correlation.strategy
+    || businessStep.await.correlation.strategy !== pipelineStep.await.correlation.strategy) {
+    throw new Error(`Planner draft defines inconsistent await correlation strategy for '${stepName}'.`);
+  }
+  if (businessStep.await.transport.type !== contract.await.transport.type
+    || businessStep.await.transport.type !== pipelineStep.await.transport.type) {
+    throw new Error(`Planner draft defines inconsistent await transport type for '${stepName}'.`);
+  }
+}
+
+function resolveAspects(
+  inputAspects: BriefInput["aspects"],
+  draftAspects?: Record<string, AspectConfig>
+): Record<string, AspectConfig> | undefined {
+  const aspects: Record<string, AspectConfig> = { ...(draftAspects || {}) };
+  if (!inputAspects) {
+    return Object.keys(aspects).length > 0 ? aspects : undefined;
+  }
+  if (Array.isArray(inputAspects)) {
+    for (const aspectName of inputAspects) {
+      aspects[aspectName] = { enabled: true, scope: "GLOBAL", position: "AFTER_STEP" };
+    }
+    return aspects;
+  }
+  for (const [name, value] of Object.entries(inputAspects)) {
+    if (typeof value === "boolean") {
+      if (value) {
+        aspects[name] = { enabled: true, scope: "GLOBAL", position: "AFTER_STEP" };
+      }
+      continue;
+    }
+    aspects[name] = value;
+  }
+  return Object.keys(aspects).length > 0 ? aspects : undefined;
+}
+
+function deriveCouplingFindings(steps: BusinessStep[]): CouplingFinding[] {
+  const producedByField = new Map<string, number>();
+  const findings: CouplingFinding[] = [];
+
+  steps.forEach((step, index) => {
+    for (const field of step.outputFields) {
+      if (!producedByField.has(field.name)) {
+        producedByField.set(field.name, index);
+      }
+    }
+  });
+
+  steps.forEach((step, index) => {
+    if (index < 2) {
+      return;
+    }
+    const coupledFields = step.inputFields
+      .map((field) => field.name)
+      .filter((fieldName) => {
+        const sourceIndex = producedByField.get(fieldName);
+        return sourceIndex !== undefined && sourceIndex < index - 1;
+      });
+    if (coupledFields.length === 0) {
+      return;
+    }
+    const sourceIndex = producedByField.get(coupledFields[0]);
+    if (sourceIndex === undefined) {
+      return;
+    }
+    findings.push({
+      id: `coupling.${steps[sourceIndex].id}.${step.id}`,
+      sourceStep: steps[sourceIndex].id,
+      targetStep: step.id,
+      fields: coupledFields,
+      severity: coupledFields.length > 2 ? "warning" : "info",
+      rationale: "These fields originate earlier in the flow than the immediately preceding step, so the contract carries non-local coupling."
+    });
+  });
+
+  return findings;
+}
+
+function buildRuntimeLayoutAlternatives(selected: RuntimeLayout): RuntimeLayoutAlternative[] {
+  return [
+    {
+      layout: "MONOLITH",
+      rationale: "Best default for a first release with the smallest operational surface area.",
+      recommendedUsage: "Use when you want one deployable and minimal topology complexity.",
+      selected: selected === "MONOLITH"
+    },
+    {
+      layout: "PIPELINE_RUNTIME",
+      rationale: "Useful when you want a later runtime split without fully modularizing every service.",
+      recommendedUsage: "Use when one runtime host is still acceptable but pipeline runtime separation matters.",
+      selected: selected === "PIPELINE_RUNTIME"
+    },
+    {
+      layout: "MODULAR",
+      rationale: "Useful when the brief or roadmap clearly points to independently deployable services.",
+      recommendedUsage: "Use when separate service ownership or deployability matters more than first-release simplicity.",
+      selected: selected === "MODULAR"
+    }
+  ];
+}
+
+function defaultAppName(title: string): string {
+  const tokens = namingTokens(title, 6);
+  if (tokens.length === 0) {
+    return "PipelineApplication";
+  }
+  return toPascalCase(tokens.join(" "));
+}
+
+function defaultBasePackage(title: string): string {
+  const tokens = namingTokens(title, 5).map((token) => token.slice(0, 20));
+  if (tokens.length === 0) {
+    return "";
+  }
+  return `com.example.${tokens.join(".")}`.slice(0, 80).replace(/\.+$/g, "");
+}
+
+function namingTokens(title: string, limit: number): string[] {
+  const stopWords = new Set(["a", "an", "and", "as", "backend", "brief", "by", "core", "for", "in", "incremental", "mvp", "new", "of", "on", "profile", "secure", "story", "system", "the", "to", "user", "with"]);
+  const rawTokens = title.toLowerCase().replace(/['’]/g, "").split(/[^a-z0-9]+/).filter(Boolean);
+  const tokens = rawTokens.filter((token) => !stopWords.has(token));
+  return (tokens.length > 0 ? tokens : rawTokens)
+    .filter((token) => /^[a-z0-9]+$/.test(token))
+    .slice(0, limit);
+}
+
+function toPascalCase(value: string): string {
+  return value
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join("");
+}
+
+function stepId(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function runtimeLayoutToConfig(layout: RuntimeLayout): "modular" | "pipeline-runtime" | "monolith" {
+  switch (layout) {
+    case "MODULAR":
+      return "modular";
+    case "PIPELINE_RUNTIME":
+      return "pipeline-runtime";
+    case "MONOLITH":
+      return "monolith";
+  }
+}
+
+function isLikelyJavaPackage(value: string): boolean {
+  return /^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/.test(value);
+}

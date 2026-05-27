@@ -1,0 +1,64 @@
+{
+  "name": "@pipelineframework/tpf-mcp-bridge",
+  "version": "0.1.3",
+  "description": "Local MCP bridge for TPF brief-to-scaffold sessions with a local planner and optional hosted generation backend",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/The-Pipeline-Framework/tpf-mcp-bridge",
+  "bugs": {
+    "url": "https://github.com/The-Pipeline-Framework/tpf-mcp-bridge/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/The-Pipeline-Framework/tpf-mcp-bridge.git"
+  },
+  "keywords": [
+    "mcp",
+    "codex",
+    "openai",
+    "pipeline-framework",
+    "tpf"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "main": "dist/src/bridge-runtime.js",
+  "exports": {
+    ".": "./dist/src/bridge-runtime.js"
+  },
+  "bin": {
+    "tpf-mcp-bridge": "./dist/src/bridge.js"
+  },
+  "files": [
+    "dist/src/**/*",
+    "template-generator-node/src/**/*",
+    "template-generator-node/templates/**/*",
+    "template-generator-node/package.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "start": "node dist/src/bridge.js",
+    "start:local": "node dist/src/server.js",
+    "start:worker": "wrangler dev src/worker.ts",
+    "deploy:worker": "wrangler deploy src/worker.ts",
+    "test": "npm run build && node --test dist/test/*.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "js-yaml": "4.1.0",
+    "jszip": "^3.10.1",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "4.0.9",
+    "@types/node": "24.9.0",
+    "typescript": "5.9.3",
+    "wrangler": "^4.81.1"
+  }
+}
