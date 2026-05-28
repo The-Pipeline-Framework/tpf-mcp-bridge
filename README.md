@@ -4,9 +4,17 @@ Standalone repo for the TPF MCP bridge product:
 
 - local stdio MCP bridge for Codex, Claude Code, OpenCode, VS Code, Cursor, and similar hosts
 - Cloudflare Worker backend for hosted session persistence, scaffold generation, and artifact delivery
-- vendored snapshot of `template-generator-node`, including the current JSON schema and templates
+- vendored snapshot of `template-generator-node`, including the current generated JSON schema and templates
 
-This extraction is intentionally **behavior-preserving**. Canonical schema authority remains deferred to **Issue 312** in the main TPF repo. Until that issue is closed, this repo owns a vendored generator/schema snapshot and may require coordinated updates when core TPF config semantics change.
+The generator-facing schema authority lives in the main TPF repo under `framework/deployment`. This repo vendors the generated `pipeline-template-schema.json` for package/runtime use and refreshes it from the built deployment artifact.
+
+To sync the vendored schema from a checked-out and built main repo:
+
+```bash
+npm run sync:pipeline-schema -- ../pipelineframework/framework/deployment/target/classes/META-INF/pipeline/pipeline-template-schema.json
+```
+
+The command also defaults to that relative path when no argument is provided.
 
 ## Install
 

@@ -55,7 +55,10 @@ Before submitting:
 4. Update docs when install, env vars, package surface, or hosted-backend behavior changes.
 5. Keep the vendored generator snapshot and bridge expectations aligned.
 
-## Deferred Architectural Debt
+## Schema Sync
 
-This repo currently vendors `template-generator-node`. Canonical schema authority is still tracked separately in TPF Issue 312. Until that is resolved, config-shape changes may require coordinated updates between this repo and the main TPF repo.
+This repo vendors `template-generator-node`, but the generator-facing schema authority lives in the main TPF repo under `framework/deployment`. When config-shape changes land there, sync the generated schema here:
 
+```bash
+npm run sync:pipeline-schema -- ../pipelineframework/framework/deployment/target/classes/META-INF/pipeline/pipeline-template-schema.json
+```

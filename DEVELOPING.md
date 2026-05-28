@@ -48,8 +48,12 @@ Deploy Worker:
 npm run deploy:worker
 ```
 
-## Current Extraction Debt
+## Generator Snapshot
 
-- `template-generator-node/` is still a vendored snapshot
-- canonical schema authority remains deferred to TPF Issue 312
-- changes in core TPF config semantics may require coordinated updates here until Issue 312 is closed
+- `template-generator-node/` is a vendored generator snapshot used for scaffold generation.
+- the generator-facing schema authority lives in main TPF `framework/deployment`.
+- sync the packaged schema after building the main repo:
+
+```bash
+npm run sync:pipeline-schema -- ../pipelineframework/framework/deployment/target/classes/META-INF/pipeline/pipeline-template-schema.json
+```

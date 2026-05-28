@@ -203,6 +203,88 @@ steps:
     expect(config.steps[0].execution.target.urlConfigKey).toBe('tpf.remote-operators.charge-card.url');
   });
 
+  test('loadConfig accepts structurally valid v2 await step config', () => {
+    const generator = new PipelineGenerator();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
+    const configPath = path.join(tempDir, 'await-config.yaml');
+    fs.writeFileSync(configPath, `version: 2
+appName: AwaitApp
+basePackage: com.example.awaitapp
+transport: REST
+runtimeLayout: MODULAR
+messages:
+  PaymentRequest:
+    fields:
+      - number: 1
+        name: paymentId
+        type: uuid
+  PaymentResult:
+    fields:
+      - number: 1
+        name: status
+        type: string
+steps:
+  - name: Await Payment Provider
+    kind: await
+    cardinality: ONE_TO_ONE
+    inputTypeName: PaymentRequest
+    outputTypeName: PaymentResult
+    timeout: PT2M
+    idempotencyKeyFields:
+      - paymentId
+    await:
+      correlation:
+        strategy: idempotency-key
+      transport:
+        type: kafka
+        config:
+          topic: payment-requests
+`);
+
+    const config = generator.loadConfig(configPath);
+
+    expect(config.steps[0].kind).toBe('await');
+    expect(config.steps[0].await.transport.type).toBe('kafka');
+  });
+
+  test('loadConfig rejects await config missing required structural fields', () => {
+    const generator = new PipelineGenerator();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
+    const configPath = path.join(tempDir, 'invalid-await-config.yaml');
+    fs.writeFileSync(configPath, `version: 2
+appName: AwaitApp
+basePackage: com.example.awaitapp
+transport: REST
+runtimeLayout: MODULAR
+messages:
+  PaymentRequest:
+    fields:
+      - number: 1
+        name: paymentId
+        type: uuid
+  PaymentResult:
+    fields:
+      - number: 1
+        name: status
+        type: string
+steps:
+  - name: Await Payment Provider
+    kind: await
+    cardinality: ONE_TO_ONE
+    inputTypeName: PaymentRequest
+    outputTypeName: PaymentResult
+    timeout: PT2M
+    await:
+      correlation:
+        strategy: idempotency-key
+      transport:
+        config:
+          topic: payment-requests
+`);
+
+    expect(() => generator.loadConfig(configPath)).toThrow('Configuration validation failed');
+  });
+
   test('loadConfig rejects non-integer version values', () => {
     const generator = new PipelineGenerator();
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
