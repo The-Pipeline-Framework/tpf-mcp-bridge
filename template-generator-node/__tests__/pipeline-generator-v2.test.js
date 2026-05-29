@@ -115,6 +115,8 @@ steps:
     expect(copiedConfig).toContain('platform: FUNCTION');
     expect(parentPom).toContain('<tpf.build.platform>FUNCTION</tpf.build.platform>');
     expect(parentPom).toContain('-Apipeline.platform=${tpf.build.platform}');
+    expect(commonPom).toContain('<id>default-compile</id>');
+    expect(commonPom).toContain('<compilerArgs combine.self="override" />');
     expect(parentPom).not.toContain('protobuf.version');
     expect(commonPom).not.toContain('unpack-google-proto');
     expect(commonPom).not.toContain('protobuf-java');
