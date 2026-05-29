@@ -29,8 +29,8 @@ This is a standalone product repo. It is not the main TPF monorepo.
 - `TPF_LLM_TRANSPORT_MODE=direct-http` is the supported default.
 - `mcp-sampling` is experimental and must not be treated as broadly supported.
 - Keep `README.md` user-facing and `DEVELOPING.md` maintainer-facing.
-- `template-generator-node/` is vendored on purpose. Do not casually rewrite its schema/templates without updating bridge and generator tests together.
-- Canonical schema authority remains deferred to TPF Issue 312.
+- `template-generator-node/` is vendored on purpose. Do not casually rewrite its templates without updating bridge and generator tests together.
+- The generator-facing schema authority lives in main TPF `framework/deployment`; sync it with `npm run sync:pipeline-schema` after building the main repo.
 
 ## Working Rules
 
@@ -41,4 +41,3 @@ This is a standalone product repo. It is not the main TPF monorepo.
   - `test/service.test.ts`
   - `template-generator-node/__tests__/*`
 - If changing package/deploy behavior, update docs and workflow config in the same change.
-

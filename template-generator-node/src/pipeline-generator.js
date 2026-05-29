@@ -18,7 +18,7 @@ const HandlebarsTemplateEngine = require('./handlebars-template-engine');
 const fs = require('fs-extra');
 const path = require('path');
 const YAML = require('js-yaml');
-const Ajv = require('ajv');
+const Ajv2020 = require('ajv/dist/2020');
 const schema = require('./pipeline-template-schema.json');
 
 class PipelineGenerator {
@@ -150,7 +150,7 @@ class PipelineGenerator {
         }
         
         // Validate the configuration against the schema
-        const ajv = new Ajv();
+        const ajv = new Ajv2020({ strict: false });
         const validate = ajv.compile(schema);
         const valid = validate(config);
         

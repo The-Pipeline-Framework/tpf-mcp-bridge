@@ -47,10 +47,12 @@
     "start:local": "node dist/src/server.js",
     "start:worker": "wrangler dev src/worker.ts",
     "deploy:worker": "wrangler deploy src/worker.ts",
+    "sync:pipeline-schema": "node scripts/sync-pipeline-schema.mjs",
     "test": "npm run build && node --test dist/test/*.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
+    "ajv": "^8.18.0",
     "js-yaml": "4.1.0",
     "jszip": "^3.10.1",
     "zod": "4.4.3"

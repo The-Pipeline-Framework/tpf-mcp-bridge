@@ -1396,7 +1396,7 @@ test("package metadata advertises the publishable bridge install surface", async
   assert.equal(packageJson.publishConfig.access, "public");
 });
 
-test("standalone readme documents host installs, provider modes, and deferred schema debt", async () => {
+test("standalone readme documents host installs, provider modes, and schema sync", async () => {
   const readme = await fs.readFile(path.resolve("README.md"), "utf8");
   const developerGuide = await fs.readFile(path.resolve("DEVELOPING.md"), "utf8");
   assert.match(readme, /@pipelineframework\/tpf-mcp-bridge/);
@@ -1410,8 +1410,9 @@ test("standalone readme documents host installs, provider modes, and deferred sc
   assert.match(readme, /What each planner environment variable does/i);
   assert.match(readme, /What each backend environment variable does/i);
   assert.match(readme, /DEVELOPING\.md/);
-  assert.match(developerGuide, /Issue 312/);
-  assert.match(developerGuide, /vendored snapshot/i);
+  assert.match(developerGuide, /sync:pipeline-schema/);
+  assert.match(developerGuide, /framework\/deployment/);
+  assert.match(developerGuide, /vendored generator snapshot/i);
   assert.match(developerGuide, /npm ci/);
   assert.match(developerGuide, /npm test/);
   assert.match(developerGuide, /npm pack --dry-run/);
