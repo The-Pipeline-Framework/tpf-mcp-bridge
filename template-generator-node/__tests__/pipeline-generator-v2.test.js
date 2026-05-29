@@ -119,6 +119,7 @@ steps:
     expect(commonPom).not.toContain('unpack-google-proto');
     expect(commonPom).not.toContain('protobuf-java');
     expect(commonPom).not.toContain('google/protobuf/*.proto');
+    expect(commonPom).not.toContain('com/google/protobuf');
   });
 
   test('toScaffoldConfig derives legacy field bindings from v2 messages', () => {
