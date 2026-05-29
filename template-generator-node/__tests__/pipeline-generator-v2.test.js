@@ -111,9 +111,15 @@ steps:
 
     const copiedConfig = fs.readFileSync(path.join(outputDir, 'config', 'pipeline.yaml'), 'utf8');
     const parentPom = fs.readFileSync(path.join(outputDir, 'pom.xml'), 'utf8');
+    const commonPom = fs.readFileSync(path.join(outputDir, 'common', 'pom.xml'), 'utf8');
     expect(copiedConfig).toContain('platform: FUNCTION');
     expect(parentPom).toContain('<tpf.build.platform>FUNCTION</tpf.build.platform>');
     expect(parentPom).toContain('-Apipeline.platform=${tpf.build.platform}');
+    expect(parentPom).not.toContain('protobuf.version');
+    expect(commonPom).not.toContain('unpack-google-proto');
+    expect(commonPom).not.toContain('protobuf-java');
+    expect(commonPom).not.toContain('google/protobuf/*.proto');
+    expect(commonPom).not.toContain('com/google/protobuf');
   });
 
   test('toScaffoldConfig derives legacy field bindings from v2 messages', () => {
