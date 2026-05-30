@@ -319,8 +319,78 @@ module.exports = {
   "gitignore": {"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
     return "# Maven\ntarget/\npom.xml.tag\npom.xml.releaseBackup\npom.xml.versionsBackup\npom.xml.next\nrelease.properties\n.codeclimate.yml\n\n# Compilation\n*.class\n*.war\n*.jar\n*.ear\n\n# Log files\n*.log\n.log\n\n# IDE\n.idea/\n*.iws\n*.iml\n*.ipr\n*.sw?\n*~\n.#*\n.DS_Store\n.classpath\n.project\n.settings/\n.vscode/\n\n# Temporary files\n.tmp\ntemp/\n\n# OS Generated\n.Spotlight-V100\n.Trashes\nehthumbs.db\nIcon?\nThumbs.db\n\n# Docker\n.docker/\n\n# Generated certificates\n**/server-keystore.jks\n**/client-truststore.jks\n**/quarkus-cert.pem\n**/quarkus-key.pem";
 },"useData":true},
-  "mapper": {"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
+  "mapper": {"0":function(container,depth0,helpers,partials,data) {
+    return "import java.util.LinkedHashMap;\nimport org.mapstruct.AfterMapping;\n";
+},"1":function(container,depth0,helpers,partials,data) {
+    return "import org.mapstruct.Mapping;\nimport org.mapstruct.MappingTarget;\n";
+},"2":function(container,depth0,helpers,partials,data) {
+    var helper, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "  @Mapping(target = \""
+    + container.escapeExpression(((helper = (helper = lookupProperty(helpers,"javaName") || (depth0 != null ? lookupProperty(depth0,"javaName") : depth0)) != null ? helper : container.hooks.helperMissing),(typeof helper === "function" ? helper.call(depth0 != null ? depth0 : (container.nullContext || {}),{"name":"javaName","hash":{},"data":data,"loc":{"start":{"line":38,"column":21},"end":{"line":38,"column":33}}}) : helper)))
+    + "\", ignore = true)\n";
+},"3":function(container,depth0,helpers,partials,data) {
+    var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "  @AfterMapping\n  default void putGrpcMapFields("
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":51,"column":32},"end":{"line":51,"column":44}}}) : helper)))
+    + " dto, @MappingTarget "
+    + alias4(((helper = (helper = lookupProperty(helpers,"grpcClass") || (depth0 != null ? lookupProperty(depth0,"grpcClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"grpcClass","hash":{},"data":data,"loc":{"start":{"line":51,"column":65},"end":{"line":51,"column":78}}}) : helper)))
+    + "."
+    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":51,"column":79},"end":{"line":51,"column":92}}}) : helper)))
+    + ".Builder builder) {\n    if (dto == null) {\n      return;\n    }\n"
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"grpcMapFields") : depth0),{"name":"each","hash":{},"fn":container.program(4, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":55,"column":4},"end":{"line":59,"column":13}}})) != null ? stack1 : "")
+    + "  }\n\n  @AfterMapping\n  default void putDtoMapFields("
+    + alias4(((helper = (helper = lookupProperty(helpers,"grpcClass") || (depth0 != null ? lookupProperty(depth0,"grpcClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"grpcClass","hash":{},"data":data,"loc":{"start":{"line":63,"column":31},"end":{"line":63,"column":44}}}) : helper)))
+    + "."
+    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":63,"column":45},"end":{"line":63,"column":58}}}) : helper)))
+    + " grpc, @MappingTarget "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":63,"column":80},"end":{"line":63,"column":92}}}) : helper)))
+    + "."
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":63,"column":93},"end":{"line":63,"column":105}}}) : helper)))
+    + "Builder builder) {\n    if (grpc == null) {\n      return;\n    }\n"
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"grpcMapFields") : depth0),{"name":"each","hash":{},"fn":container.program(5, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":67,"column":4},"end":{"line":69,"column":13}}})) != null ? stack1 : "")
+    + "  }\n";
+},"4":function(container,depth0,helpers,partials,data) {
     var helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "    if (dto.get"
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoAccessorSuffix") || (depth0 != null ? lookupProperty(depth0,"dtoAccessorSuffix") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoAccessorSuffix","hash":{},"data":data,"loc":{"start":{"line":56,"column":15},"end":{"line":56,"column":36}}}) : helper)))
+    + "() != null) {\n      builder.putAll"
+    + alias4(((helper = (helper = lookupProperty(helpers,"protoAccessorSuffix") || (depth0 != null ? lookupProperty(depth0,"protoAccessorSuffix") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"protoAccessorSuffix","hash":{},"data":data,"loc":{"start":{"line":57,"column":20},"end":{"line":57,"column":43}}}) : helper)))
+    + "(dto.get"
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoAccessorSuffix") || (depth0 != null ? lookupProperty(depth0,"dtoAccessorSuffix") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoAccessorSuffix","hash":{},"data":data,"loc":{"start":{"line":57,"column":51},"end":{"line":57,"column":72}}}) : helper)))
+    + "());\n    }\n";
+},"5":function(container,depth0,helpers,partials,data) {
+    var helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "    builder."
+    + alias4(((helper = (helper = lookupProperty(helpers,"javaName") || (depth0 != null ? lookupProperty(depth0,"javaName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"javaName","hash":{},"data":data,"loc":{"start":{"line":68,"column":12},"end":{"line":68,"column":24}}}) : helper)))
+    + "(new LinkedHashMap<>(grpc.get"
+    + alias4(((helper = (helper = lookupProperty(helpers,"protoAccessorSuffix") || (depth0 != null ? lookupProperty(depth0,"protoAccessorSuffix") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"protoAccessorSuffix","hash":{},"data":data,"loc":{"start":{"line":68,"column":53},"end":{"line":68,"column":76}}}) : helper)))
+    + "Map()));\n";
+},"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
+    var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
         if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
           return parent[propertyName];
         }
@@ -339,41 +409,51 @@ module.exports = {
     + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":4,"column":34},"end":{"line":4,"column":46}}}) : helper)))
     + ";\nimport "
     + alias4(((helper = (helper = lookupProperty(helpers,"grpcClass") || (depth0 != null ? lookupProperty(depth0,"grpcClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"grpcClass","hash":{},"data":data,"loc":{"start":{"line":5,"column":7},"end":{"line":5,"column":20}}}) : helper)))
-    + ";\nimport org.mapstruct.BeanMapping;\nimport org.mapstruct.Mapper;\nimport org.mapstruct.ReportingPolicy;\nimport org.mapstruct.factory.Mappers;\n\n@SuppressWarnings(\"unused\")\n@Mapper(\n    componentModel = \"jakarta\",\n    uses = {CommonConverters.class},\n    unmappedTargetPolicy = ReportingPolicy.WARN)\npublic interface "
-    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":16,"column":17},"end":{"line":16,"column":30}}}) : helper)))
+    + ";\n"
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasGrpcMapFields") : depth0),{"name":"if","hash":{},"fn":container.program(0, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":6,"column":0},"end":{"line":9,"column":7}}})) != null ? stack1 : "")
+    + "import org.mapstruct.BeanMapping;\n"
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasGrpcMapFields") : depth0),{"name":"if","hash":{},"fn":container.program(1, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":11,"column":0},"end":{"line":14,"column":7}}})) != null ? stack1 : "")
+    + "import org.mapstruct.Mapper;\nimport org.mapstruct.ReportingPolicy;\nimport org.mapstruct.factory.Mappers;\n\n@SuppressWarnings(\"unused\")\n@Mapper(\n    componentModel = \"jakarta\",\n    uses = {CommonConverters.class},\n    unmappedTargetPolicy = ReportingPolicy.WARN)\npublic interface "
+    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":24,"column":17},"end":{"line":24,"column":30}}}) : helper)))
     + "Mapper extends org.pipelineframework.mapper.Mapper<"
-    + alias4(((helper = (helper = lookupProperty(helpers,"grpcClass") || (depth0 != null ? lookupProperty(depth0,"grpcClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"grpcClass","hash":{},"data":data,"loc":{"start":{"line":16,"column":81},"end":{"line":16,"column":94}}}) : helper)))
+    + alias4(((helper = (helper = lookupProperty(helpers,"grpcClass") || (depth0 != null ? lookupProperty(depth0,"grpcClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"grpcClass","hash":{},"data":data,"loc":{"start":{"line":24,"column":81},"end":{"line":24,"column":94}}}) : helper)))
     + "."
-    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":16,"column":95},"end":{"line":16,"column":108}}}) : helper)))
+    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":24,"column":95},"end":{"line":24,"column":108}}}) : helper)))
     + ", "
-    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":16,"column":110},"end":{"line":16,"column":122}}}) : helper)))
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":24,"column":110},"end":{"line":24,"column":122}}}) : helper)))
     + ", "
-    + alias4(((helper = (helper = lookupProperty(helpers,"domainClass") || (depth0 != null ? lookupProperty(depth0,"domainClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"domainClass","hash":{},"data":data,"loc":{"start":{"line":16,"column":124},"end":{"line":16,"column":139}}}) : helper)))
+    + alias4(((helper = (helper = lookupProperty(helpers,"domainClass") || (depth0 != null ? lookupProperty(depth0,"domainClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"domainClass","hash":{},"data":data,"loc":{"start":{"line":24,"column":124},"end":{"line":24,"column":139}}}) : helper)))
     + "> {\n\n  "
-    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":18,"column":2},"end":{"line":18,"column":15}}}) : helper)))
+    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":26,"column":2},"end":{"line":26,"column":15}}}) : helper)))
     + "Mapper INSTANCE = Mappers.getMapper( "
-    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":18,"column":52},"end":{"line":18,"column":65}}}) : helper)))
+    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":26,"column":52},"end":{"line":26,"column":65}}}) : helper)))
     + "Mapper.class );\n\n  // Domain ↔ DTO\n  @Override\n  "
-    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":22,"column":2},"end":{"line":22,"column":14}}}) : helper)))
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":30,"column":2},"end":{"line":30,"column":14}}}) : helper)))
     + " toDto("
-    + alias4(((helper = (helper = lookupProperty(helpers,"domainClass") || (depth0 != null ? lookupProperty(depth0,"domainClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"domainClass","hash":{},"data":data,"loc":{"start":{"line":22,"column":21},"end":{"line":22,"column":36}}}) : helper)))
+    + alias4(((helper = (helper = lookupProperty(helpers,"domainClass") || (depth0 != null ? lookupProperty(depth0,"domainClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"domainClass","hash":{},"data":data,"loc":{"start":{"line":30,"column":21},"end":{"line":30,"column":36}}}) : helper)))
     + " entity);\n\n  @Override\n  "
-    + alias4(((helper = (helper = lookupProperty(helpers,"domainClass") || (depth0 != null ? lookupProperty(depth0,"domainClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"domainClass","hash":{},"data":data,"loc":{"start":{"line":25,"column":2},"end":{"line":25,"column":17}}}) : helper)))
+    + alias4(((helper = (helper = lookupProperty(helpers,"domainClass") || (depth0 != null ? lookupProperty(depth0,"domainClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"domainClass","hash":{},"data":data,"loc":{"start":{"line":33,"column":2},"end":{"line":33,"column":17}}}) : helper)))
     + " fromDto("
-    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":25,"column":26},"end":{"line":25,"column":38}}}) : helper)))
-    + " dto);\n\n  // DTO ↔ gRPC\n  @BeanMapping(unmappedTargetPolicy = ReportingPolicy.IGNORE)\n  @Override\n  "
-    + alias4(((helper = (helper = lookupProperty(helpers,"grpcClass") || (depth0 != null ? lookupProperty(depth0,"grpcClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"grpcClass","hash":{},"data":data,"loc":{"start":{"line":30,"column":2},"end":{"line":30,"column":15}}}) : helper)))
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":33,"column":26},"end":{"line":33,"column":38}}}) : helper)))
+    + " dto);\n\n  // DTO ↔ gRPC\n  @BeanMapping(unmappedTargetPolicy = ReportingPolicy.IGNORE)\n"
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"grpcMapFields") : depth0),{"name":"each","hash":{},"fn":container.program(2, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":37,"column":2},"end":{"line":39,"column":11}}})) != null ? stack1 : "")
+    + "  @Override\n  "
+    + alias4(((helper = (helper = lookupProperty(helpers,"grpcClass") || (depth0 != null ? lookupProperty(depth0,"grpcClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"grpcClass","hash":{},"data":data,"loc":{"start":{"line":41,"column":2},"end":{"line":41,"column":15}}}) : helper)))
     + "."
-    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":30,"column":16},"end":{"line":30,"column":29}}}) : helper)))
+    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":41,"column":16},"end":{"line":41,"column":29}}}) : helper)))
     + " toGrpc("
-    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":30,"column":37},"end":{"line":30,"column":49}}}) : helper)))
-    + " dto);\n\n  @Override\n  "
-    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":33,"column":2},"end":{"line":33,"column":14}}}) : helper)))
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":41,"column":37},"end":{"line":41,"column":49}}}) : helper)))
+    + " dto);\n\n"
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"grpcMapFields") : depth0),{"name":"each","hash":{},"fn":container.program(2, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":43,"column":2},"end":{"line":45,"column":11}}})) != null ? stack1 : "")
+    + "  @Override\n  "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":47,"column":2},"end":{"line":47,"column":14}}}) : helper)))
     + " fromGrpc("
-    + alias4(((helper = (helper = lookupProperty(helpers,"grpcClass") || (depth0 != null ? lookupProperty(depth0,"grpcClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"grpcClass","hash":{},"data":data,"loc":{"start":{"line":33,"column":24},"end":{"line":33,"column":37}}}) : helper)))
+    + alias4(((helper = (helper = lookupProperty(helpers,"grpcClass") || (depth0 != null ? lookupProperty(depth0,"grpcClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"grpcClass","hash":{},"data":data,"loc":{"start":{"line":47,"column":24},"end":{"line":47,"column":37}}}) : helper)))
     + "."
-    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":33,"column":38},"end":{"line":33,"column":51}}}) : helper)))
-    + " grpc);\n}\n";
+    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":47,"column":38},"end":{"line":47,"column":51}}}) : helper)))
+    + " grpc);\n\n"
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasGrpcMapFields") : depth0),{"name":"if","hash":{},"fn":container.program(3, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":49,"column":0},"end":{"line":71,"column":7}}})) != null ? stack1 : "")
+    + "}\n";
 },"useData":true},
   "module-application-dev-properties": {"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
     return "#\n# Copyright (c) 2023-2025 Mariano Barcia\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n#\n\n# Pipeline framework\nquarkus.log.category.\"org.pipelineframework\".level=DEBUG\n\n# Enable trace logging for gRPC\n#quarkus.log.category.\"io.grpc\".level=DEBUG\n#quarkus.log.category.\"io.quarkus.grpc\".level=DEBUG\n#quarkus.log.category.\"io.vertx.grpc\".level=DEBUG\n#quarkus.log.category.\"io.mutiny\".level=DEBUG\n\nquarkus.log.console.format=%d{HH:mm:ss} %-5p [%c] (%t) %s%e%n\n\n#quarkus.observability.lgtm.enabled=true\n\n#quarkus.otel.metrics.enabled=true\n#quarkus.otel.metric.export.interval=5\n\n# Suppress unnecessary information\nquarkus.log.category.\"io.quarkus.opentelemetry.runtime.QuarkusContextStorage\".level=WARN\n";
