@@ -763,13 +763,27 @@ class BrowserTemplateEngine {
     }
 
     async generateMapperClass(className, step, basePackage, fileCallback) {
+        const mapperFields = this.mapperFieldsForClass(className, step);
+        const grpcMapFields = mapperFields
+            .filter(field => field && typeof field.type === 'string' && field.type.startsWith('Map<'))
+            .map(field => {
+                const javaName = this.sanitizeJavaIdentifier(field.name);
+                return {
+                    ...field,
+                    javaName,
+                    dtoAccessorSuffix: this.javaAccessorSuffix(javaName),
+                    protoAccessorSuffix: this.protoAccessorSuffix(field.name)
+                };
+            });
         const context = {
             ...step,
             basePackage,
             className,
             domainClass: className.replace('Dto', ''),
             dtoClass: className + 'Dto',
-            grpcClass: basePackage + '.grpc.' + this.formatForProtoClassName(step.serviceName)
+            grpcClass: basePackage + '.grpc.' + this.formatForProtoClassName(step.serviceName),
+            grpcMapFields,
+            hasGrpcMapFields: grpcMapFields.length > 0
         };
 
         const rendered = this.render('mapper', context);
@@ -1128,6 +1142,60 @@ wrapperUrl=https://repo.maven.apache.org/maven2/org/apache/maven/wrapper/maven-w
     hasImportFlag(fields, types) {
         if (!Array.isArray(fields)) return false;
         return fields.some(field => types.includes(field.type));
+    }
+
+    mapperFieldsForClass(className, step) {
+        if (!step || !className) return [];
+        if (className === step.inputTypeName && Array.isArray(step.inputFields)) {
+            return step.inputFields;
+        }
+        if (className === step.outputTypeName && Array.isArray(step.outputFields)) {
+            return step.outputFields;
+        }
+        return [];
+    }
+
+    sanitizeJavaIdentifier(fieldName) {
+        if (typeof fieldName !== 'string' || fieldName.trim() === '') {
+            return 'field';
+        }
+        const reservedWords = [
+            'abstract', 'assert', 'boolean', 'break', 'byte', 'case', 'catch', 'char', 'class',
+            'const', 'continue', 'default', 'do', 'double', 'else', 'enum', 'extends', 'final',
+            'finally', 'float', 'for', 'goto', 'if', 'implements', 'import', 'instanceof', 'int',
+            'interface', 'long', 'native', 'new', 'package', 'private', 'protected', 'public',
+            'return', 'short', 'static', 'strictfp', 'super', 'switch', 'synchronized', 'this',
+            'throw', 'throws', 'transient', 'try', 'void', 'volatile', 'while', 'true', 'false', 'null'
+        ];
+        let sanitized = fieldName.replace(/[^a-zA-Z0-9_$]/g, '_');
+        if (sanitized.length > 0 && /\d/.test(sanitized[0])) {
+            sanitized = '_' + sanitized;
+        }
+        if (sanitized === '') {
+            sanitized = 'field';
+        }
+        if (reservedWords.includes(sanitized.toLowerCase())) {
+            return sanitized + '_';
+        }
+        return sanitized;
+    }
+
+    javaAccessorSuffix(fieldName) {
+        if (typeof fieldName !== 'string' || fieldName.trim() === '') {
+            return 'Field';
+        }
+        return fieldName.charAt(0).toUpperCase() + fieldName.slice(1);
+    }
+
+    protoAccessorSuffix(fieldName) {
+        if (typeof fieldName !== 'string' || fieldName.trim() === '') {
+            return 'Field';
+        }
+        return fieldName
+            .split(/[_-]+/)
+            .filter(Boolean)
+            .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+            .join('');
     }
 
     formatForClassName(input) {

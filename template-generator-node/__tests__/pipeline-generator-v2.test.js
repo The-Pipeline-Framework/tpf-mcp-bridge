@@ -124,6 +124,51 @@ steps:
     expect(commonPom).not.toContain('com/google/protobuf');
   });
 
+  test('generateFromConfig emits protobuf map accessors for map fields', async () => {
+    const generator = new PipelineGenerator();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
+    const configPath = path.join(tempDir, 'map-config.yaml');
+    const outputDir = path.join(tempDir, 'generated-app');
+    fs.writeFileSync(configPath, `version: 2
+appName: MapApp
+basePackage: com.example.mapapp
+transport: GRPC
+runtimeLayout: MODULAR
+messages:
+  CrawlRequest:
+    fields:
+      - number: 1
+        name: docId
+        type: uuid
+      - number: 2
+        name: fetchHeaders
+        type: map
+        keyType: string
+        valueType: string
+  CrawlResult:
+    fields:
+      - number: 1
+        name: status
+        type: string
+steps:
+  - name: Crawl Page
+    cardinality: ONE_TO_ONE
+    inputTypeName: CrawlRequest
+    outputTypeName: CrawlResult
+`);
+
+    await generator.generateFromConfig(configPath, outputDir);
+
+    const mapper = fs.readFileSync(
+      path.join(outputDir, 'common', 'src', 'main', 'java', 'com', 'example', 'mapapp', 'common', 'mapper', 'CrawlRequestMapper.java'),
+      'utf8'
+    );
+    expect(mapper).toContain('@Mapping(target = "fetchHeaders", ignore = true)');
+    expect(mapper).toContain('builder.putAllFetchHeaders(dto.getFetchHeaders());');
+    expect(mapper).toContain('new LinkedHashMap<>(grpc.getFetchHeadersMap())');
+    expect(mapper).not.toContain('getFetchHeaders().putAll');
+  });
+
   test('toScaffoldConfig derives legacy field bindings from v2 messages', () => {
     const generator = new PipelineGenerator();
     const config = {
