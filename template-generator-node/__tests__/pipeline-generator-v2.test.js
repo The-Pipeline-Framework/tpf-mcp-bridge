@@ -117,6 +117,9 @@ steps:
     expect(parentPom).toContain('-Apipeline.platform=${tpf.build.platform}');
     expect(commonPom).toContain('<id>default-compile</id>');
     expect(commonPom).toContain('<compilerArgs combine.self="override" />');
+    expect(commonPom).toContain('<id>make-index-orchestrator-client</id>');
+    expect(commonPom).toContain('<id>make-index-plugin-client</id>');
+    expect(commonPom).toContain('<phase>none</phase>');
     expect(parentPom).not.toContain('protobuf.version');
     expect(commonPom).not.toContain('unpack-google-proto');
     expect(commonPom).not.toContain('protobuf-java');
