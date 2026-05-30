@@ -115,6 +115,16 @@ steps:
     expect(copiedConfig).toContain('platform: FUNCTION');
     expect(parentPom).toContain('<tpf.build.platform>FUNCTION</tpf.build.platform>');
     expect(parentPom).toContain('-Apipeline.platform=${tpf.build.platform}');
+    expect(parentPom).toMatch(/<id>default-compile<\/id>[\s\S]*?<goal>compile<\/goal>/);
+    for (const roleExecutionId of [
+      'compile-orchestrator-client',
+      'compile-pipeline-server',
+      'compile-plugin-client',
+      'compile-plugin-server',
+      'compile-rest-server'
+    ]) {
+      expect(parentPom).toMatch(new RegExp(`<id>${roleExecutionId}</id>[\\s\\S]*?<goal>testCompile</goal>`));
+    }
     expect(commonPom).toContain('<id>default-compile</id>');
     expect(commonPom).toContain('<compilerArgs combine.self="override" />');
     expect(commonPom).toContain('<id>make-index-orchestrator-client</id>');
