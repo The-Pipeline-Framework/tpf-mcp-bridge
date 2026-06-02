@@ -36,7 +36,7 @@ class PipelineGenerator {
     async generateFromConfig(configPath, outputPath) {
         const config = this.loadConfig(configPath);
         const scaffoldConfig = this.toScaffoldConfig(config);
-        const { appName, basePackage, steps, aspects, transport, platform, runtimeLayout } = scaffoldConfig;
+        const { appName, basePackage, steps, aspects, transport, platform, runtimeLayout, unionDefinitions } = scaffoldConfig;
         await this.engine.generateApplication({
             appName,
             basePackage,
@@ -45,6 +45,7 @@ class PipelineGenerator {
             transport,
             platform,
             runtimeLayout,
+            unionDefinitions,
             outputPath
         });
         await this.copyConfig(config, outputPath);
@@ -172,6 +173,7 @@ class PipelineGenerator {
 
     toScaffoldConfig(config) {
         const scaffoldConfig = { ...config };
+        scaffoldConfig.unionDefinitions = this.toScaffoldUnions(config.unions, config.messages);
         scaffoldConfig.steps = this.processSteps(this.materializeSteps(config));
         return scaffoldConfig;
     }
@@ -181,15 +183,21 @@ class PipelineGenerator {
             return config.steps;
         }
         const messages = config.messages || {};
+        const unions = config.unions || {};
         return config.steps.map((step) => {
             const materialized = { ...step };
-            materialized.inputFields = this.materializeStepFields(step.inputTypeName, step.inputFields, messages);
-            materialized.outputFields = this.materializeStepFields(step.outputTypeName, step.outputFields, messages);
+            materialized.inputIsUnion = Boolean(step.inputTypeName && unions[step.inputTypeName]);
+            materialized.outputIsUnion = Boolean(step.outputTypeName && unions[step.outputTypeName]);
+            materialized.inputFields = this.materializeStepFields(step.inputTypeName, step.inputFields, messages, unions);
+            materialized.outputFields = this.materializeStepFields(step.outputTypeName, step.outputFields, messages, unions);
             return materialized;
         });
     }
 
-    materializeStepFields(typeName, inlineFields, messages) {
+    materializeStepFields(typeName, inlineFields, messages, unions = {}) {
+        if (typeName && unions[typeName]) {
+            return Array.isArray(inlineFields) ? inlineFields.map((field) => this.toScaffoldField(field)) : [];
+        }
         const messageDefinition = typeName ? messages[typeName] : null;
         const topLevel = messageDefinition && Array.isArray(messageDefinition.fields)
             ? messageDefinition.fields
@@ -209,6 +217,56 @@ class PipelineGenerator {
         }
         const sourceFields = topLevel || inlineFields || [];
         return sourceFields.map((field) => this.toScaffoldField(field));
+    }
+
+    toScaffoldUnions(unions, messages) {
+        if (!unions || typeof unions !== 'object') {
+            return [];
+        }
+        const messageDefinitions = messages || {};
+        return Object.entries(unions).map(([name, definition]) => {
+            const variants = Object.entries(definition?.variants || {})
+                .sort((left, right) => Number(left[1]?.number || 0) - Number(right[1]?.number || 0))
+                .map(([variantName, variant]) => {
+                    const typeName = variant.type;
+                    const message = messageDefinitions[typeName];
+                    if (!message || !Array.isArray(message.fields)) {
+                        throw new Error(`Missing message definition for union variant '${name}.${variantName}' type '${typeName}'`);
+                    }
+                    const fields = message.fields.map((field) => {
+                        const scaffoldField = this.toScaffoldField(field);
+                        const javaName = this.sanitizeJavaIdentifier(scaffoldField.name);
+                        return {
+                            ...scaffoldField,
+                            javaName,
+                            accessorSuffix: this.javaAccessorSuffix(javaName)
+                        };
+                    });
+                    return {
+                        name: variantName,
+                        number: variant.number,
+                        typeName,
+                        dtoTypeName: `${typeName}Dto`,
+                        fields,
+                        hasFields: fields.length > 0
+                    };
+                });
+            return {
+                name,
+                dtoName: `${name}Dto`,
+                variants,
+                hasDateFields: this.hasImportFlag(variants.flatMap((variant) => variant.fields), ['LocalDate', 'LocalDateTime', 'OffsetDateTime', 'ZonedDateTime', 'Instant', 'Duration', 'Period']),
+                hasBigIntegerFields: this.hasImportFlag(variants.flatMap((variant) => variant.fields), ['BigInteger']),
+                hasBigDecimalFields: this.hasImportFlag(variants.flatMap((variant) => variant.fields), ['BigDecimal']),
+                hasCurrencyFields: this.hasImportFlag(variants.flatMap((variant) => variant.fields), ['Currency']),
+                hasPathFields: this.hasImportFlag(variants.flatMap((variant) => variant.fields), ['Path']),
+                hasNetFields: this.hasImportFlag(variants.flatMap((variant) => variant.fields), ['URI', 'URL']),
+                hasIoFields: this.hasImportFlag(variants.flatMap((variant) => variant.fields), ['File']),
+                hasAtomicFields: this.hasImportFlag(variants.flatMap((variant) => variant.fields), ['AtomicInteger', 'AtomicLong']),
+                hasUtilFields: this.hasImportFlag(variants.flatMap((variant) => variant.fields), ['List<String>']),
+                hasMapFields: this.hasMapType(variants.flatMap((variant) => variant.fields))
+            };
+        });
     }
 
     toScaffoldField(field) {
@@ -614,6 +672,52 @@ class PipelineGenerator {
             default:
                 return 'StepOneToOne'; // default
         }
+    }
+
+    hasImportFlag(fields, types) {
+        if (!Array.isArray(fields)) {
+            return false;
+        }
+        return fields.some(field => field && types.includes(field.type));
+    }
+
+    hasMapType(fields) {
+        if (!Array.isArray(fields)) {
+            return false;
+        }
+        return fields.some(field => field && typeof field.type === 'string' && field.type.startsWith('Map<'));
+    }
+
+    sanitizeJavaIdentifier(fieldName) {
+        if (typeof fieldName !== 'string' || fieldName.trim() === '') {
+            return 'field';
+        }
+        const reservedWords = [
+            'abstract', 'assert', 'boolean', 'break', 'byte', 'case', 'catch', 'char', 'class',
+            'const', 'continue', 'default', 'do', 'double', 'else', 'enum', 'extends', 'final',
+            'finally', 'float', 'for', 'goto', 'if', 'implements', 'import', 'instanceof', 'int',
+            'interface', 'long', 'native', 'new', 'package', 'private', 'protected', 'public',
+            'return', 'short', 'static', 'strictfp', 'super', 'switch', 'synchronized', 'this',
+            'throw', 'throws', 'transient', 'try', 'void', 'volatile', 'while', 'true', 'false', 'null'
+        ];
+        let sanitized = fieldName.replace(/[^a-zA-Z0-9_$]/g, '_');
+        if (sanitized.length > 0 && /\d/.test(sanitized[0])) {
+            sanitized = '_' + sanitized;
+        }
+        if (sanitized === '') {
+            sanitized = 'field';
+        }
+        if (reservedWords.includes(sanitized.toLowerCase())) {
+            return `${sanitized}_`;
+        }
+        return sanitized;
+    }
+
+    javaAccessorSuffix(fieldName) {
+        if (typeof fieldName !== 'string' || fieldName.trim() === '') {
+            return 'Field';
+        }
+        return fieldName.charAt(0).toUpperCase() + fieldName.slice(1);
     }
 
     /**

@@ -1,0 +1,25 @@
+package {{basePackage}}.common.dto;
+
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.databind.JsonSerializer;
+import com.fasterxml.jackson.databind.SerializerProvider;
+import java.io.IOException;
+
+public final class {{dtoName}}JsonSerializer extends JsonSerializer<{{dtoName}}> {
+
+  @Override
+  public void serialize({{dtoName}} value, JsonGenerator gen, SerializerProvider serializers)
+      throws IOException {
+    gen.writeStartObject();
+{{#each variants}}
+    {{#if @first}}if{{else}}else if{{/if}} (value instanceof {{dtoTypeName}} variant) {
+      gen.writeStringField("type", "{{name}}");
+      gen.writeObjectField("{{name}}", variant);
+    }
+{{/each}}
+    else {
+      throw new IOException("Unsupported {{dtoName}} type: " + value.getClass().getName());
+    }
+    gen.writeEndObject();
+  }
+}

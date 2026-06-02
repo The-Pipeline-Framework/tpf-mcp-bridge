@@ -220,9 +220,9 @@ steps:
       path.join(outputDir, 'common', 'src', 'main', 'java', 'com', 'example', 'mapapp', 'common', 'mapper', 'CrawlRequestMapper.java'),
       'utf8'
     );
-    expect(mapper).toContain('@Mapping(target = "fetchHeaders", ignore = true)');
-    expect(mapper).toContain('builder.putAllFetchHeaders(dto.getFetchHeaders());');
-    expect(mapper).toContain('new LinkedHashMap<>(grpc.getFetchHeadersMap())');
+    expect(mapper).toContain('implements Mapper<CrawlRequest, CrawlRequestDto>');
+    expect(mapper).toContain('target.fetchHeaders = external.fetchHeaders;');
+    expect(mapper).toContain('target.fetchHeaders = domain.fetchHeaders;');
     expect(mapper).not.toContain('getFetchHeaders().putAll');
   });
 
@@ -400,6 +400,115 @@ steps:
 
     expect(config.steps[0].kind).toBe('await');
     expect(config.steps[0].await.transport.type).toBe('kafka');
+  });
+
+  test('generateFromConfig scaffolds REST await union DTOs and mapper plumbing', async () => {
+    const generator = new PipelineGenerator();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
+    const configPath = path.join(tempDir, 'restaurant-approval.yaml');
+    const outputDir = path.join(tempDir, 'generated-app');
+    fs.writeFileSync(configPath, `version: 2
+appName: RestaurantApproval
+basePackage: com.example.restaurantapproval
+transport: REST
+platform: COMPUTE
+runtimeLayout: MONOLITH
+messages:
+  PendingRestaurantApproval:
+    fields:
+      - number: 1
+        name: orderId
+        type: uuid
+      - number: 2
+        name: restaurantName
+        type: string
+  RestaurantOrderAccepted:
+    fields:
+      - number: 1
+        name: orderId
+        type: uuid
+      - number: 2
+        name: decidedAt
+        type: timestamp
+      - number: 3
+        name: note
+        type: string
+  RestaurantOrderDeclined:
+    fields:
+      - number: 1
+        name: orderId
+        type: uuid
+      - number: 2
+        name: decidedAt
+        type: timestamp
+      - number: 3
+        name: note
+        type: string
+      - number: 4
+        name: declineReason
+        type: string
+  TerminalOrderState:
+    fields:
+      - number: 1
+        name: orderId
+        type: uuid
+      - number: 2
+        name: outcome
+        type: string
+unions:
+  RestaurantDecision:
+    variants:
+      accepted:
+        number: 1
+        type: RestaurantOrderAccepted
+      declined:
+        number: 2
+        type: RestaurantOrderDeclined
+steps:
+  - name: Await Restaurant Decision
+    kind: await
+    cardinality: ONE_TO_ONE
+    inputTypeName: PendingRestaurantApproval
+    outputTypeName: RestaurantDecision
+    timeout: PT30M
+    idempotencyKeyFields:
+      - orderId
+    await:
+      correlation:
+        strategy: interactionId
+      transport:
+        type: interaction-api
+  - name: Finalize Restaurant Decision
+    cardinality: ONE_TO_ONE
+    inputTypeName: RestaurantDecision
+    outputTypeName: TerminalOrderState
+`);
+
+    await generator.generateFromConfig(configPath, outputDir);
+
+    const javaRoot = path.join(outputDir, 'common', 'src', 'main', 'java', 'com', 'example', 'restaurantapproval', 'common');
+    const decisionDto = fs.readFileSync(path.join(javaRoot, 'dto', 'RestaurantDecisionDto.java'), 'utf8');
+    const acceptedDto = fs.readFileSync(path.join(javaRoot, 'dto', 'RestaurantOrderAcceptedDto.java'), 'utf8');
+    const serializer = fs.readFileSync(path.join(javaRoot, 'dto', 'RestaurantDecisionDtoJsonSerializer.java'), 'utf8');
+    const deserializer = fs.readFileSync(path.join(javaRoot, 'dto', 'RestaurantDecisionDtoJsonDeserializer.java'), 'utf8');
+    const mapper = fs.readFileSync(path.join(javaRoot, 'mapper', 'RestaurantDecisionMapper.java'), 'utf8');
+    const service = fs.readFileSync(
+      path.join(outputDir, 'await-restaurant-decision-svc', 'src', 'main', 'java', 'com', 'example', 'restaurantapproval', 'await_restaurant_decision', 'service', 'ProcessAwaitRestaurantDecisionService.java'),
+      'utf8'
+    );
+
+    expect(decisionDto).toContain('public sealed interface RestaurantDecisionDto');
+    expect(decisionDto).toContain('permits RestaurantOrderAcceptedDto, RestaurantOrderDeclinedDto');
+    expect(acceptedDto).toContain('implements RestaurantDecisionDto');
+    expect(serializer).toContain('gen.writeStringField("type", "accepted")');
+    expect(serializer).toContain('gen.writeObjectField("accepted", variant)');
+    expect(deserializer).toContain('treeToValue(payload(node, "declined"), RestaurantOrderDeclinedDto.class)');
+    expect(mapper).toContain('implements Mapper<RestaurantDecision, RestaurantDecisionDto>');
+    expect(mapper).toContain('external instanceof RestaurantOrderAcceptedDto source');
+    expect(mapper).toContain('domain instanceof RestaurantOrderDeclined source');
+    expect(service).toContain('RestaurantDecision output = null;');
+    expect(fs.existsSync(path.join(javaRoot, 'domain', 'RestaurantDecision.java'))).toBe(true);
+    expect(fs.existsSync(path.join(javaRoot, 'domain', 'RestaurantOrderAccepted.java'))).toBe(true);
   });
 
   test('loadConfig rejects await config missing required structural fields', () => {

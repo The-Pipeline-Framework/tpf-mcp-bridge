@@ -25,6 +25,7 @@ interface PipelineGeneratorInstance {
     basePackage: string;
     steps: Array<Record<string, unknown>>;
     aspects?: Record<string, unknown>;
+    unionDefinitions?: Array<Record<string, unknown>>;
     transport?: string;
     platform?: string;
     runtimeLayout?: string;
@@ -37,6 +38,7 @@ interface BrowserTemplateEngineInstance {
     basePackage: string;
     steps: Array<Record<string, unknown>>;
     aspects?: Record<string, unknown>;
+    unionDefinitions?: Array<Record<string, unknown>>;
     transport?: string;
     platform?: string;
     runtimeLayout?: string;
@@ -93,6 +95,7 @@ export async function generateScaffoldFiles(config: DerivedConfig, fileCallback:
       basePackage: scaffoldConfig.basePackage,
       steps: scaffoldConfig.steps,
       aspects: scaffoldConfig.aspects,
+      unionDefinitions: scaffoldConfig.unionDefinitions,
       transport: scaffoldConfig.transport,
       platform: scaffoldConfig.platform,
       runtimeLayout: scaffoldConfig.runtimeLayout,

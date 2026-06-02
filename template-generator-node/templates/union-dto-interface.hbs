@@ -1,0 +1,11 @@
+package {{basePackage}}.common.dto;
+
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import java.io.Serializable;
+
+@JsonSerialize(using = {{dtoName}}JsonSerializer.class)
+@JsonDeserialize(using = {{dtoName}}JsonDeserializer.class)
+public sealed interface {{dtoName}} extends Serializable
+    permits {{#each variants}}{{dtoTypeName}}{{#unless @last}}, {{/unless}}{{/each}} {
+}

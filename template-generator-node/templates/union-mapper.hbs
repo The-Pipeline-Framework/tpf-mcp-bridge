@@ -1,0 +1,52 @@
+package {{basePackage}}.common.mapper;
+
+import jakarta.enterprise.context.ApplicationScoped;
+import org.pipelineframework.mapper.Mapper;
+{{#each variants}}
+import {{../basePackage}}.common.domain.{{typeName}};
+import {{../basePackage}}.common.dto.{{dtoTypeName}};
+{{/each}}
+import {{basePackage}}.common.domain.{{name}};
+import {{basePackage}}.common.dto.{{dtoName}};
+
+@ApplicationScoped
+public class {{name}}Mapper implements Mapper<{{name}}, {{dtoName}}> {
+
+  @Override
+  public {{name}} fromExternal({{dtoName}} external) {
+    if (external == null) {
+      return null;
+    }
+{{#each variants}}
+    {{#if @first}}if{{else}}else if{{/if}} (external instanceof {{dtoTypeName}} source) {
+      {{typeName}} target = new {{typeName}}();
+{{#each fields}}
+{{#unless (isIdField this.name)}}
+      target.{{javaName}} = source.{{javaName}};
+{{/unless}}
+{{/each}}
+      return target;
+    }
+{{/each}}
+    throw new IllegalArgumentException("Unsupported {{dtoName}} variant: " + external);
+  }
+
+  @Override
+  public {{dtoName}} toExternal({{name}} domain) {
+    if (domain == null) {
+      return null;
+    }
+{{#each variants}}
+    {{#if @first}}if{{else}}else if{{/if}} (domain instanceof {{typeName}} source) {
+      {{dtoTypeName}} target = new {{dtoTypeName}}();
+{{#each fields}}
+{{#unless (isIdField this.name)}}
+      target.{{javaName}} = source.{{javaName}};
+{{/unless}}
+{{/each}}
+      return target;
+    }
+{{/each}}
+    throw new IllegalArgumentException("Unsupported {{name}} variant: " + domain);
+  }
+}
