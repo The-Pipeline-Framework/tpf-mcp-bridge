@@ -137,6 +137,50 @@ steps:
     expect(commonPom).not.toContain('com/google/protobuf');
   });
 
+  test('generateFromConfig emits generated poms against TPF framework 26.5.2', async () => {
+    const generator = new PipelineGenerator();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
+    const configPath = path.join(tempDir, 'version-config.yaml');
+    const outputDir = path.join(tempDir, 'generated-app');
+    fs.writeFileSync(configPath, `version: 2
+appName: VersionApp
+basePackage: com.example.versionapp
+transport: GRPC
+runtimeLayout: MODULAR
+messages:
+  Request:
+    fields:
+      - number: 1
+        name: id
+        type: uuid
+  Response:
+    fields:
+      - number: 1
+        name: status
+        type: string
+steps:
+  - name: Check Version
+    cardinality: ONE_TO_ONE
+    inputTypeName: Request
+    outputTypeName: Response
+`);
+
+    await generator.generateFromConfig(configPath, outputDir);
+
+    const pomPaths = [
+      path.join(outputDir, 'pom.xml'),
+      path.join(outputDir, 'common', 'pom.xml'),
+      path.join(outputDir, 'check-version-svc', 'pom.xml'),
+      path.join(outputDir, 'orchestrator-svc', 'pom.xml')
+    ];
+
+    for (const pomPath of pomPaths) {
+      const pom = fs.readFileSync(pomPath, 'utf8');
+      expect(pom).toContain('<version>26.5.2</version>');
+      expect(pom).not.toContain('<version>26.2.2</version>');
+    }
+  });
+
   test('generateFromConfig emits protobuf map accessors for map fields', async () => {
     const generator = new PipelineGenerator();
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
