@@ -38,11 +38,27 @@ export function assertDerivedConfigInvariants(config: DerivedConfig): void {
   }
 
   const knownMessages = new Set(messageEntries.map(([name]) => name));
+  const unionEntries = Object.entries(config.unions || {});
+  const knownUnions = new Set(unionEntries.map(([name]) => name));
+  for (const [unionName, definition] of unionEntries) {
+    const variants = Object.entries(definition?.variants || {});
+    if (variants.length === 0) {
+      throw new DerivedConfigValidationError(`Union '${unionName}' must define at least one variant.`);
+    }
+    for (const [variantName, variant] of variants) {
+      if (!knownMessages.has(variant.type)) {
+        throw new DerivedConfigValidationError(
+          `Union '${unionName}' variant '${variantName}' references unknown message type '${variant.type}'.`
+        );
+      }
+    }
+  }
+  const knownBoundaryTypes = new Set([...knownMessages, ...knownUnions]);
   for (const step of config.steps || []) {
-    if (!knownMessages.has(step.inputTypeName)) {
+    if (!knownBoundaryTypes.has(step.inputTypeName)) {
       throw new DerivedConfigValidationError(`Step '${step.name}' references unknown input type '${step.inputTypeName}'.`);
     }
-    if (!knownMessages.has(step.outputTypeName)) {
+    if (!knownBoundaryTypes.has(step.outputTypeName)) {
       throw new DerivedConfigValidationError(`Step '${step.name}' references unknown output type '${step.outputTypeName}'.`);
     }
     validateAwaitStep(config, step);

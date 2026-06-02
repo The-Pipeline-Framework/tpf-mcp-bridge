@@ -1,12 +1,9 @@
 package {{basePackage}}.common.domain;
 
-import jakarta.persistence.Entity;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonTypeName;
 import java.io.Serializable;
 import java.util.UUID;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 {{#if hasDateFields}}
 import java.time.LocalDate;
@@ -47,16 +44,12 @@ import java.util.List;
 import java.util.Map;
 {{/if}}
 
-@Setter
-@Getter
-@Entity
-@NoArgsConstructor
-@AllArgsConstructor
-public class {{className}} extends BaseEntity implements Serializable {
-
+@JsonTypeName("{{name}}")
+@JsonIgnoreProperties(ignoreUnknown = true)
+public final class {{typeName}} extends BaseEntity implements {{unionName}}, Serializable {
 {{#each fields}}
 {{#unless (isIdField this.name)}}
-  public {{{this.type}}} {{this.name}};
+  public {{{this.type}}} {{this.javaName}};
 {{/unless}}
 {{/each}}
 }

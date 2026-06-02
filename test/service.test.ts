@@ -18,7 +18,7 @@ import {
   scaffoldFromBriefTool,
 } from "../src/index.js";
 import { InMemoryArtifactStore, InMemorySessionStore, LocalFileArtifactStore } from "../src/storage.js";
-import { validateDerivedConfig } from "../src/template-bridge.js";
+import { generateScaffoldZip, validateDerivedConfig } from "../src/template-bridge.js";
 import { BriefSessionDurableObject, InMemoryKv, InMemoryR2Bucket, handleWorkerRequest } from "../src/worker.js";
 import type { DerivedConfig, PlannerDraft, SessionResult, SessionStartInput, SessionState } from "../src/types.js";
 
@@ -541,6 +541,7 @@ test("answer_contract_questions resolves onboarding contract ambiguity and enabl
   assert.ok(fileNames.includes("pom.xml"));
   assert.ok(fileNames.includes("config/pipeline.yaml"));
   assert.ok(fileNames.includes("config/pipeline.runtime.yaml"));
+  assert.ok(!fileNames.includes("pipeline-config.yaml"));
   assert.ok(!fileNames.some((name) => name.startsWith("config/runtime-mapping/")));
   assert.ok(fileNames.every((name) => name.length < 240));
 
@@ -746,6 +747,35 @@ test("session generation uses the same derived-config validation gate as local g
     () => service.generateScaffold({ sessionId: "invalid-session" }),
     /duplicate field 'id'/
   );
+});
+
+test("shared scaffold ZIP includes REST await union DTO and mapper helpers", async () => {
+  const config: DerivedConfig = buildRestaurantApprovalUnionConfig();
+  const zipBytes = await generateScaffoldZip(config);
+  const zip = await JSZip.loadAsync(zipBytes);
+  const fileNames = Object.keys(zip.files);
+  const commonRoot = "common/src/main/java/com/example/restaurantapproval/common";
+
+  assert.ok(fileNames.includes("config/pipeline.yaml"));
+  assert.ok(!fileNames.includes("pipeline-config.yaml"));
+  assert.ok(fileNames.includes(`${commonRoot}/dto/RestaurantDecisionDto.java`));
+  assert.ok(fileNames.includes(`${commonRoot}/dto/RestaurantDecisionDtoJsonSerializer.java`));
+  assert.ok(fileNames.includes(`${commonRoot}/dto/RestaurantDecisionDtoJsonDeserializer.java`));
+  assert.ok(fileNames.includes(`${commonRoot}/mapper/RestaurantDecisionMapper.java`));
+  assert.ok(fileNames.includes(`${commonRoot}/domain/RestaurantDecision.java`));
+  assert.ok(fileNames.includes(`${commonRoot}/domain/RestaurantOrderAccepted.java`));
+
+  const mapper = await zip.file(`${commonRoot}/mapper/RestaurantDecisionMapper.java`)!.async("string");
+  const serializer = await zip.file(`${commonRoot}/dto/RestaurantDecisionDtoJsonSerializer.java`)!.async("string");
+  const service = await zip.file(
+    "await-restaurant-decision-svc/src/main/java/com/example/restaurantapproval/await_restaurant_decision/service/ProcessAwaitRestaurantDecisionService.java"
+  )!.async("string");
+
+  assert.match(mapper, /implements Mapper<RestaurantDecision, RestaurantDecisionDto>/);
+  assert.match(mapper, /external instanceof RestaurantOrderAcceptedDto source/);
+  assert.match(mapper, /domain instanceof RestaurantOrderDeclined source/);
+  assert.match(serializer, /gen\.writeStringField\("type", "accepted"\)/);
+  assert.match(service, /RestaurantDecision output = null;/);
 });
 
 test("planner drafts that materialize persistence as business steps are rejected", async () => {
@@ -2055,6 +2085,85 @@ function assertNoDuplicateMessageFields(config: DerivedConfig): void {
       seen.add(field.name);
     }
   }
+}
+
+function buildRestaurantApprovalUnionConfig(): DerivedConfig {
+  return {
+    version: 2,
+    appName: "RestaurantApproval",
+    basePackage: "com.example.restaurantapproval",
+    transport: "REST",
+    platform: "COMPUTE",
+    runtimeLayout: "MONOLITH",
+    messages: {
+      PendingRestaurantApproval: {
+        fields: [
+          { number: 1, name: "orderId", type: "uuid" },
+          { number: 2, name: "restaurantName", type: "string" }
+        ]
+      },
+      RestaurantOrderAccepted: {
+        fields: [
+          { number: 1, name: "orderId", type: "uuid" },
+          { number: 2, name: "decidedAt", type: "timestamp" },
+          { number: 3, name: "note", type: "string" }
+        ]
+      },
+      RestaurantOrderDeclined: {
+        fields: [
+          { number: 1, name: "orderId", type: "uuid" },
+          { number: 2, name: "decidedAt", type: "timestamp" },
+          { number: 3, name: "note", type: "string" },
+          { number: 4, name: "declineReason", type: "string" }
+        ]
+      },
+      TerminalOrderState: {
+        fields: [
+          { number: 1, name: "orderId", type: "uuid" },
+          { number: 2, name: "outcome", type: "string" }
+        ]
+      }
+    },
+    unions: {
+      RestaurantDecision: {
+        variants: {
+          accepted: {
+            number: 1,
+            type: "RestaurantOrderAccepted"
+          },
+          declined: {
+            number: 2,
+            type: "RestaurantOrderDeclined"
+          }
+        }
+      }
+    },
+    steps: [
+      {
+        name: "Await Restaurant Decision",
+        kind: "await",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "PendingRestaurantApproval",
+        outputTypeName: "RestaurantDecision",
+        timeout: "PT30M",
+        idempotencyKeyFields: ["orderId"],
+        await: {
+          correlation: {
+            strategy: "interactionId"
+          },
+          transport: {
+            type: "interaction-api"
+          }
+        }
+      },
+      {
+        name: "Finalize Restaurant Decision",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "RestaurantDecision",
+        outputTypeName: "TerminalOrderState"
+      }
+    ]
+  };
 }
 
 async function readJson<T>(response: Response): Promise<T> {

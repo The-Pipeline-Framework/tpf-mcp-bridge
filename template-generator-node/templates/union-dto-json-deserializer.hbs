@@ -1,0 +1,50 @@
+package {{basePackage}}.common.dto;
+
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.JsonDeserializer;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.io.IOException;
+
+public final class {{dtoName}}JsonDeserializer extends JsonDeserializer<{{dtoName}}> {
+
+  @Override
+  public {{dtoName}} deserialize(JsonParser parser, DeserializationContext context)
+      throws IOException {
+    JsonNode node = parser.getCodec().readTree(parser);
+    String type = resolveType(node);
+{{#each variants}}
+    if ("{{name}}".equals(type)) {
+      return parser.getCodec().treeToValue(payload(node, "{{name}}"), {{dtoTypeName}}.class);
+    }
+{{/each}}
+    throw new IOException("Unsupported {{dtoName}} type: " + type);
+  }
+
+  private String resolveType(JsonNode node) {
+    String type = node.path("type").asText(null);
+    if (type != null && !type.isBlank()) {
+      return type;
+    }
+{{#each variants}}
+    if (node.hasNonNull("{{name}}")) {
+      return "{{name}}";
+    }
+{{/each}}
+    return null;
+  }
+
+  private JsonNode payload(JsonNode node, String name) {
+    JsonNode wrapped = node.get(name);
+    if (wrapped != null && !wrapped.isNull()) {
+      return wrapped;
+    }
+    if (node instanceof ObjectNode objectNode) {
+      ObjectNode copy = objectNode.deepCopy();
+      copy.remove("type");
+      return copy;
+    }
+    return node;
+  }
+}

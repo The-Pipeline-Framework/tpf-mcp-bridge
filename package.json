@@ -48,6 +48,7 @@
     "start:worker": "wrangler dev src/worker.ts",
     "deploy:worker": "wrangler deploy src/worker.ts",
     "sync:pipeline-schema": "node scripts/sync-pipeline-schema.mjs",
+    "smoke:rest-await-union": "node scripts/smoke-rest-await-union-compile.mjs",
     "test": "npm run build && node --test dist/test/*.test.js"
   },
   "dependencies": {

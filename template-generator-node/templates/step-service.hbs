@@ -33,7 +33,11 @@ public class Process{{serviceNamePascal}}Service
     // TODO implement business logic here
     logger.infof("Processing input: %s", input);
     
+    {{#if outputIsUnion}}
+    {{outputTypeName}} output = null;
+    {{else}}
     {{outputTypeName}} output = new {{outputTypeName}}();
+    {{/if}}
     // Set output fields based on input
     // TODO: Add actual business logic here
     

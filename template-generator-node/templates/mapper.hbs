@@ -1,72 +1,38 @@
 package {{basePackage}}.common.mapper;
 
+import jakarta.enterprise.context.ApplicationScoped;
 import {{basePackage}}.common.domain.{{domainClass}};
 import {{basePackage}}.common.dto.{{dtoClass}};
-import {{grpcClass}};
-{{#if hasGrpcMapFields}}
-import java.util.LinkedHashMap;
-import org.mapstruct.AfterMapping;
-{{/if}}
-import org.mapstruct.BeanMapping;
-{{#if hasGrpcMapFields}}
-import org.mapstruct.Mapping;
-import org.mapstruct.MappingTarget;
-{{/if}}
-import org.mapstruct.Mapper;
-import org.mapstruct.ReportingPolicy;
-import org.mapstruct.factory.Mappers;
+import org.pipelineframework.mapper.Mapper;
 
-@SuppressWarnings("unused")
-@Mapper(
-    componentModel = "jakarta",
-    uses = {CommonConverters.class},
-    unmappedTargetPolicy = ReportingPolicy.WARN)
-public interface {{className}}Mapper extends org.pipelineframework.mapper.Mapper<{{grpcClass}}.{{className}}, {{dtoClass}}, {{domainClass}}> {
-
-  {{className}}Mapper INSTANCE = Mappers.getMapper( {{className}}Mapper.class );
-
-  // Domain ↔ DTO
-  @Override
-  {{dtoClass}} toDto({{domainClass}} entity);
+@ApplicationScoped
+public class {{className}}Mapper implements Mapper<{{domainClass}}, {{dtoClass}}> {
 
   @Override
-  {{domainClass}} fromDto({{dtoClass}} dto);
-
-  // DTO ↔ gRPC
-  @BeanMapping(unmappedTargetPolicy = ReportingPolicy.IGNORE)
-  {{#each grpcMapFields}}
-  @Mapping(target = "{{javaName}}", ignore = true)
-  {{/each}}
-  @Override
-  {{grpcClass}}.{{className}} toGrpc({{dtoClass}} dto);
-
-  {{#each grpcMapFields}}
-  @Mapping(target = "{{javaName}}", ignore = true)
-  {{/each}}
-  @Override
-  {{dtoClass}} fromGrpc({{grpcClass}}.{{className}} grpc);
-
-{{#if hasGrpcMapFields}}
-  @AfterMapping
-  default void putGrpcMapFields({{dtoClass}} dto, @MappingTarget {{grpcClass}}.{{className}}.Builder builder) {
-    if (dto == null) {
-      return;
+  public {{domainClass}} fromExternal({{dtoClass}} external) {
+    if (external == null) {
+      return null;
     }
-    {{#each grpcMapFields}}
-    if (dto.get{{dtoAccessorSuffix}}() != null) {
-      builder.putAll{{protoAccessorSuffix}}(dto.get{{dtoAccessorSuffix}}());
-    }
-    {{/each}}
+    {{domainClass}} target = new {{domainClass}}();
+{{#each fields}}
+{{#unless (isIdField this.name)}}
+    target.{{javaName}} = external.{{javaName}};
+{{/unless}}
+{{/each}}
+    return target;
   }
 
-  @AfterMapping
-  default void putDtoMapFields({{grpcClass}}.{{className}} grpc, @MappingTarget {{dtoClass}}.{{dtoClass}}Builder builder) {
-    if (grpc == null) {
-      return;
+  @Override
+  public {{dtoClass}} toExternal({{domainClass}} domain) {
+    if (domain == null) {
+      return null;
     }
-    {{#each grpcMapFields}}
-    builder.{{javaName}}(new LinkedHashMap<>(grpc.get{{protoAccessorSuffix}}Map()));
-    {{/each}}
+    {{dtoClass}} target = new {{dtoClass}}();
+{{#each fields}}
+{{#unless (isIdField this.name)}}
+    target.{{javaName}} = domain.{{javaName}};
+{{/unless}}
+{{/each}}
+    return target;
   }
-{{/if}}
 }

@@ -36,7 +36,7 @@ module.exports = {
 
   return "package "
     + container.escapeExpression(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : container.hooks.helperMissing),(typeof helper === "function" ? helper.call(depth0 != null ? depth0 : (container.nullContext || {}),{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":1,"column":8},"end":{"line":1,"column":23}}}) : helper)))
-    + ".common.domain;\n\nimport io.quarkus.hibernate.reactive.panache.PanacheEntityBase;\nimport jakarta.persistence.Column;\nimport jakarta.persistence.Id;\nimport jakarta.persistence.MappedSuperclass;\nimport jakarta.persistence.PrePersist;\nimport java.util.UUID;\nimport lombok.Getter;\nimport lombok.Setter;\n\n@Setter\n@Getter\n@MappedSuperclass\npublic abstract class BaseEntity extends PanacheEntityBase {\n\n  @Id\n  @Column(name = \"id\", updatable = false, nullable = false)\n  public UUID id;\n\n  public BaseEntity() {\n    id = UUID.randomUUID();\n  }\n\n  @PrePersist\n  protected void ensureId() {\n    if (id == null) {\n      id = UUID.randomUUID();\n    }\n  }\n}\n";
+    + ".common.domain;\n\nimport jakarta.persistence.Column;\nimport jakarta.persistence.Id;\nimport jakarta.persistence.MappedSuperclass;\nimport jakarta.persistence.PrePersist;\nimport java.util.UUID;\nimport lombok.Getter;\nimport lombok.Setter;\n\n@Setter\n@Getter\n@MappedSuperclass\npublic abstract class BaseEntity {\n\n  @Id\n  @Column(name = \"id\", updatable = false, nullable = false)\n  public UUID id;\n\n  public BaseEntity() {\n    id = UUID.randomUUID();\n  }\n\n  @PrePersist\n  protected void ensureId() {\n    if (id == null) {\n      id = UUID.randomUUID();\n    }\n  }\n}\n";
 },"useData":true},
   "beans-xml": {"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
     return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!--\n  ~ Copyright (c) 2023-2025 Mariano Barcia\n  ~\n  ~ Licensed under the Apache License, Version 2.0 (the \"License\");\n  ~ you may not use this file except in compliance with the License.\n  ~ You may obtain a copy of the License at\n  ~\n  ~     http://www.apache.org/licenses/LICENSE-2.0\n  ~\n  ~ Unless required by applicable law or agreed to in writing, software\n  ~ distributed under the License is distributed on an \"AS IS\" BASIS,\n  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n  ~ See the License for the specific language governing permissions and\n  ~ limitations under the License.\n  -->\n<beans xmlns=\"https://jakarta.ee/xml/ns/jakartaee\"\n        xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n        xsi:schemaLocation=\"https://jakarta.ee/xml/ns/jakartaee\n                            https://jakarta.ee/xml/ns/jakartaee/beans_3_0.xsd\"\n       bean-discovery-mode=\"annotated\">\n</beans>\n";
@@ -176,7 +176,7 @@ module.exports = {
         return undefined
     };
 
-  return ((stack1 = lookupProperty(helpers,"unless").call(alias1,(lookupProperty(helpers,"isIdField")||(depth0 && lookupProperty(depth0,"isIdField"))||container.hooks.helperMissing).call(alias1,(depth0 != null ? lookupProperty(depth0,"name") : depth0),{"name":"isIdField","hash":{},"data":data,"loc":{"start":{"line":62,"column":10},"end":{"line":62,"column":31}}}),{"name":"unless","hash":{},"fn":container.program(11, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":62,"column":0},"end":{"line":64,"column":11}}})) != null ? stack1 : "");
+  return ((stack1 = lookupProperty(helpers,"unless").call(alias1,(lookupProperty(helpers,"isIdField")||(depth0 && lookupProperty(depth0,"isIdField"))||container.hooks.helperMissing).call(alias1,(depth0 != null ? lookupProperty(depth0,"name") : depth0),{"name":"isIdField","hash":{},"data":data,"loc":{"start":{"line":58,"column":10},"end":{"line":58,"column":31}}}),{"name":"unless","hash":{},"fn":container.program(11, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":58,"column":0},"end":{"line":60,"column":11}}})) != null ? stack1 : "");
 },"11":function(container,depth0,helpers,partials,data) {
     var stack1, alias1=container.lambda, lookupProperty = container.lookupProperty || function(parent, propertyName) {
         if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
@@ -200,22 +200,22 @@ module.exports = {
 
   return "package "
     + alias4(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":1,"column":8},"end":{"line":1,"column":23}}}) : helper)))
-    + ".common.domain;\n\nimport io.quarkus.hibernate.reactive.panache.PanacheEntityBase;\nimport jakarta.persistence.Column;\nimport jakarta.persistence.Entity;\nimport jakarta.persistence.Id;\nimport jakarta.persistence.MappedSuperclass;\nimport java.io.Serializable;\nimport java.util.UUID;\nimport lombok.AllArgsConstructor;\nimport lombok.Getter;\nimport lombok.NoArgsConstructor;\nimport lombok.Setter;\n\n"
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasDateFields") : depth0),{"name":"if","hash":{},"fn":container.program(0, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":15,"column":0},"end":{"line":23,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasBigIntegerFields") : depth0),{"name":"if","hash":{},"fn":container.program(1, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":24,"column":0},"end":{"line":26,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasBigDecimalFields") : depth0),{"name":"if","hash":{},"fn":container.program(2, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":27,"column":0},"end":{"line":29,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasCurrencyFields") : depth0),{"name":"if","hash":{},"fn":container.program(3, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":30,"column":0},"end":{"line":32,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasPathFields") : depth0),{"name":"if","hash":{},"fn":container.program(4, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":33,"column":0},"end":{"line":35,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasNetFields") : depth0),{"name":"if","hash":{},"fn":container.program(5, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":36,"column":0},"end":{"line":39,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasIoFields") : depth0),{"name":"if","hash":{},"fn":container.program(6, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":40,"column":0},"end":{"line":42,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasAtomicFields") : depth0),{"name":"if","hash":{},"fn":container.program(7, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":43,"column":0},"end":{"line":46,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasUtilFields") : depth0),{"name":"if","hash":{},"fn":container.program(8, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":47,"column":0},"end":{"line":49,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasMapFields") : depth0),{"name":"if","hash":{},"fn":container.program(9, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":50,"column":0},"end":{"line":52,"column":7}}})) != null ? stack1 : "")
+    + ".common.domain;\n\nimport jakarta.persistence.Entity;\nimport java.io.Serializable;\nimport java.util.UUID;\nimport lombok.AllArgsConstructor;\nimport lombok.Getter;\nimport lombok.NoArgsConstructor;\nimport lombok.Setter;\n\n"
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasDateFields") : depth0),{"name":"if","hash":{},"fn":container.program(0, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":11,"column":0},"end":{"line":19,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasBigIntegerFields") : depth0),{"name":"if","hash":{},"fn":container.program(1, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":20,"column":0},"end":{"line":22,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasBigDecimalFields") : depth0),{"name":"if","hash":{},"fn":container.program(2, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":23,"column":0},"end":{"line":25,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasCurrencyFields") : depth0),{"name":"if","hash":{},"fn":container.program(3, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":26,"column":0},"end":{"line":28,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasPathFields") : depth0),{"name":"if","hash":{},"fn":container.program(4, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":29,"column":0},"end":{"line":31,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasNetFields") : depth0),{"name":"if","hash":{},"fn":container.program(5, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":32,"column":0},"end":{"line":35,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasIoFields") : depth0),{"name":"if","hash":{},"fn":container.program(6, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":36,"column":0},"end":{"line":38,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasAtomicFields") : depth0),{"name":"if","hash":{},"fn":container.program(7, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":39,"column":0},"end":{"line":42,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasUtilFields") : depth0),{"name":"if","hash":{},"fn":container.program(8, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":43,"column":0},"end":{"line":45,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasMapFields") : depth0),{"name":"if","hash":{},"fn":container.program(9, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":46,"column":0},"end":{"line":48,"column":7}}})) != null ? stack1 : "")
     + "\n@Setter\n@Getter\n@Entity\n@NoArgsConstructor\n@AllArgsConstructor\npublic class "
-    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":59,"column":13},"end":{"line":59,"column":26}}}) : helper)))
+    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":55,"column":13},"end":{"line":55,"column":26}}}) : helper)))
     + " extends BaseEntity implements Serializable {\n\n"
-    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"fields") : depth0),{"name":"each","hash":{},"fn":container.program(10, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":61,"column":0},"end":{"line":65,"column":9}}})) != null ? stack1 : "")
-    + "}";
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"fields") : depth0),{"name":"each","hash":{},"fn":container.program(10, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":57,"column":0},"end":{"line":61,"column":9}}})) != null ? stack1 : "")
+    + "}\n";
 },"useData":true},
   "dto": {"0":function(container,depth0,helpers,partials,data) {
     return "import java.time.LocalDate;\nimport java.time.LocalDateTime;\nimport java.time.OffsetDateTime;\nimport java.time.ZonedDateTime;\nimport java.time.Instant;\nimport java.time.Duration;\nimport java.time.Period;\n";
@@ -238,7 +238,7 @@ module.exports = {
 },"9":function(container,depth0,helpers,partials,data) {
     return "import java.util.Map;\n";
 },"10":function(container,depth0,helpers,partials,data) {
-    return "  UUID id;\n";
+    return "  public UUID id;\n";
 },"11":function(container,depth0,helpers,partials,data) {
     var stack1, lookupProperty = container.lookupProperty || function(parent, propertyName) {
         if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
@@ -247,10 +247,10 @@ module.exports = {
         return undefined
     };
 
-  return "  "
+  return "  public "
     + ((stack1 = container.lambda((depth0 != null ? lookupProperty(depth0,"type") : depth0), depth0)) != null ? stack1 : "")
     + " "
-    + container.escapeExpression((lookupProperty(helpers,"sanitizeJavaIdentifier")||(depth0 && lookupProperty(depth0,"sanitizeJavaIdentifier"))||container.hooks.helperMissing).call(depth0 != null ? depth0 : (container.nullContext || {}),(depth0 != null ? lookupProperty(depth0,"name") : depth0),{"name":"sanitizeJavaIdentifier","hash":{},"data":data,"loc":{"start":{"line":54,"column":18},"end":{"line":54,"column":54}}}))
+    + container.escapeExpression((lookupProperty(helpers,"sanitizeJavaIdentifier")||(depth0 && lookupProperty(depth0,"sanitizeJavaIdentifier"))||container.hooks.helperMissing).call(depth0 != null ? depth0 : (container.nullContext || {}),(depth0 != null ? lookupProperty(depth0,"name") : depth0),{"name":"sanitizeJavaIdentifier","hash":{},"data":data,"loc":{"start":{"line":50,"column":25},"end":{"line":50,"column":61}}}))
     + ";\n";
 },"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
     var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
@@ -262,29 +262,23 @@ module.exports = {
 
   return "package "
     + alias4(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":1,"column":8},"end":{"line":1,"column":23}}}) : helper)))
-    + ".common.dto;\n\nimport com.fasterxml.jackson.databind.annotation.JsonDeserialize;\nimport com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder;\nimport java.util.UUID;\nimport lombok.*;\n\n"
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasDateFields") : depth0),{"name":"if","hash":{},"fn":container.program(0, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":8,"column":0},"end":{"line":16,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasBigIntegerFields") : depth0),{"name":"if","hash":{},"fn":container.program(1, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":17,"column":0},"end":{"line":19,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasBigDecimalFields") : depth0),{"name":"if","hash":{},"fn":container.program(2, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":20,"column":0},"end":{"line":22,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasCurrencyFields") : depth0),{"name":"if","hash":{},"fn":container.program(3, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":23,"column":0},"end":{"line":25,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasPathFields") : depth0),{"name":"if","hash":{},"fn":container.program(4, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":26,"column":0},"end":{"line":28,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasNetFields") : depth0),{"name":"if","hash":{},"fn":container.program(5, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":29,"column":0},"end":{"line":32,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasIoFields") : depth0),{"name":"if","hash":{},"fn":container.program(6, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":33,"column":0},"end":{"line":35,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasAtomicFields") : depth0),{"name":"if","hash":{},"fn":container.program(7, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":36,"column":0},"end":{"line":39,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasUtilFields") : depth0),{"name":"if","hash":{},"fn":container.program(8, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":40,"column":0},"end":{"line":42,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasMapFields") : depth0),{"name":"if","hash":{},"fn":container.program(9, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":43,"column":0},"end":{"line":45,"column":7}}})) != null ? stack1 : "")
-    + "\n@Value\n@Builder\n@JsonDeserialize(builder = "
-    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":49,"column":27},"end":{"line":49,"column":40}}}) : helper)))
-    + "."
-    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":49,"column":41},"end":{"line":49,"column":54}}}) : helper)))
-    + "Builder.class)\npublic class "
-    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":50,"column":13},"end":{"line":50,"column":26}}}) : helper)))
+    + ".common.dto;\n\nimport com.fasterxml.jackson.annotation.JsonIgnoreProperties;\nimport java.util.UUID;\n\n"
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasDateFields") : depth0),{"name":"if","hash":{},"fn":container.program(0, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":6,"column":0},"end":{"line":14,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasBigIntegerFields") : depth0),{"name":"if","hash":{},"fn":container.program(1, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":15,"column":0},"end":{"line":17,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasBigDecimalFields") : depth0),{"name":"if","hash":{},"fn":container.program(2, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":18,"column":0},"end":{"line":20,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasCurrencyFields") : depth0),{"name":"if","hash":{},"fn":container.program(3, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":21,"column":0},"end":{"line":23,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasPathFields") : depth0),{"name":"if","hash":{},"fn":container.program(4, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":24,"column":0},"end":{"line":26,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasNetFields") : depth0),{"name":"if","hash":{},"fn":container.program(5, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":27,"column":0},"end":{"line":30,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasIoFields") : depth0),{"name":"if","hash":{},"fn":container.program(6, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":31,"column":0},"end":{"line":33,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasAtomicFields") : depth0),{"name":"if","hash":{},"fn":container.program(7, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":34,"column":0},"end":{"line":37,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasUtilFields") : depth0),{"name":"if","hash":{},"fn":container.program(8, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":38,"column":0},"end":{"line":40,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasMapFields") : depth0),{"name":"if","hash":{},"fn":container.program(9, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":41,"column":0},"end":{"line":43,"column":7}}})) != null ? stack1 : "")
+    + "\n@JsonIgnoreProperties(ignoreUnknown = true)\npublic class "
+    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":46,"column":13},"end":{"line":46,"column":26}}}) : helper)))
     + " {\n"
-    + ((stack1 = lookupProperty(helpers,"unless").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasIdField") : depth0),{"name":"unless","hash":{},"fn":container.program(10, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":51,"column":0},"end":{"line":52,"column":11}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"fields") : depth0),{"name":"each","hash":{},"fn":container.program(11, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":53,"column":0},"end":{"line":55,"column":9}}})) != null ? stack1 : "")
-    + "\n  // Lombok will generate the builder, but Jackson needs to know how to interpret it\n  @JsonPOJOBuilder(withPrefix = \"\")\n  public static class "
-    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":59,"column":22},"end":{"line":59,"column":35}}}) : helper)))
-    + "Builder {}\n}";
+    + ((stack1 = lookupProperty(helpers,"unless").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasIdField") : depth0),{"name":"unless","hash":{},"fn":container.program(10, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":47,"column":0},"end":{"line":48,"column":11}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"fields") : depth0),{"name":"each","hash":{},"fn":container.program(11, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":49,"column":0},"end":{"line":51,"column":9}}})) != null ? stack1 : "")
+    + "}\n";
 },"useData":true},
   "generate-dev-certs.sh": {"0":function(container,depth0,helpers,partials,data) {
     return " persistence-svc";
@@ -320,48 +314,37 @@ module.exports = {
     return "# Maven\ntarget/\npom.xml.tag\npom.xml.releaseBackup\npom.xml.versionsBackup\npom.xml.next\nrelease.properties\n.codeclimate.yml\n\n# Compilation\n*.class\n*.war\n*.jar\n*.ear\n\n# Log files\n*.log\n.log\n\n# IDE\n.idea/\n*.iws\n*.iml\n*.ipr\n*.sw?\n*~\n.#*\n.DS_Store\n.classpath\n.project\n.settings/\n.vscode/\n\n# Temporary files\n.tmp\ntemp/\n\n# OS Generated\n.Spotlight-V100\n.Trashes\nehthumbs.db\nIcon?\nThumbs.db\n\n# Docker\n.docker/\n\n# Generated certificates\n**/server-keystore.jks\n**/client-truststore.jks\n**/quarkus-cert.pem\n**/quarkus-key.pem";
 },"useData":true},
   "mapper": {"0":function(container,depth0,helpers,partials,data) {
-    return "import java.util.LinkedHashMap;\nimport org.mapstruct.AfterMapping;\n";
+    var stack1, alias1=depth0 != null ? depth0 : (container.nullContext || {}), lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return ((stack1 = lookupProperty(helpers,"unless").call(alias1,(lookupProperty(helpers,"isIdField")||(depth0 && lookupProperty(depth0,"isIdField"))||container.hooks.helperMissing).call(alias1,(depth0 != null ? lookupProperty(depth0,"name") : depth0),{"name":"isIdField","hash":{},"data":data,"loc":{"start":{"line":18,"column":10},"end":{"line":18,"column":31}}}),{"name":"unless","hash":{},"fn":container.program(1, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":18,"column":0},"end":{"line":20,"column":11}}})) != null ? stack1 : "");
 },"1":function(container,depth0,helpers,partials,data) {
-    return "import org.mapstruct.Mapping;\nimport org.mapstruct.MappingTarget;\n";
+    var helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "    target."
+    + alias4(((helper = (helper = lookupProperty(helpers,"javaName") || (depth0 != null ? lookupProperty(depth0,"javaName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"javaName","hash":{},"data":data,"loc":{"start":{"line":19,"column":11},"end":{"line":19,"column":23}}}) : helper)))
+    + " = external."
+    + alias4(((helper = (helper = lookupProperty(helpers,"javaName") || (depth0 != null ? lookupProperty(depth0,"javaName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"javaName","hash":{},"data":data,"loc":{"start":{"line":19,"column":35},"end":{"line":19,"column":47}}}) : helper)))
+    + ";\n";
 },"2":function(container,depth0,helpers,partials,data) {
-    var helper, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+    var stack1, alias1=depth0 != null ? depth0 : (container.nullContext || {}), lookupProperty = container.lookupProperty || function(parent, propertyName) {
         if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
           return parent[propertyName];
         }
         return undefined
     };
 
-  return "  @Mapping(target = \""
-    + container.escapeExpression(((helper = (helper = lookupProperty(helpers,"javaName") || (depth0 != null ? lookupProperty(depth0,"javaName") : depth0)) != null ? helper : container.hooks.helperMissing),(typeof helper === "function" ? helper.call(depth0 != null ? depth0 : (container.nullContext || {}),{"name":"javaName","hash":{},"data":data,"loc":{"start":{"line":38,"column":21},"end":{"line":38,"column":33}}}) : helper)))
-    + "\", ignore = true)\n";
+  return ((stack1 = lookupProperty(helpers,"unless").call(alias1,(lookupProperty(helpers,"isIdField")||(depth0 && lookupProperty(depth0,"isIdField"))||container.hooks.helperMissing).call(alias1,(depth0 != null ? lookupProperty(depth0,"name") : depth0),{"name":"isIdField","hash":{},"data":data,"loc":{"start":{"line":32,"column":10},"end":{"line":32,"column":31}}}),{"name":"unless","hash":{},"fn":container.program(3, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":32,"column":0},"end":{"line":34,"column":11}}})) != null ? stack1 : "");
 },"3":function(container,depth0,helpers,partials,data) {
-    var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
-        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
-          return parent[propertyName];
-        }
-        return undefined
-    };
-
-  return "  @AfterMapping\n  default void putGrpcMapFields("
-    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":51,"column":32},"end":{"line":51,"column":44}}}) : helper)))
-    + " dto, @MappingTarget "
-    + alias4(((helper = (helper = lookupProperty(helpers,"grpcClass") || (depth0 != null ? lookupProperty(depth0,"grpcClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"grpcClass","hash":{},"data":data,"loc":{"start":{"line":51,"column":65},"end":{"line":51,"column":78}}}) : helper)))
-    + "."
-    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":51,"column":79},"end":{"line":51,"column":92}}}) : helper)))
-    + ".Builder builder) {\n    if (dto == null) {\n      return;\n    }\n"
-    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"grpcMapFields") : depth0),{"name":"each","hash":{},"fn":container.program(4, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":55,"column":4},"end":{"line":59,"column":13}}})) != null ? stack1 : "")
-    + "  }\n\n  @AfterMapping\n  default void putDtoMapFields("
-    + alias4(((helper = (helper = lookupProperty(helpers,"grpcClass") || (depth0 != null ? lookupProperty(depth0,"grpcClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"grpcClass","hash":{},"data":data,"loc":{"start":{"line":63,"column":31},"end":{"line":63,"column":44}}}) : helper)))
-    + "."
-    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":63,"column":45},"end":{"line":63,"column":58}}}) : helper)))
-    + " grpc, @MappingTarget "
-    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":63,"column":80},"end":{"line":63,"column":92}}}) : helper)))
-    + "."
-    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":63,"column":93},"end":{"line":63,"column":105}}}) : helper)))
-    + "Builder builder) {\n    if (grpc == null) {\n      return;\n    }\n"
-    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"grpcMapFields") : depth0),{"name":"each","hash":{},"fn":container.program(5, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":67,"column":4},"end":{"line":69,"column":13}}})) != null ? stack1 : "")
-    + "  }\n";
-},"4":function(container,depth0,helpers,partials,data) {
     var helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
         if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
           return parent[propertyName];
@@ -369,26 +352,11 @@ module.exports = {
         return undefined
     };
 
-  return "    if (dto.get"
-    + alias4(((helper = (helper = lookupProperty(helpers,"dtoAccessorSuffix") || (depth0 != null ? lookupProperty(depth0,"dtoAccessorSuffix") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoAccessorSuffix","hash":{},"data":data,"loc":{"start":{"line":56,"column":15},"end":{"line":56,"column":36}}}) : helper)))
-    + "() != null) {\n      builder.putAll"
-    + alias4(((helper = (helper = lookupProperty(helpers,"protoAccessorSuffix") || (depth0 != null ? lookupProperty(depth0,"protoAccessorSuffix") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"protoAccessorSuffix","hash":{},"data":data,"loc":{"start":{"line":57,"column":20},"end":{"line":57,"column":43}}}) : helper)))
-    + "(dto.get"
-    + alias4(((helper = (helper = lookupProperty(helpers,"dtoAccessorSuffix") || (depth0 != null ? lookupProperty(depth0,"dtoAccessorSuffix") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoAccessorSuffix","hash":{},"data":data,"loc":{"start":{"line":57,"column":51},"end":{"line":57,"column":72}}}) : helper)))
-    + "());\n    }\n";
-},"5":function(container,depth0,helpers,partials,data) {
-    var helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
-        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
-          return parent[propertyName];
-        }
-        return undefined
-    };
-
-  return "    builder."
-    + alias4(((helper = (helper = lookupProperty(helpers,"javaName") || (depth0 != null ? lookupProperty(depth0,"javaName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"javaName","hash":{},"data":data,"loc":{"start":{"line":68,"column":12},"end":{"line":68,"column":24}}}) : helper)))
-    + "(new LinkedHashMap<>(grpc.get"
-    + alias4(((helper = (helper = lookupProperty(helpers,"protoAccessorSuffix") || (depth0 != null ? lookupProperty(depth0,"protoAccessorSuffix") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"protoAccessorSuffix","hash":{},"data":data,"loc":{"start":{"line":68,"column":53},"end":{"line":68,"column":76}}}) : helper)))
-    + "Map()));\n";
+  return "    target."
+    + alias4(((helper = (helper = lookupProperty(helpers,"javaName") || (depth0 != null ? lookupProperty(depth0,"javaName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"javaName","hash":{},"data":data,"loc":{"start":{"line":33,"column":11},"end":{"line":33,"column":23}}}) : helper)))
+    + " = domain."
+    + alias4(((helper = (helper = lookupProperty(helpers,"javaName") || (depth0 != null ? lookupProperty(depth0,"javaName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"javaName","hash":{},"data":data,"loc":{"start":{"line":33,"column":33},"end":{"line":33,"column":45}}}) : helper)))
+    + ";\n";
 },"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
     var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
         if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
@@ -399,61 +367,41 @@ module.exports = {
 
   return "package "
     + alias4(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":1,"column":8},"end":{"line":1,"column":23}}}) : helper)))
-    + ".common.mapper;\n\nimport "
-    + alias4(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":3,"column":7},"end":{"line":3,"column":22}}}) : helper)))
-    + ".common.domain."
-    + alias4(((helper = (helper = lookupProperty(helpers,"domainClass") || (depth0 != null ? lookupProperty(depth0,"domainClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"domainClass","hash":{},"data":data,"loc":{"start":{"line":3,"column":37},"end":{"line":3,"column":52}}}) : helper)))
-    + ";\nimport "
+    + ".common.mapper;\n\nimport jakarta.enterprise.context.ApplicationScoped;\nimport "
     + alias4(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":4,"column":7},"end":{"line":4,"column":22}}}) : helper)))
-    + ".common.dto."
-    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":4,"column":34},"end":{"line":4,"column":46}}}) : helper)))
+    + ".common.domain."
+    + alias4(((helper = (helper = lookupProperty(helpers,"domainClass") || (depth0 != null ? lookupProperty(depth0,"domainClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"domainClass","hash":{},"data":data,"loc":{"start":{"line":4,"column":37},"end":{"line":4,"column":52}}}) : helper)))
     + ";\nimport "
-    + alias4(((helper = (helper = lookupProperty(helpers,"grpcClass") || (depth0 != null ? lookupProperty(depth0,"grpcClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"grpcClass","hash":{},"data":data,"loc":{"start":{"line":5,"column":7},"end":{"line":5,"column":20}}}) : helper)))
-    + ";\n"
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasGrpcMapFields") : depth0),{"name":"if","hash":{},"fn":container.program(0, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":6,"column":0},"end":{"line":9,"column":7}}})) != null ? stack1 : "")
-    + "import org.mapstruct.BeanMapping;\n"
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasGrpcMapFields") : depth0),{"name":"if","hash":{},"fn":container.program(1, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":11,"column":0},"end":{"line":14,"column":7}}})) != null ? stack1 : "")
-    + "import org.mapstruct.Mapper;\nimport org.mapstruct.ReportingPolicy;\nimport org.mapstruct.factory.Mappers;\n\n@SuppressWarnings(\"unused\")\n@Mapper(\n    componentModel = \"jakarta\",\n    uses = {CommonConverters.class},\n    unmappedTargetPolicy = ReportingPolicy.WARN)\npublic interface "
-    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":24,"column":17},"end":{"line":24,"column":30}}}) : helper)))
-    + "Mapper extends org.pipelineframework.mapper.Mapper<"
-    + alias4(((helper = (helper = lookupProperty(helpers,"grpcClass") || (depth0 != null ? lookupProperty(depth0,"grpcClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"grpcClass","hash":{},"data":data,"loc":{"start":{"line":24,"column":81},"end":{"line":24,"column":94}}}) : helper)))
-    + "."
-    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":24,"column":95},"end":{"line":24,"column":108}}}) : helper)))
+    + alias4(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":5,"column":7},"end":{"line":5,"column":22}}}) : helper)))
+    + ".common.dto."
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":5,"column":34},"end":{"line":5,"column":46}}}) : helper)))
+    + ";\nimport org.pipelineframework.mapper.Mapper;\n\n@ApplicationScoped\npublic class "
+    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":9,"column":13},"end":{"line":9,"column":26}}}) : helper)))
+    + "Mapper implements Mapper<"
+    + alias4(((helper = (helper = lookupProperty(helpers,"domainClass") || (depth0 != null ? lookupProperty(depth0,"domainClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"domainClass","hash":{},"data":data,"loc":{"start":{"line":9,"column":51},"end":{"line":9,"column":66}}}) : helper)))
     + ", "
-    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":24,"column":110},"end":{"line":24,"column":122}}}) : helper)))
-    + ", "
-    + alias4(((helper = (helper = lookupProperty(helpers,"domainClass") || (depth0 != null ? lookupProperty(depth0,"domainClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"domainClass","hash":{},"data":data,"loc":{"start":{"line":24,"column":124},"end":{"line":24,"column":139}}}) : helper)))
-    + "> {\n\n  "
-    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":26,"column":2},"end":{"line":26,"column":15}}}) : helper)))
-    + "Mapper INSTANCE = Mappers.getMapper( "
-    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":26,"column":52},"end":{"line":26,"column":65}}}) : helper)))
-    + "Mapper.class );\n\n  // Domain ↔ DTO\n  @Override\n  "
-    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":30,"column":2},"end":{"line":30,"column":14}}}) : helper)))
-    + " toDto("
-    + alias4(((helper = (helper = lookupProperty(helpers,"domainClass") || (depth0 != null ? lookupProperty(depth0,"domainClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"domainClass","hash":{},"data":data,"loc":{"start":{"line":30,"column":21},"end":{"line":30,"column":36}}}) : helper)))
-    + " entity);\n\n  @Override\n  "
-    + alias4(((helper = (helper = lookupProperty(helpers,"domainClass") || (depth0 != null ? lookupProperty(depth0,"domainClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"domainClass","hash":{},"data":data,"loc":{"start":{"line":33,"column":2},"end":{"line":33,"column":17}}}) : helper)))
-    + " fromDto("
-    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":33,"column":26},"end":{"line":33,"column":38}}}) : helper)))
-    + " dto);\n\n  // DTO ↔ gRPC\n  @BeanMapping(unmappedTargetPolicy = ReportingPolicy.IGNORE)\n"
-    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"grpcMapFields") : depth0),{"name":"each","hash":{},"fn":container.program(2, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":37,"column":2},"end":{"line":39,"column":11}}})) != null ? stack1 : "")
-    + "  @Override\n  "
-    + alias4(((helper = (helper = lookupProperty(helpers,"grpcClass") || (depth0 != null ? lookupProperty(depth0,"grpcClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"grpcClass","hash":{},"data":data,"loc":{"start":{"line":41,"column":2},"end":{"line":41,"column":15}}}) : helper)))
-    + "."
-    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":41,"column":16},"end":{"line":41,"column":29}}}) : helper)))
-    + " toGrpc("
-    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":41,"column":37},"end":{"line":41,"column":49}}}) : helper)))
-    + " dto);\n\n"
-    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"grpcMapFields") : depth0),{"name":"each","hash":{},"fn":container.program(2, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":43,"column":2},"end":{"line":45,"column":11}}})) != null ? stack1 : "")
-    + "  @Override\n  "
-    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":47,"column":2},"end":{"line":47,"column":14}}}) : helper)))
-    + " fromGrpc("
-    + alias4(((helper = (helper = lookupProperty(helpers,"grpcClass") || (depth0 != null ? lookupProperty(depth0,"grpcClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"grpcClass","hash":{},"data":data,"loc":{"start":{"line":47,"column":24},"end":{"line":47,"column":37}}}) : helper)))
-    + "."
-    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":47,"column":38},"end":{"line":47,"column":51}}}) : helper)))
-    + " grpc);\n\n"
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasGrpcMapFields") : depth0),{"name":"if","hash":{},"fn":container.program(3, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":49,"column":0},"end":{"line":71,"column":7}}})) != null ? stack1 : "")
-    + "}\n";
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":9,"column":68},"end":{"line":9,"column":80}}}) : helper)))
+    + "> {\n\n  @Override\n  public "
+    + alias4(((helper = (helper = lookupProperty(helpers,"domainClass") || (depth0 != null ? lookupProperty(depth0,"domainClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"domainClass","hash":{},"data":data,"loc":{"start":{"line":12,"column":9},"end":{"line":12,"column":24}}}) : helper)))
+    + " fromExternal("
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":12,"column":38},"end":{"line":12,"column":50}}}) : helper)))
+    + " external) {\n    if (external == null) {\n      return null;\n    }\n    "
+    + alias4(((helper = (helper = lookupProperty(helpers,"domainClass") || (depth0 != null ? lookupProperty(depth0,"domainClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"domainClass","hash":{},"data":data,"loc":{"start":{"line":16,"column":4},"end":{"line":16,"column":19}}}) : helper)))
+    + " target = new "
+    + alias4(((helper = (helper = lookupProperty(helpers,"domainClass") || (depth0 != null ? lookupProperty(depth0,"domainClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"domainClass","hash":{},"data":data,"loc":{"start":{"line":16,"column":33},"end":{"line":16,"column":48}}}) : helper)))
+    + "();\n"
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"fields") : depth0),{"name":"each","hash":{},"fn":container.program(0, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":17,"column":0},"end":{"line":21,"column":9}}})) != null ? stack1 : "")
+    + "    return target;\n  }\n\n  @Override\n  public "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":26,"column":9},"end":{"line":26,"column":21}}}) : helper)))
+    + " toExternal("
+    + alias4(((helper = (helper = lookupProperty(helpers,"domainClass") || (depth0 != null ? lookupProperty(depth0,"domainClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"domainClass","hash":{},"data":data,"loc":{"start":{"line":26,"column":33},"end":{"line":26,"column":48}}}) : helper)))
+    + " domain) {\n    if (domain == null) {\n      return null;\n    }\n    "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":30,"column":4},"end":{"line":30,"column":16}}}) : helper)))
+    + " target = new "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoClass") || (depth0 != null ? lookupProperty(depth0,"dtoClass") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoClass","hash":{},"data":data,"loc":{"start":{"line":30,"column":30},"end":{"line":30,"column":42}}}) : helper)))
+    + "();\n"
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"fields") : depth0),{"name":"each","hash":{},"fn":container.program(2, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":31,"column":0},"end":{"line":35,"column":9}}})) != null ? stack1 : "")
+    + "    return target;\n  }\n}\n";
 },"useData":true},
   "module-application-dev-properties": {"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
     return "#\n# Copyright (c) 2023-2025 Mariano Barcia\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n#\n\n# Pipeline framework\nquarkus.log.category.\"org.pipelineframework\".level=DEBUG\n\n# Enable trace logging for gRPC\n#quarkus.log.category.\"io.grpc\".level=DEBUG\n#quarkus.log.category.\"io.quarkus.grpc\".level=DEBUG\n#quarkus.log.category.\"io.vertx.grpc\".level=DEBUG\n#quarkus.log.category.\"io.mutiny\".level=DEBUG\n\nquarkus.log.console.format=%d{HH:mm:ss} %-5p [%c] (%t) %s%e%n\n\n#quarkus.observability.lgtm.enabled=true\n\n#quarkus.otel.metrics.enabled=true\n#quarkus.otel.metric.export.interval=5\n\n# Suppress unnecessary information\nquarkus.log.category.\"io.quarkus.opentelemetry.runtime.QuarkusContextStorage\".level=WARN\n";
@@ -514,7 +462,7 @@ module.exports = {
     + alias4(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":8,"column":17},"end":{"line":8,"column":32}}}) : helper)))
     + "</groupId>\n        <artifactId>"
     + alias4(((helper = (helper = lookupProperty(helpers,"rootProjectName") || (depth0 != null ? lookupProperty(depth0,"rootProjectName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"rootProjectName","hash":{},"data":data,"loc":{"start":{"line":9,"column":20},"end":{"line":9,"column":39}}}) : helper)))
-    + "</artifactId>\n        <version>${revision}</version>\n        <relativePath>../pom.xml</relativePath>\n    </parent>\n\n    <artifactId>monolith-svc</artifactId>\n    <name>"
+    + "</artifactId>\n        <version>26.5.2</version>\n        <relativePath>../pom.xml</relativePath>\n    </parent>\n\n    <artifactId>monolith-svc</artifactId>\n    <name>"
     + alias4(((helper = (helper = lookupProperty(helpers,"rootProjectName") || (depth0 != null ? lookupProperty(depth0,"rootProjectName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"rootProjectName","hash":{},"data":data,"loc":{"start":{"line":15,"column":10},"end":{"line":15,"column":29}}}) : helper)))
     + " monolith runtime</name>\n\n    <properties>\n        <pipeline.generatedSourcesArg>-Apipeline.generatedSourcesDir=${project.build.directory}/generated-sources/pipeline</pipeline.generatedSourcesArg>\n        <protobuf.descriptor.path>${project.basedir}/../common/target/generated-sources/grpc/descriptor_set.dsc</protobuf.descriptor.path>\n        <protobuf.descriptor.fileArg>-Aprotobuf.descriptor.file=${protobuf.descriptor.path}</protobuf.descriptor.fileArg>\n        <monolith.source.root>${project.basedir}/..</monolith.source.root>\n        <monolith.duplicate.check.script>${monolith.source.root}/build-tools/check-duplicate-sources.sh</monolith.duplicate.check.script>\n"
     + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"sourceDirs") : depth0),{"name":"each","hash":{},"fn":container.program(0, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":23,"column":0},"end":{"line":25,"column":9}}})) != null ? stack1 : "")
@@ -788,7 +736,7 @@ module.exports = {
     + alias4(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":8,"column":17},"end":{"line":8,"column":32}}}) : helper)))
     + "</groupId>\n        <artifactId>"
     + alias4(((helper = (helper = lookupProperty(helpers,"rootProjectName") || (depth0 != null ? lookupProperty(depth0,"rootProjectName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"rootProjectName","hash":{},"data":data,"loc":{"start":{"line":9,"column":20},"end":{"line":9,"column":39}}}) : helper)))
-    + "</artifactId>\n        <version>${revision}</version>\n        <relativePath>../pom.xml</relativePath>\n    </parent>\n\n    <artifactId>pipeline-runtime-svc</artifactId>\n    <name>"
+    + "</artifactId>\n        <version>26.5.2</version>\n        <relativePath>../pom.xml</relativePath>\n    </parent>\n\n    <artifactId>pipeline-runtime-svc</artifactId>\n    <name>"
     + alias4(((helper = (helper = lookupProperty(helpers,"rootProjectName") || (depth0 != null ? lookupProperty(depth0,"rootProjectName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"rootProjectName","hash":{},"data":data,"loc":{"start":{"line":15,"column":10},"end":{"line":15,"column":29}}}) : helper)))
     + " grouped pipeline runtime</name>\n\n    <properties>\n        <pipeline.generatedSourcesArg>-Apipeline.generatedSourcesDir=${project.build.directory}/generated-sources/pipeline</pipeline.generatedSourcesArg>\n        <protobuf.descriptor.path>${project.basedir}/../common/target/generated-sources/grpc/descriptor_set.dsc</protobuf.descriptor.path>\n        <protobuf.descriptor.fileArg>-Aprotobuf.descriptor.file=${protobuf.descriptor.path}</protobuf.descriptor.fileArg>\n        <pipeline.runtime.source.root>${project.basedir}/..</pipeline.runtime.source.root>\n        <pipeline.runtime.duplicate.check.script>${pipeline.runtime.source.root}/build-tools/check-duplicate-sources.sh</pipeline.runtime.duplicate.check.script>\n"
     + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"sourceDirs") : depth0),{"name":"each","hash":{},"fn":container.program(0, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":23,"column":0},"end":{"line":25,"column":9}}})) != null ? stack1 : "")
@@ -850,7 +798,31 @@ module.exports = {
     + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"isRestTransport") : depth0),{"name":"if","hash":{},"fn":container.program(0, data, 0),"inverse":container.program(1, data, 0),"data":data,"loc":{"start":{"line":51,"column":8},"end":{"line":59,"column":15}}})) != null ? stack1 : "")
     + "        <dependency>\n            <groupId>org.jboss.slf4j</groupId>\n            <artifactId>slf4j-jboss-logmanager</artifactId>\n            <scope>runtime</scope>\n        </dependency>\n        <!-- Health check dependency -->\n        <dependency>\n            <groupId>io.quarkus</groupId>\n            <artifactId>quarkus-smallrye-health</artifactId>\n        </dependency>\n        <dependency>\n            <groupId>io.quarkus</groupId>\n            <artifactId>quarkus-container-image-jib</artifactId>\n        </dependency>\n\n        <!-- Test Dependencies -->\n        <dependency>\n            <groupId>io.quarkus</groupId>\n            <artifactId>quarkus-junit5</artifactId>\n            <scope>test</scope>\n        </dependency>\n        <dependency>\n            <groupId>io.quarkus</groupId>\n            <artifactId>quarkus-test-vertx</artifactId>\n            <scope>test</scope>\n        </dependency>\n        <dependency>\n            <groupId>io.quarkus</groupId>\n            <artifactId>quarkus-junit5-mockito</artifactId>\n            <scope>test</scope>\n        </dependency>\n        <dependency>\n            <groupId>io.rest-assured</groupId>\n            <artifactId>rest-assured</artifactId>\n            <scope>test</scope>\n        </dependency>\n        <dependency>\n            <groupId>org.mockito</groupId>\n            <artifactId>mockito-core</artifactId>\n            <version>5.14.2</version>\n            <scope>test</scope>\n        </dependency>\n        <dependency>\n            <groupId>org.mockito</groupId>\n            <artifactId>mockito-junit-jupiter</artifactId>\n            <version>5.14.2</version>\n            <scope>test</scope>\n        </dependency>\n        <dependency>\n            <groupId>org.mockito</groupId>\n            <artifactId>mockito-inline</artifactId>\n            <version>5.2.0</version>\n            <scope>test</scope>\n        </dependency>\n        <dependency>\n            <groupId>org.slf4j</groupId>\n            <artifactId>slf4j-nop</artifactId>\n            <version>2.0.9</version>\n            <scope>test</scope>\n        </dependency>\n        <dependency>\n            <groupId>org.assertj</groupId>\n            <artifactId>assertj-core</artifactId>\n            <version>3.26.3</version>\n            <scope>test</scope>\n        </dependency>\n        <dependency>\n            <groupId>io.quarkus</groupId>\n            <artifactId>quarkus-jacoco</artifactId>\n            <scope>test</scope>\n        </dependency>\n        <dependency>\n            <groupId>jakarta.validation</groupId>\n            <artifactId>jakarta.validation-api</artifactId>\n            <version>3.1.1</version>\n        </dependency>\n        <!-- Observability-->\n        <dependency>\n            <groupId>io.quarkus</groupId>\n            <artifactId>quarkus-observability-devservices-lgtm</artifactId>\n            <scope>provided</scope>\n        </dependency>\n        <dependency>\n            <groupId>io.quarkus</groupId>\n            <artifactId>quarkus-opentelemetry</artifactId>\n        </dependency>\n        <dependency>\n            <groupId>io.quarkus</groupId>\n            <artifactId>quarkus-micrometer-opentelemetry</artifactId>\n        </dependency>\n    </dependencies>\n\n    <build>\n        <plugins>\n            <plugin>\n                <groupId>org.apache.maven.plugins</groupId>\n                <artifactId>maven-compiler-plugin</artifactId>\n            </plugin>\n            <plugin>\n                <groupId>io.smallrye</groupId>\n                <artifactId>jandex-maven-plugin</artifactId>\n            </plugin>\n            <plugin>\n                <groupId>org.apache.maven.plugins</groupId>\n                <artifactId>maven-surefire-plugin</artifactId>\n            </plugin>\n            <plugin>\n                <groupId>io.quarkus</groupId>\n                <artifactId>quarkus-maven-plugin</artifactId>\n            </plugin>\n            <plugin>\n                <groupId>com.diffplug.spotless</groupId>\n                <artifactId>spotless-maven-plugin</artifactId>\n            </plugin>\n            <plugin>\n                <groupId>org.apache.maven.plugins</groupId>\n                <artifactId>maven-jar-plugin</artifactId>\n            </plugin>\n        </plugins>\n    </build>\n</project>\n";
 },"useData":true},
-  "step-service": {"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
+  "step-service": {"0":function(container,depth0,helpers,partials,data) {
+    var helper, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "    "
+    + container.escapeExpression(((helper = (helper = lookupProperty(helpers,"outputTypeName") || (depth0 != null ? lookupProperty(depth0,"outputTypeName") : depth0)) != null ? helper : container.hooks.helperMissing),(typeof helper === "function" ? helper.call(depth0 != null ? depth0 : (container.nullContext || {}),{"name":"outputTypeName","hash":{},"data":data,"loc":{"start":{"line":37,"column":4},"end":{"line":37,"column":22}}}) : helper)))
+    + " output = null;\n";
+},"1":function(container,depth0,helpers,partials,data) {
+    var helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "    "
+    + alias4(((helper = (helper = lookupProperty(helpers,"outputTypeName") || (depth0 != null ? lookupProperty(depth0,"outputTypeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"outputTypeName","hash":{},"data":data,"loc":{"start":{"line":39,"column":4},"end":{"line":39,"column":22}}}) : helper)))
+    + " output = new "
+    + alias4(((helper = (helper = lookupProperty(helpers,"outputTypeName") || (depth0 != null ? lookupProperty(depth0,"outputTypeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"outputTypeName","hash":{},"data":data,"loc":{"start":{"line":39,"column":36},"end":{"line":39,"column":54}}}) : helper)))
+    + "();\n";
+},"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
     var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
         if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
           return parent[propertyName];
@@ -908,12 +880,526 @@ module.exports = {
     + ((stack1 = ((helper = (helper = lookupProperty(helpers,"processMethodReturnType") || (depth0 != null ? lookupProperty(depth0,"processMethodReturnType") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"processMethodReturnType","hash":{},"data":data,"loc":{"start":{"line":30,"column":9},"end":{"line":30,"column":38}}}) : helper))) != null ? stack1 : "")
     + " process("
     + ((stack1 = ((helper = (helper = lookupProperty(helpers,"processMethodParamType") || (depth0 != null ? lookupProperty(depth0,"processMethodParamType") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"processMethodParamType","hash":{},"data":data,"loc":{"start":{"line":30,"column":47},"end":{"line":30,"column":75}}}) : helper))) != null ? stack1 : "")
-    + " input) {\n    Logger logger = Logger.getLogger(getClass());\n\n    // TODO implement business logic here\n    logger.infof(\"Processing input: %s\", input);\n    \n    "
-    + alias4(((helper = (helper = lookupProperty(helpers,"outputTypeName") || (depth0 != null ? lookupProperty(depth0,"outputTypeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"outputTypeName","hash":{},"data":data,"loc":{"start":{"line":36,"column":4},"end":{"line":36,"column":22}}}) : helper)))
-    + " output = new "
-    + alias4(((helper = (helper = lookupProperty(helpers,"outputTypeName") || (depth0 != null ? lookupProperty(depth0,"outputTypeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"outputTypeName","hash":{},"data":data,"loc":{"start":{"line":36,"column":36},"end":{"line":36,"column":54}}}) : helper)))
-    + "();\n    // Set output fields based on input\n    // TODO: Add actual business logic here\n    \n    return "
-    + ((stack1 = ((helper = (helper = lookupProperty(helpers,"returnStatement") || (depth0 != null ? lookupProperty(depth0,"returnStatement") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"returnStatement","hash":{},"data":data,"loc":{"start":{"line":40,"column":11},"end":{"line":40,"column":32}}}) : helper))) != null ? stack1 : "")
+    + " input) {\n    Logger logger = Logger.getLogger(getClass());\n\n    // TODO implement business logic here\n    logger.infof(\"Processing input: %s\", input);\n    \n"
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"outputIsUnion") : depth0),{"name":"if","hash":{},"fn":container.program(0, data, 0),"inverse":container.program(1, data, 0),"data":data,"loc":{"start":{"line":36,"column":4},"end":{"line":40,"column":11}}})) != null ? stack1 : "")
+    + "    // Set output fields based on input\n    // TODO: Add actual business logic here\n    \n    return "
+    + ((stack1 = ((helper = (helper = lookupProperty(helpers,"returnStatement") || (depth0 != null ? lookupProperty(depth0,"returnStatement") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"returnStatement","hash":{},"data":data,"loc":{"start":{"line":44,"column":11},"end":{"line":44,"column":32}}}) : helper))) != null ? stack1 : "")
     + ";\n  }\n}\n";
-},"useData":true}
+},"useData":true},
+  "union-domain-interface": {"0":function(container,depth0,helpers,partials,data) {
+    var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return container.escapeExpression(((helper = (helper = lookupProperty(helpers,"typeName") || (depth0 != null ? lookupProperty(depth0,"typeName") : depth0)) != null ? helper : container.hooks.helperMissing),(typeof helper === "function" ? helper.call(alias1,{"name":"typeName","hash":{},"data":data,"loc":{"start":{"line":10,"column":30},"end":{"line":10,"column":42}}}) : helper)))
+    + ((stack1 = lookupProperty(helpers,"unless").call(alias1,(data && lookupProperty(data,"last")),{"name":"unless","hash":{},"fn":container.program(1, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":10,"column":42},"end":{"line":10,"column":72}}})) != null ? stack1 : "");
+},"1":function(container,depth0,helpers,partials,data) {
+    return ", ";
+},"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
+    var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "package "
+    + alias4(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":1,"column":8},"end":{"line":1,"column":23}}}) : helper)))
+    + ".common.domain;\n\nimport com.fasterxml.jackson.databind.annotation.JsonDeserialize;\nimport com.fasterxml.jackson.databind.annotation.JsonSerialize;\nimport java.io.Serializable;\n\n@JsonSerialize(using = "
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":7,"column":23},"end":{"line":7,"column":31}}}) : helper)))
+    + "JsonSerializer.class)\n@JsonDeserialize(using = "
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":8,"column":25},"end":{"line":8,"column":33}}}) : helper)))
+    + "JsonDeserializer.class)\npublic sealed interface "
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":9,"column":24},"end":{"line":9,"column":32}}}) : helper)))
+    + " extends Serializable\n    permits "
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"variants") : depth0),{"name":"each","hash":{},"fn":container.program(0, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":10,"column":12},"end":{"line":10,"column":81}}})) != null ? stack1 : "")
+    + " {\n}\n";
+},"useData":true},
+  "union-domain-json-deserializer": {"0":function(container,depth0,helpers,partials,data) {
+    var helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "    if (\""
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":18,"column":9},"end":{"line":18,"column":17}}}) : helper)))
+    + "\".equals(type)) {\n      return parser.getCodec().treeToValue(payload(node, \""
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":19,"column":58},"end":{"line":19,"column":66}}}) : helper)))
+    + "\"), "
+    + alias4(((helper = (helper = lookupProperty(helpers,"typeName") || (depth0 != null ? lookupProperty(depth0,"typeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"typeName","hash":{},"data":data,"loc":{"start":{"line":19,"column":70},"end":{"line":19,"column":82}}}) : helper)))
+    + ".class);\n    }\n";
+},"1":function(container,depth0,helpers,partials,data) {
+    var helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "    if (node.hasNonNull(\""
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":31,"column":25},"end":{"line":31,"column":33}}}) : helper)))
+    + "\")) {\n      return \""
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":32,"column":14},"end":{"line":32,"column":22}}}) : helper)))
+    + "\";\n    }\n";
+},"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
+    var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "package "
+    + alias4(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":1,"column":8},"end":{"line":1,"column":23}}}) : helper)))
+    + ".common.domain;\n\nimport com.fasterxml.jackson.core.JsonParser;\nimport com.fasterxml.jackson.databind.DeserializationContext;\nimport com.fasterxml.jackson.databind.JsonDeserializer;\nimport com.fasterxml.jackson.databind.JsonNode;\nimport com.fasterxml.jackson.databind.node.ObjectNode;\nimport java.io.IOException;\n\npublic final class "
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":10,"column":19},"end":{"line":10,"column":27}}}) : helper)))
+    + "JsonDeserializer extends JsonDeserializer<"
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":10,"column":69},"end":{"line":10,"column":77}}}) : helper)))
+    + "> {\n\n  @Override\n  public "
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":13,"column":9},"end":{"line":13,"column":17}}}) : helper)))
+    + " deserialize(JsonParser parser, DeserializationContext context)\n      throws IOException {\n    JsonNode node = parser.getCodec().readTree(parser);\n    String type = resolveType(node);\n"
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"variants") : depth0),{"name":"each","hash":{},"fn":container.program(0, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":17,"column":0},"end":{"line":21,"column":9}}})) != null ? stack1 : "")
+    + "    throw new IOException(\"Unsupported "
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":22,"column":39},"end":{"line":22,"column":47}}}) : helper)))
+    + " type: \" + type);\n  }\n\n  private String resolveType(JsonNode node) {\n    String type = node.path(\"type\").asText(null);\n    if (type != null && !type.isBlank()) {\n      return type;\n    }\n"
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"variants") : depth0),{"name":"each","hash":{},"fn":container.program(1, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":30,"column":0},"end":{"line":34,"column":9}}})) != null ? stack1 : "")
+    + "    return null;\n  }\n\n  private JsonNode payload(JsonNode node, String name) {\n    JsonNode wrapped = node.get(name);\n    if (wrapped != null && !wrapped.isNull()) {\n      return wrapped;\n    }\n    if (node instanceof ObjectNode objectNode) {\n      ObjectNode copy = objectNode.deepCopy();\n      copy.remove(\"type\");\n      return copy;\n    }\n    return node;\n  }\n}\n";
+},"useData":true},
+  "union-domain-json-serializer": {"0":function(container,depth0,helpers,partials,data) {
+    var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "    "
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(data && lookupProperty(data,"first")),{"name":"if","hash":{},"fn":container.program(1, data, 0),"inverse":container.program(2, data, 0),"data":data,"loc":{"start":{"line":15,"column":4},"end":{"line":15,"column":42}}})) != null ? stack1 : "")
+    + " (value instanceof "
+    + alias4(((helper = (helper = lookupProperty(helpers,"typeName") || (depth0 != null ? lookupProperty(depth0,"typeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"typeName","hash":{},"data":data,"loc":{"start":{"line":15,"column":61},"end":{"line":15,"column":73}}}) : helper)))
+    + " variant) {\n      gen.writeStringField(\"type\", \""
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":16,"column":36},"end":{"line":16,"column":44}}}) : helper)))
+    + "\");\n      gen.writeObjectField(\""
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":17,"column":28},"end":{"line":17,"column":36}}}) : helper)))
+    + "\", variant);\n    }\n";
+},"1":function(container,depth0,helpers,partials,data) {
+    return "if";
+},"2":function(container,depth0,helpers,partials,data) {
+    return "else if";
+},"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
+    var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "package "
+    + alias4(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":1,"column":8},"end":{"line":1,"column":23}}}) : helper)))
+    + ".common.domain;\n\nimport com.fasterxml.jackson.core.JsonGenerator;\nimport com.fasterxml.jackson.databind.JsonSerializer;\nimport com.fasterxml.jackson.databind.SerializerProvider;\nimport java.io.IOException;\n\npublic final class "
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":8,"column":19},"end":{"line":8,"column":27}}}) : helper)))
+    + "JsonSerializer extends JsonSerializer<"
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":8,"column":65},"end":{"line":8,"column":73}}}) : helper)))
+    + "> {\n\n  @Override\n  public void serialize("
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":11,"column":24},"end":{"line":11,"column":32}}}) : helper)))
+    + " value, JsonGenerator gen, SerializerProvider serializers)\n      throws IOException {\n    gen.writeStartObject();\n"
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"variants") : depth0),{"name":"each","hash":{},"fn":container.program(0, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":14,"column":0},"end":{"line":19,"column":9}}})) != null ? stack1 : "")
+    + "    else {\n      throw new IOException(\"Unsupported "
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":21,"column":41},"end":{"line":21,"column":49}}}) : helper)))
+    + " subtype: \" + value.getClass().getName());\n    }\n    gen.writeEndObject();\n  }\n}\n";
+},"useData":true},
+  "union-domain-variant": {"0":function(container,depth0,helpers,partials,data) {
+    return "import java.time.LocalDate;\nimport java.time.LocalDateTime;\nimport java.time.OffsetDateTime;\nimport java.time.ZonedDateTime;\nimport java.time.Instant;\nimport java.time.Duration;\nimport java.time.Period;\n";
+},"1":function(container,depth0,helpers,partials,data) {
+    return "import java.math.BigInteger;\n";
+},"2":function(container,depth0,helpers,partials,data) {
+    return "import java.math.BigDecimal;\n";
+},"3":function(container,depth0,helpers,partials,data) {
+    return "import java.util.Currency;\n";
+},"4":function(container,depth0,helpers,partials,data) {
+    return "import java.nio.file.Path;\n";
+},"5":function(container,depth0,helpers,partials,data) {
+    return "import java.net.URI;\nimport java.net.URL;\n";
+},"6":function(container,depth0,helpers,partials,data) {
+    return "import java.io.File;\n";
+},"7":function(container,depth0,helpers,partials,data) {
+    return "import java.util.concurrent.atomic.AtomicInteger;\nimport java.util.concurrent.atomic.AtomicLong;\n";
+},"8":function(container,depth0,helpers,partials,data) {
+    return "import java.util.List;\n";
+},"9":function(container,depth0,helpers,partials,data) {
+    return "import java.util.Map;\n";
+},"10":function(container,depth0,helpers,partials,data) {
+    var stack1, alias1=depth0 != null ? depth0 : (container.nullContext || {}), lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return ((stack1 = lookupProperty(helpers,"unless").call(alias1,(lookupProperty(helpers,"isIdField")||(depth0 && lookupProperty(depth0,"isIdField"))||container.hooks.helperMissing).call(alias1,(depth0 != null ? lookupProperty(depth0,"name") : depth0),{"name":"isIdField","hash":{},"data":data,"loc":{"start":{"line":51,"column":10},"end":{"line":51,"column":31}}}),{"name":"unless","hash":{},"fn":container.program(11, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":51,"column":0},"end":{"line":53,"column":11}}})) != null ? stack1 : "");
+},"11":function(container,depth0,helpers,partials,data) {
+    var stack1, alias1=container.lambda, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "  public "
+    + ((stack1 = alias1((depth0 != null ? lookupProperty(depth0,"type") : depth0), depth0)) != null ? stack1 : "")
+    + " "
+    + container.escapeExpression(alias1((depth0 != null ? lookupProperty(depth0,"javaName") : depth0), depth0))
+    + ";\n";
+},"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
+    var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "package "
+    + alias4(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":1,"column":8},"end":{"line":1,"column":23}}}) : helper)))
+    + ".common.domain;\n\nimport com.fasterxml.jackson.annotation.JsonIgnoreProperties;\nimport com.fasterxml.jackson.annotation.JsonTypeName;\nimport java.io.Serializable;\nimport java.util.UUID;\n\n"
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasDateFields") : depth0),{"name":"if","hash":{},"fn":container.program(0, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":8,"column":0},"end":{"line":16,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasBigIntegerFields") : depth0),{"name":"if","hash":{},"fn":container.program(1, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":17,"column":0},"end":{"line":19,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasBigDecimalFields") : depth0),{"name":"if","hash":{},"fn":container.program(2, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":20,"column":0},"end":{"line":22,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasCurrencyFields") : depth0),{"name":"if","hash":{},"fn":container.program(3, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":23,"column":0},"end":{"line":25,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasPathFields") : depth0),{"name":"if","hash":{},"fn":container.program(4, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":26,"column":0},"end":{"line":28,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasNetFields") : depth0),{"name":"if","hash":{},"fn":container.program(5, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":29,"column":0},"end":{"line":32,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasIoFields") : depth0),{"name":"if","hash":{},"fn":container.program(6, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":33,"column":0},"end":{"line":35,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasAtomicFields") : depth0),{"name":"if","hash":{},"fn":container.program(7, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":36,"column":0},"end":{"line":39,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasUtilFields") : depth0),{"name":"if","hash":{},"fn":container.program(8, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":40,"column":0},"end":{"line":42,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasMapFields") : depth0),{"name":"if","hash":{},"fn":container.program(9, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":43,"column":0},"end":{"line":45,"column":7}}})) != null ? stack1 : "")
+    + "\n@JsonTypeName(\""
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":47,"column":15},"end":{"line":47,"column":23}}}) : helper)))
+    + "\")\n@JsonIgnoreProperties(ignoreUnknown = true)\npublic final class "
+    + alias4(((helper = (helper = lookupProperty(helpers,"typeName") || (depth0 != null ? lookupProperty(depth0,"typeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"typeName","hash":{},"data":data,"loc":{"start":{"line":49,"column":19},"end":{"line":49,"column":31}}}) : helper)))
+    + " extends BaseEntity implements "
+    + alias4(((helper = (helper = lookupProperty(helpers,"unionName") || (depth0 != null ? lookupProperty(depth0,"unionName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"unionName","hash":{},"data":data,"loc":{"start":{"line":49,"column":62},"end":{"line":49,"column":75}}}) : helper)))
+    + ", Serializable {\n"
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"fields") : depth0),{"name":"each","hash":{},"fn":container.program(10, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":50,"column":0},"end":{"line":54,"column":9}}})) != null ? stack1 : "")
+    + "}\n";
+},"useData":true},
+  "union-dto-interface": {"0":function(container,depth0,helpers,partials,data) {
+    var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return container.escapeExpression(((helper = (helper = lookupProperty(helpers,"dtoTypeName") || (depth0 != null ? lookupProperty(depth0,"dtoTypeName") : depth0)) != null ? helper : container.hooks.helperMissing),(typeof helper === "function" ? helper.call(alias1,{"name":"dtoTypeName","hash":{},"data":data,"loc":{"start":{"line":10,"column":30},"end":{"line":10,"column":45}}}) : helper)))
+    + ((stack1 = lookupProperty(helpers,"unless").call(alias1,(data && lookupProperty(data,"last")),{"name":"unless","hash":{},"fn":container.program(1, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":10,"column":45},"end":{"line":10,"column":75}}})) != null ? stack1 : "");
+},"1":function(container,depth0,helpers,partials,data) {
+    return ", ";
+},"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
+    var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "package "
+    + alias4(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":1,"column":8},"end":{"line":1,"column":23}}}) : helper)))
+    + ".common.dto;\n\nimport com.fasterxml.jackson.databind.annotation.JsonDeserialize;\nimport com.fasterxml.jackson.databind.annotation.JsonSerialize;\nimport java.io.Serializable;\n\n@JsonSerialize(using = "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoName") || (depth0 != null ? lookupProperty(depth0,"dtoName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoName","hash":{},"data":data,"loc":{"start":{"line":7,"column":23},"end":{"line":7,"column":34}}}) : helper)))
+    + "JsonSerializer.class)\n@JsonDeserialize(using = "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoName") || (depth0 != null ? lookupProperty(depth0,"dtoName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoName","hash":{},"data":data,"loc":{"start":{"line":8,"column":25},"end":{"line":8,"column":36}}}) : helper)))
+    + "JsonDeserializer.class)\npublic sealed interface "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoName") || (depth0 != null ? lookupProperty(depth0,"dtoName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoName","hash":{},"data":data,"loc":{"start":{"line":9,"column":24},"end":{"line":9,"column":35}}}) : helper)))
+    + " extends Serializable\n    permits "
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"variants") : depth0),{"name":"each","hash":{},"fn":container.program(0, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":10,"column":12},"end":{"line":10,"column":84}}})) != null ? stack1 : "")
+    + " {\n}\n";
+},"useData":true},
+  "union-dto-json-deserializer": {"0":function(container,depth0,helpers,partials,data) {
+    var helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "    if (\""
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":18,"column":9},"end":{"line":18,"column":17}}}) : helper)))
+    + "\".equals(type)) {\n      return parser.getCodec().treeToValue(payload(node, \""
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":19,"column":58},"end":{"line":19,"column":66}}}) : helper)))
+    + "\"), "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoTypeName") || (depth0 != null ? lookupProperty(depth0,"dtoTypeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoTypeName","hash":{},"data":data,"loc":{"start":{"line":19,"column":70},"end":{"line":19,"column":85}}}) : helper)))
+    + ".class);\n    }\n";
+},"1":function(container,depth0,helpers,partials,data) {
+    var helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "    if (node.hasNonNull(\""
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":31,"column":25},"end":{"line":31,"column":33}}}) : helper)))
+    + "\")) {\n      return \""
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":32,"column":14},"end":{"line":32,"column":22}}}) : helper)))
+    + "\";\n    }\n";
+},"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
+    var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "package "
+    + alias4(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":1,"column":8},"end":{"line":1,"column":23}}}) : helper)))
+    + ".common.dto;\n\nimport com.fasterxml.jackson.core.JsonParser;\nimport com.fasterxml.jackson.databind.DeserializationContext;\nimport com.fasterxml.jackson.databind.JsonDeserializer;\nimport com.fasterxml.jackson.databind.JsonNode;\nimport com.fasterxml.jackson.databind.node.ObjectNode;\nimport java.io.IOException;\n\npublic final class "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoName") || (depth0 != null ? lookupProperty(depth0,"dtoName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoName","hash":{},"data":data,"loc":{"start":{"line":10,"column":19},"end":{"line":10,"column":30}}}) : helper)))
+    + "JsonDeserializer extends JsonDeserializer<"
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoName") || (depth0 != null ? lookupProperty(depth0,"dtoName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoName","hash":{},"data":data,"loc":{"start":{"line":10,"column":72},"end":{"line":10,"column":83}}}) : helper)))
+    + "> {\n\n  @Override\n  public "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoName") || (depth0 != null ? lookupProperty(depth0,"dtoName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoName","hash":{},"data":data,"loc":{"start":{"line":13,"column":9},"end":{"line":13,"column":20}}}) : helper)))
+    + " deserialize(JsonParser parser, DeserializationContext context)\n      throws IOException {\n    JsonNode node = parser.getCodec().readTree(parser);\n    String type = resolveType(node);\n"
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"variants") : depth0),{"name":"each","hash":{},"fn":container.program(0, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":17,"column":0},"end":{"line":21,"column":9}}})) != null ? stack1 : "")
+    + "    throw new IOException(\"Unsupported "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoName") || (depth0 != null ? lookupProperty(depth0,"dtoName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoName","hash":{},"data":data,"loc":{"start":{"line":22,"column":39},"end":{"line":22,"column":50}}}) : helper)))
+    + " type: \" + type);\n  }\n\n  private String resolveType(JsonNode node) {\n    String type = node.path(\"type\").asText(null);\n    if (type != null && !type.isBlank()) {\n      return type;\n    }\n"
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"variants") : depth0),{"name":"each","hash":{},"fn":container.program(1, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":30,"column":0},"end":{"line":34,"column":9}}})) != null ? stack1 : "")
+    + "    return null;\n  }\n\n  private JsonNode payload(JsonNode node, String name) {\n    JsonNode wrapped = node.get(name);\n    if (wrapped != null && !wrapped.isNull()) {\n      return wrapped;\n    }\n    if (node instanceof ObjectNode objectNode) {\n      ObjectNode copy = objectNode.deepCopy();\n      copy.remove(\"type\");\n      return copy;\n    }\n    return node;\n  }\n}\n";
+},"useData":true},
+  "union-dto-json-serializer": {"0":function(container,depth0,helpers,partials,data) {
+    var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "    "
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(data && lookupProperty(data,"first")),{"name":"if","hash":{},"fn":container.program(1, data, 0),"inverse":container.program(2, data, 0),"data":data,"loc":{"start":{"line":15,"column":4},"end":{"line":15,"column":42}}})) != null ? stack1 : "")
+    + " (value instanceof "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoTypeName") || (depth0 != null ? lookupProperty(depth0,"dtoTypeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoTypeName","hash":{},"data":data,"loc":{"start":{"line":15,"column":61},"end":{"line":15,"column":76}}}) : helper)))
+    + " variant) {\n      gen.writeStringField(\"type\", \""
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":16,"column":36},"end":{"line":16,"column":44}}}) : helper)))
+    + "\");\n      gen.writeObjectField(\""
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":17,"column":28},"end":{"line":17,"column":36}}}) : helper)))
+    + "\", variant);\n    }\n";
+},"1":function(container,depth0,helpers,partials,data) {
+    return "if";
+},"2":function(container,depth0,helpers,partials,data) {
+    return "else if";
+},"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
+    var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "package "
+    + alias4(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":1,"column":8},"end":{"line":1,"column":23}}}) : helper)))
+    + ".common.dto;\n\nimport com.fasterxml.jackson.core.JsonGenerator;\nimport com.fasterxml.jackson.databind.JsonSerializer;\nimport com.fasterxml.jackson.databind.SerializerProvider;\nimport java.io.IOException;\n\npublic final class "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoName") || (depth0 != null ? lookupProperty(depth0,"dtoName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoName","hash":{},"data":data,"loc":{"start":{"line":8,"column":19},"end":{"line":8,"column":30}}}) : helper)))
+    + "JsonSerializer extends JsonSerializer<"
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoName") || (depth0 != null ? lookupProperty(depth0,"dtoName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoName","hash":{},"data":data,"loc":{"start":{"line":8,"column":68},"end":{"line":8,"column":79}}}) : helper)))
+    + "> {\n\n  @Override\n  public void serialize("
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoName") || (depth0 != null ? lookupProperty(depth0,"dtoName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoName","hash":{},"data":data,"loc":{"start":{"line":11,"column":24},"end":{"line":11,"column":35}}}) : helper)))
+    + " value, JsonGenerator gen, SerializerProvider serializers)\n      throws IOException {\n    gen.writeStartObject();\n"
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"variants") : depth0),{"name":"each","hash":{},"fn":container.program(0, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":14,"column":0},"end":{"line":19,"column":9}}})) != null ? stack1 : "")
+    + "    else {\n      throw new IOException(\"Unsupported "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoName") || (depth0 != null ? lookupProperty(depth0,"dtoName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoName","hash":{},"data":data,"loc":{"start":{"line":21,"column":41},"end":{"line":21,"column":52}}}) : helper)))
+    + " type: \" + value.getClass().getName());\n    }\n    gen.writeEndObject();\n  }\n}\n";
+},"useData":true},
+  "union-dto-variant": {"0":function(container,depth0,helpers,partials,data) {
+    return "import java.time.LocalDate;\nimport java.time.LocalDateTime;\nimport java.time.OffsetDateTime;\nimport java.time.ZonedDateTime;\nimport java.time.Instant;\nimport java.time.Duration;\nimport java.time.Period;\n";
+},"1":function(container,depth0,helpers,partials,data) {
+    return "import java.math.BigInteger;\n";
+},"2":function(container,depth0,helpers,partials,data) {
+    return "import java.math.BigDecimal;\n";
+},"3":function(container,depth0,helpers,partials,data) {
+    return "import java.util.Currency;\n";
+},"4":function(container,depth0,helpers,partials,data) {
+    return "import java.nio.file.Path;\n";
+},"5":function(container,depth0,helpers,partials,data) {
+    return "import java.net.URI;\nimport java.net.URL;\n";
+},"6":function(container,depth0,helpers,partials,data) {
+    return "import java.io.File;\n";
+},"7":function(container,depth0,helpers,partials,data) {
+    return "import java.util.concurrent.atomic.AtomicInteger;\nimport java.util.concurrent.atomic.AtomicLong;\n";
+},"8":function(container,depth0,helpers,partials,data) {
+    return "import java.util.List;\n";
+},"9":function(container,depth0,helpers,partials,data) {
+    return "import java.util.Map;\n";
+},"10":function(container,depth0,helpers,partials,data) {
+    var stack1, alias1=container.lambda, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "  public "
+    + ((stack1 = alias1((depth0 != null ? lookupProperty(depth0,"type") : depth0), depth0)) != null ? stack1 : "")
+    + " "
+    + container.escapeExpression(alias1((depth0 != null ? lookupProperty(depth0,"javaName") : depth0), depth0))
+    + ";\n";
+},"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
+    var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "package "
+    + alias4(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":1,"column":8},"end":{"line":1,"column":23}}}) : helper)))
+    + ".common.dto;\n\nimport com.fasterxml.jackson.annotation.JsonIgnoreProperties;\nimport com.fasterxml.jackson.annotation.JsonTypeName;\nimport java.io.Serializable;\nimport java.util.UUID;\n\n"
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasDateFields") : depth0),{"name":"if","hash":{},"fn":container.program(0, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":8,"column":0},"end":{"line":16,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasBigIntegerFields") : depth0),{"name":"if","hash":{},"fn":container.program(1, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":17,"column":0},"end":{"line":19,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasBigDecimalFields") : depth0),{"name":"if","hash":{},"fn":container.program(2, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":20,"column":0},"end":{"line":22,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasCurrencyFields") : depth0),{"name":"if","hash":{},"fn":container.program(3, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":23,"column":0},"end":{"line":25,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasPathFields") : depth0),{"name":"if","hash":{},"fn":container.program(4, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":26,"column":0},"end":{"line":28,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasNetFields") : depth0),{"name":"if","hash":{},"fn":container.program(5, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":29,"column":0},"end":{"line":32,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasIoFields") : depth0),{"name":"if","hash":{},"fn":container.program(6, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":33,"column":0},"end":{"line":35,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasAtomicFields") : depth0),{"name":"if","hash":{},"fn":container.program(7, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":36,"column":0},"end":{"line":39,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasUtilFields") : depth0),{"name":"if","hash":{},"fn":container.program(8, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":40,"column":0},"end":{"line":42,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasMapFields") : depth0),{"name":"if","hash":{},"fn":container.program(9, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":43,"column":0},"end":{"line":45,"column":7}}})) != null ? stack1 : "")
+    + "\n@JsonTypeName(\""
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":47,"column":15},"end":{"line":47,"column":23}}}) : helper)))
+    + "\")\n@JsonIgnoreProperties(ignoreUnknown = true)\npublic final class "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoTypeName") || (depth0 != null ? lookupProperty(depth0,"dtoTypeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoTypeName","hash":{},"data":data,"loc":{"start":{"line":49,"column":19},"end":{"line":49,"column":34}}}) : helper)))
+    + " implements "
+    + alias4(((helper = (helper = lookupProperty(helpers,"unionDtoName") || (depth0 != null ? lookupProperty(depth0,"unionDtoName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"unionDtoName","hash":{},"data":data,"loc":{"start":{"line":49,"column":46},"end":{"line":49,"column":62}}}) : helper)))
+    + ", Serializable {\n"
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"fields") : depth0),{"name":"each","hash":{},"fn":container.program(10, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":50,"column":0},"end":{"line":52,"column":9}}})) != null ? stack1 : "")
+    + "}\n";
+},"useData":true},
+  "union-mapper": {"0":function(container,depth0,helpers,partials,data,blockParams,depths) {
+    var helper, alias1=container.lambda, alias2=container.escapeExpression, alias3=depth0 != null ? depth0 : (container.nullContext || {}), alias4=container.hooks.helperMissing, alias5="function", lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "import "
+    + alias2(alias1((depths[1] != null ? lookupProperty(depths[1],"basePackage") : depths[1]), depth0))
+    + ".common.domain."
+    + alias2(((helper = (helper = lookupProperty(helpers,"typeName") || (depth0 != null ? lookupProperty(depth0,"typeName") : depth0)) != null ? helper : alias4),(typeof helper === alias5 ? helper.call(alias3,{"name":"typeName","hash":{},"data":data,"loc":{"start":{"line":6,"column":40},"end":{"line":6,"column":52}}}) : helper)))
+    + ";\nimport "
+    + alias2(alias1((depths[1] != null ? lookupProperty(depths[1],"basePackage") : depths[1]), depth0))
+    + ".common.dto."
+    + alias2(((helper = (helper = lookupProperty(helpers,"dtoTypeName") || (depth0 != null ? lookupProperty(depth0,"dtoTypeName") : depth0)) != null ? helper : alias4),(typeof helper === alias5 ? helper.call(alias3,{"name":"dtoTypeName","hash":{},"data":data,"loc":{"start":{"line":7,"column":37},"end":{"line":7,"column":52}}}) : helper)))
+    + ";\n";
+},"1":function(container,depth0,helpers,partials,data) {
+    var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "    "
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(data && lookupProperty(data,"first")),{"name":"if","hash":{},"fn":container.program(2, data, 0),"inverse":container.program(3, data, 0),"data":data,"loc":{"start":{"line":21,"column":4},"end":{"line":21,"column":42}}})) != null ? stack1 : "")
+    + " (external instanceof "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoTypeName") || (depth0 != null ? lookupProperty(depth0,"dtoTypeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoTypeName","hash":{},"data":data,"loc":{"start":{"line":21,"column":64},"end":{"line":21,"column":79}}}) : helper)))
+    + " source) {\n      "
+    + alias4(((helper = (helper = lookupProperty(helpers,"typeName") || (depth0 != null ? lookupProperty(depth0,"typeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"typeName","hash":{},"data":data,"loc":{"start":{"line":22,"column":6},"end":{"line":22,"column":18}}}) : helper)))
+    + " target = new "
+    + alias4(((helper = (helper = lookupProperty(helpers,"typeName") || (depth0 != null ? lookupProperty(depth0,"typeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"typeName","hash":{},"data":data,"loc":{"start":{"line":22,"column":32},"end":{"line":22,"column":44}}}) : helper)))
+    + "();\n"
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"fields") : depth0),{"name":"each","hash":{},"fn":container.program(4, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":23,"column":0},"end":{"line":27,"column":9}}})) != null ? stack1 : "")
+    + "      return target;\n    }\n";
+},"2":function(container,depth0,helpers,partials,data) {
+    return "if";
+},"3":function(container,depth0,helpers,partials,data) {
+    return "else if";
+},"4":function(container,depth0,helpers,partials,data) {
+    var stack1, alias1=depth0 != null ? depth0 : (container.nullContext || {}), lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return ((stack1 = lookupProperty(helpers,"unless").call(alias1,(lookupProperty(helpers,"isIdField")||(depth0 && lookupProperty(depth0,"isIdField"))||container.hooks.helperMissing).call(alias1,(depth0 != null ? lookupProperty(depth0,"name") : depth0),{"name":"isIdField","hash":{},"data":data,"loc":{"start":{"line":24,"column":10},"end":{"line":24,"column":31}}}),{"name":"unless","hash":{},"fn":container.program(5, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":24,"column":0},"end":{"line":26,"column":11}}})) != null ? stack1 : "");
+},"5":function(container,depth0,helpers,partials,data) {
+    var helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "      target."
+    + alias4(((helper = (helper = lookupProperty(helpers,"javaName") || (depth0 != null ? lookupProperty(depth0,"javaName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"javaName","hash":{},"data":data,"loc":{"start":{"line":25,"column":13},"end":{"line":25,"column":25}}}) : helper)))
+    + " = source."
+    + alias4(((helper = (helper = lookupProperty(helpers,"javaName") || (depth0 != null ? lookupProperty(depth0,"javaName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"javaName","hash":{},"data":data,"loc":{"start":{"line":25,"column":35},"end":{"line":25,"column":47}}}) : helper)))
+    + ";\n";
+},"6":function(container,depth0,helpers,partials,data) {
+    var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "    "
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(data && lookupProperty(data,"first")),{"name":"if","hash":{},"fn":container.program(2, data, 0),"inverse":container.program(3, data, 0),"data":data,"loc":{"start":{"line":40,"column":4},"end":{"line":40,"column":42}}})) != null ? stack1 : "")
+    + " (domain instanceof "
+    + alias4(((helper = (helper = lookupProperty(helpers,"typeName") || (depth0 != null ? lookupProperty(depth0,"typeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"typeName","hash":{},"data":data,"loc":{"start":{"line":40,"column":62},"end":{"line":40,"column":74}}}) : helper)))
+    + " source) {\n      "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoTypeName") || (depth0 != null ? lookupProperty(depth0,"dtoTypeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoTypeName","hash":{},"data":data,"loc":{"start":{"line":41,"column":6},"end":{"line":41,"column":21}}}) : helper)))
+    + " target = new "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoTypeName") || (depth0 != null ? lookupProperty(depth0,"dtoTypeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoTypeName","hash":{},"data":data,"loc":{"start":{"line":41,"column":35},"end":{"line":41,"column":50}}}) : helper)))
+    + "();\n"
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"fields") : depth0),{"name":"each","hash":{},"fn":container.program(4, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":42,"column":0},"end":{"line":46,"column":9}}})) != null ? stack1 : "")
+    + "      return target;\n    }\n";
+},"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data,blockParams,depths) {
+    var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "package "
+    + alias4(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":1,"column":8},"end":{"line":1,"column":23}}}) : helper)))
+    + ".common.mapper;\n\nimport jakarta.enterprise.context.ApplicationScoped;\nimport org.pipelineframework.mapper.Mapper;\n"
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"variants") : depth0),{"name":"each","hash":{},"fn":container.program(0, data, 0, blockParams, depths),"inverse":container.noop,"data":data,"loc":{"start":{"line":5,"column":0},"end":{"line":8,"column":9}}})) != null ? stack1 : "")
+    + "import "
+    + alias4(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":9,"column":7},"end":{"line":9,"column":22}}}) : helper)))
+    + ".common.domain."
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":9,"column":37},"end":{"line":9,"column":45}}}) : helper)))
+    + ";\nimport "
+    + alias4(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":10,"column":7},"end":{"line":10,"column":22}}}) : helper)))
+    + ".common.dto."
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoName") || (depth0 != null ? lookupProperty(depth0,"dtoName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoName","hash":{},"data":data,"loc":{"start":{"line":10,"column":34},"end":{"line":10,"column":45}}}) : helper)))
+    + ";\n\n@ApplicationScoped\npublic class "
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":13,"column":13},"end":{"line":13,"column":21}}}) : helper)))
+    + "Mapper implements Mapper<"
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":13,"column":46},"end":{"line":13,"column":54}}}) : helper)))
+    + ", "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoName") || (depth0 != null ? lookupProperty(depth0,"dtoName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoName","hash":{},"data":data,"loc":{"start":{"line":13,"column":56},"end":{"line":13,"column":67}}}) : helper)))
+    + "> {\n\n  @Override\n  public "
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":16,"column":9},"end":{"line":16,"column":17}}}) : helper)))
+    + " fromExternal("
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoName") || (depth0 != null ? lookupProperty(depth0,"dtoName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoName","hash":{},"data":data,"loc":{"start":{"line":16,"column":31},"end":{"line":16,"column":42}}}) : helper)))
+    + " external) {\n    if (external == null) {\n      return null;\n    }\n"
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"variants") : depth0),{"name":"each","hash":{},"fn":container.program(1, data, 0, blockParams, depths),"inverse":container.noop,"data":data,"loc":{"start":{"line":20,"column":0},"end":{"line":30,"column":9}}})) != null ? stack1 : "")
+    + "    throw new IllegalArgumentException(\"Unsupported "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoName") || (depth0 != null ? lookupProperty(depth0,"dtoName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoName","hash":{},"data":data,"loc":{"start":{"line":31,"column":52},"end":{"line":31,"column":63}}}) : helper)))
+    + " variant: \" + external);\n  }\n\n  @Override\n  public "
+    + alias4(((helper = (helper = lookupProperty(helpers,"dtoName") || (depth0 != null ? lookupProperty(depth0,"dtoName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"dtoName","hash":{},"data":data,"loc":{"start":{"line":35,"column":9},"end":{"line":35,"column":20}}}) : helper)))
+    + " toExternal("
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":35,"column":32},"end":{"line":35,"column":40}}}) : helper)))
+    + " domain) {\n    if (domain == null) {\n      return null;\n    }\n"
+    + ((stack1 = lookupProperty(helpers,"each").call(alias1,(depth0 != null ? lookupProperty(depth0,"variants") : depth0),{"name":"each","hash":{},"fn":container.program(6, data, 0, blockParams, depths),"inverse":container.noop,"data":data,"loc":{"start":{"line":39,"column":0},"end":{"line":49,"column":9}}})) != null ? stack1 : "")
+    + "    throw new IllegalArgumentException(\"Unsupported "
+    + alias4(((helper = (helper = lookupProperty(helpers,"name") || (depth0 != null ? lookupProperty(depth0,"name") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"name","hash":{},"data":data,"loc":{"start":{"line":50,"column":52},"end":{"line":50,"column":60}}}) : helper)))
+    + " variant: \" + domain);\n  }\n}\n";
+},"useData":true,"useDepths":true}
 };

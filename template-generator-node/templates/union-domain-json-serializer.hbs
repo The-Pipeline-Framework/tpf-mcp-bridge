@@ -1,0 +1,25 @@
+package {{basePackage}}.common.domain;
+
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.databind.JsonSerializer;
+import com.fasterxml.jackson.databind.SerializerProvider;
+import java.io.IOException;
+
+public final class {{name}}JsonSerializer extends JsonSerializer<{{name}}> {
+
+  @Override
+  public void serialize({{name}} value, JsonGenerator gen, SerializerProvider serializers)
+      throws IOException {
+    gen.writeStartObject();
+{{#each variants}}
+    {{#if @first}}if{{else}}else if{{/if}} (value instanceof {{typeName}} variant) {
+      gen.writeStringField("type", "{{name}}");
+      gen.writeObjectField("{{name}}", variant);
+    }
+{{/each}}
+    else {
+      throw new IOException("Unsupported {{name}} subtype: " + value.getClass().getName());
+    }
+    gen.writeEndObject();
+  }
+}

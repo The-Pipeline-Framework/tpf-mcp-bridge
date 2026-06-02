@@ -329,6 +329,7 @@ class BrowserTemplateEngine {
             basePackage: options.basePackage,
             steps: Array.isArray(options.steps) ? options.steps : [],
             aspects: options.aspects && typeof options.aspects === 'object' ? options.aspects : {},
+            unionDefinitions: Array.isArray(options.unionDefinitions) ? options.unionDefinitions : [],
             runtimeLayout: this.normalizeRuntimeLayout(options.runtimeLayout),
             fileCallback: options.fileCallback
         };
@@ -380,7 +381,7 @@ class BrowserTemplateEngine {
             normalizedOptions.fileCallback);
 
         // Generate common module
-        await this.generateCommonModule(appNameValue, basePackageValue, stepsValue, transportMode, normalizedOptions.fileCallback);
+        await this.generateCommonModule(appNameValue, basePackageValue, stepsValue, transportMode, normalizedOptions.unionDefinitions, normalizedOptions.fileCallback);
 
         // Generate each step service
         for (let i = 0; i < stepsValue.length; i++) {
@@ -402,6 +403,7 @@ class BrowserTemplateEngine {
             stepsValue,
             includePersistenceModule,
             includeCacheInvalidationModule,
+            aspectConfig,
             transportMode,
             normalizedOptions.fileCallback);
 
@@ -430,17 +432,6 @@ class BrowserTemplateEngine {
             normalizedRuntimeLayout,
             normalizedOptions.fileCallback
         );
-
-        const configSnapshot = {
-            appName: appNameValue,
-            basePackage: basePackageValue,
-            transport: transportMode,
-            platform: normalizedOptions.platform,
-            runtimeLayout: normalizedRuntimeLayout,
-            steps: stepsValue,
-            aspects: aspectConfig
-        };
-        await normalizedOptions.fileCallback('pipeline-config.yaml', this.toYaml(configSnapshot));
 
         // Generate mvnw files
         await this.generateMvNWFiles(normalizedOptions.fileCallback);
@@ -489,7 +480,7 @@ class BrowserTemplateEngine {
         await fileCallback('pom.xml', rendered);
     }
 
-    async generateCommonModule(appName, basePackage, steps, transport, fileCallback) {
+    async generateCommonModule(appName, basePackage, steps, transport, unionDefinitions, fileCallback) {
         // Generate common POM
         await this.generateCommonPom(appName, basePackage, transport, fileCallback);
 
@@ -500,6 +491,8 @@ class BrowserTemplateEngine {
             await this.generateDtoClasses(step, basePackage, i, fileCallback);
             await this.generateMapperClasses(step, basePackage, i, fileCallback);
         }
+
+        await this.generateUnionClasses(unionDefinitions, basePackage, fileCallback);
 
         // Generate base entity
         await this.generateBaseEntity(basePackage, fileCallback);
@@ -645,7 +638,7 @@ class BrowserTemplateEngine {
 
     async generateDomainClasses(step, basePackage, stepIndex, fileCallback) {
         // Process input domain class only for first step
-        if (stepIndex === 0 && step.inputFields && step.inputTypeName) {
+        if (stepIndex === 0 && !step.inputIsUnion && step.inputFields && step.inputTypeName) {
             const inputContext = {
                 ...step,
                 basePackage,
@@ -669,7 +662,7 @@ class BrowserTemplateEngine {
         }
 
         // Process output domain class for all steps
-        if (step.outputFields && step.outputTypeName) {
+        if (!step.outputIsUnion && step.outputFields && step.outputTypeName) {
             const outputContext = {
                 ...step,
                 basePackage,
@@ -702,7 +695,7 @@ class BrowserTemplateEngine {
 
     async generateDtoClasses(step, basePackage, stepIndex, fileCallback) {
         // Process input DTO class only for first step
-        if (stepIndex === 0 && step.inputFields && step.inputTypeName) {
+        if (stepIndex === 0 && !step.inputIsUnion && step.inputFields && step.inputTypeName) {
             const inputContext = {
                 ...step,
                 basePackage,
@@ -726,7 +719,7 @@ class BrowserTemplateEngine {
         }
 
         // Process output DTO class for all steps
-        if (step.outputFields && step.outputTypeName) {
+        if (!step.outputIsUnion && step.outputFields && step.outputTypeName) {
             const outputContext = {
                 ...step,
                 basePackage,
@@ -752,22 +745,53 @@ class BrowserTemplateEngine {
 
     async generateMapperClasses(step, basePackage, stepIndex, fileCallback) {
         // Generate input mapper class only for first step (since other steps reference previous step's output)
-        if (stepIndex === 0 && step.inputTypeName) {
+        if (stepIndex === 0 && !step.inputIsUnion && step.inputTypeName) {
             await this.generateMapperClass(step.inputTypeName, step, basePackage, fileCallback);
         }
 
         // Generate output mapper class for all steps
-        if (step.outputTypeName) {
+        if (!step.outputIsUnion && step.outputTypeName) {
             await this.generateMapperClass(step.outputTypeName, step, basePackage, fileCallback);
         }
     }
 
+    async generateUnionClasses(unionDefinitions, basePackage, fileCallback) {
+        if (!Array.isArray(unionDefinitions)) {
+            return;
+        }
+        for (const union of unionDefinitions) {
+            const context = { ...union, basePackage };
+            const domainPath = `common/src/main/java/${this.toPath(basePackage + '.common.domain')}`;
+            const dtoPath = `common/src/main/java/${this.toPath(basePackage + '.common.dto')}`;
+            const mapperPath = `common/src/main/java/${this.toPath(basePackage + '.common.mapper')}`;
+
+            await fileCallback(`${domainPath}/${union.name}.java`, this.render('union-domain-interface', context));
+            await fileCallback(`${domainPath}/${union.name}JsonSerializer.java`, this.render('union-domain-json-serializer', context));
+            await fileCallback(`${domainPath}/${union.name}JsonDeserializer.java`, this.render('union-domain-json-deserializer', context));
+            await fileCallback(`${dtoPath}/${union.dtoName}.java`, this.render('union-dto-interface', context));
+            await fileCallback(`${dtoPath}/${union.dtoName}JsonSerializer.java`, this.render('union-dto-json-serializer', context));
+            await fileCallback(`${dtoPath}/${union.dtoName}JsonDeserializer.java`, this.render('union-dto-json-deserializer', context));
+            await fileCallback(`${mapperPath}/${union.name}Mapper.java`, this.render('union-mapper', context));
+
+            for (const variant of union.variants) {
+                const variantContext = { ...context, ...variant, unionName: union.name, unionDtoName: union.dtoName };
+                await fileCallback(`${domainPath}/${variant.typeName}.java`, this.render('union-domain-variant', variantContext));
+                await fileCallback(`${dtoPath}/${variant.dtoTypeName}.java`, this.render('union-dto-variant', variantContext));
+            }
+        }
+    }
+
     async generateMapperClass(className, step, basePackage, fileCallback) {
-        const mapperFields = this.mapperFieldsForClass(className, step);
+        const mapperFields = this.mapperFieldsForClass(className, step)
+            .map(field => ({
+                ...field,
+                javaName: this.sanitizeJavaIdentifier(field.name),
+                accessorSuffix: this.javaAccessorSuffix(this.sanitizeJavaIdentifier(field.name))
+            }));
         const grpcMapFields = mapperFields
             .filter(field => field && typeof field.type === 'string' && field.type.startsWith('Map<'))
             .map(field => {
-                const javaName = this.sanitizeJavaIdentifier(field.name);
+                const javaName = field.javaName;
                 return {
                     ...field,
                     javaName,
@@ -781,6 +805,7 @@ class BrowserTemplateEngine {
             className,
             domainClass: className.replace('Dto', ''),
             dtoClass: className + 'Dto',
+            fields: mapperFields,
             grpcClass: basePackage + '.grpc.' + this.formatForProtoClassName(step.serviceName),
             grpcMapFields,
             hasGrpcMapFields: grpcMapFields.length > 0
@@ -889,8 +914,11 @@ class BrowserTemplateEngine {
         steps,
         includePersistenceModule,
         includeCacheInvalidationModule,
+        aspectDefinitions,
         transport,
         fileCallback) {
+        await this.generateOrchestratorApplication(appName, basePackage, fileCallback);
+
         // Generate orchestrator POM
         await this.generateOrchestratorPom(
             appName,
@@ -900,6 +928,25 @@ class BrowserTemplateEngine {
             transport,
             fileCallback);
 
+        await this.generateOrchestratorApplicationProperties(
+            appName,
+            basePackage,
+            steps,
+            includePersistenceModule,
+            includeCacheInvalidationModule,
+            aspectDefinitions,
+            transport,
+            fileCallback);
+        await this.generateOrchestratorApplicationDevProperties(basePackage, steps, fileCallback);
+        await this.generateOrchestratorApplicationTestProperties(fileCallback);
+    }
+
+    async generateOrchestratorApplication(appName, basePackage, fileCallback) {
+        const rendered = this.render('orchestrator-application', { appName, basePackage });
+        await fileCallback(
+            `orchestrator-svc/src/main/java/${this.toPath(basePackage + '.orchestrator.service')}/OrchestratorHost.java`,
+            rendered
+        );
     }
 
     async generateOrchestratorPom(
@@ -922,6 +969,113 @@ class BrowserTemplateEngine {
 
         const rendered = this.render('orchestrator-pom', context);
         await fileCallback('orchestrator-svc/pom.xml', rendered);
+    }
+
+    async generateOrchestratorApplicationProperties(
+        appName,
+        basePackage,
+        steps,
+        includePersistenceModule,
+        includeCacheInvalidationModule,
+        aspectDefinitions,
+        transport,
+        fileCallback) {
+        const transportMode = this.normalizeTransport(transport);
+        const aspects = this.normalizeAspectDefinitions(aspectDefinitions);
+        const context = {
+            appName,
+            basePackage,
+            transport,
+            isRestTransport: transportMode === 'REST',
+            isGrpcTransport: transportMode !== 'REST',
+            serviceName: 'orchestrator-svc',
+            clientStepSuffix: transportMode === 'REST' ? 'RestClientStep' : 'GrpcClientStep',
+            rootProjectName: appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-'),
+            includePersistenceModule,
+            includeCacheInvalidationModule,
+            hasCacheAspect: aspects.some(aspect => aspect.name === 'cache')
+        };
+        if (includePersistenceModule) {
+            context.persistencePortOffset = steps.length + 1;
+            const outputTypes = new Set();
+            steps.forEach(step => {
+                if (step.outputTypeName) {
+                    outputTypes.add(step.outputTypeName);
+                }
+            });
+            context.persistenceSideEffectTypes = Array.from(outputTypes);
+            context.persistenceAspectNames = aspects
+                .filter(aspect => aspect.name === 'persistence')
+                .filter(aspect => {
+                    const targets = aspect.enabledTargets || [];
+                    return targets.includes('CLIENT_STEP') || targets.includes('GRPC_SERVICE');
+                })
+                .map(aspect => aspect.name);
+        }
+        if (includeCacheInvalidationModule) {
+            const baseOffset = steps.length + (includePersistenceModule ? 2 : 1);
+            context.cacheInvalidationPortOffset = baseOffset;
+            const inputTypes = new Set();
+            const outputTypes = new Set();
+            steps.forEach(step => {
+                if (step.inputTypeName) {
+                    inputTypes.add(step.inputTypeName);
+                }
+                if (step.outputTypeName) {
+                    outputTypes.add(step.outputTypeName);
+                }
+            });
+            context.cacheInvalidationSideEffectTypes = Array.from(inputTypes);
+            context.cacheInvalidationAspectNames = aspects
+                .filter(aspect => aspect.name.startsWith('cache-invalidate'))
+                .filter(aspect => {
+                    const targets = aspect.enabledTargets || [];
+                    return targets.includes('CLIENT_STEP') || targets.includes('GRPC_SERVICE');
+                })
+                .map(aspect => aspect.name);
+            context.cacheSideEffectTypes = Array.from(outputTypes);
+            context.cacheAspectNames = aspects
+                .filter(aspect => aspect.name === 'cache')
+                .filter(aspect => {
+                    const targets = aspect.enabledTargets || [];
+                    return targets.includes('CLIENT_STEP') || targets.includes('GRPC_SERVICE');
+                })
+                .map(aspect => aspect.name);
+        }
+        context.steps = steps.map((step, index) => ({
+            ...step,
+            portOffset: index + 1,
+            serviceNameForPackage: step.serviceName.replace('-svc', '').replace(/-/g, '_'),
+            serviceNameFormatted: this.formatForProtoClassName(step.serviceName),
+            serviceNameCamel: step.serviceNameCamel
+        }));
+        await fileCallback(
+            'orchestrator-svc/src/main/resources/application.properties',
+            this.render('orchestrator-application-properties', context)
+        );
+    }
+
+    normalizeAspectDefinitions(aspectDefinitions) {
+        if (Array.isArray(aspectDefinitions)) {
+            return aspectDefinitions;
+        }
+        if (aspectDefinitions && typeof aspectDefinitions === 'object') {
+            return Object.entries(aspectDefinitions).map(([name, value]) => ({
+                name,
+                ...(value && typeof value === 'object' ? value : {})
+            }));
+        }
+        return [];
+    }
+
+    async generateOrchestratorApplicationDevProperties(basePackage, steps, fileCallback) {
+        const rendered = this.render('orchestrator-application-dev-properties', { basePackage, steps });
+        await fileCallback('orchestrator-svc/src/main/resources/application-dev.properties', rendered);
+    }
+
+    async generateOrchestratorApplicationTestProperties(fileCallback) {
+        const rendered = this.render('orchestrator-application-test-properties', {});
+        await fileCallback('orchestrator-svc/src/test/resources/application.properties', rendered);
     }
 
     async generateMvNWFiles(fileCallback) {

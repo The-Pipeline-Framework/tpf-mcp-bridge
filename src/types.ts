@@ -116,6 +116,16 @@ export interface MessageDefinition {
   fields: MessageField[];
 }
 
+export interface UnionVariantDefinition {
+  number: number;
+  type: string;
+  name?: string;
+}
+
+export interface UnionDefinition {
+  variants: Record<string, UnionVariantDefinition>;
+}
+
 export interface AwaitDispatchConfig {
   mode?: AwaitDispatchMode;
 }
@@ -164,6 +174,7 @@ export interface DerivedConfig {
   platform?: Platform;
   runtimeLayout?: RuntimeLayout | LowercaseRuntimeLayout;
   messages: Record<string, MessageDefinition>;
+  unions?: Record<string, UnionDefinition>;
   steps: PipelineStep[];
   aspects?: Record<string, AspectConfig>;
 }

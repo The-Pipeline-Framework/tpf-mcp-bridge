@@ -1,0 +1,51 @@
+name: Template Generator Smoke
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  rest-await-union-compile:
+    name: REST await union scaffold compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout bridge
+        uses: actions/checkout@v4
+
+      - name: Checkout framework v26.5.2
+        uses: actions/checkout@v4
+        with:
+          repository: The-Pipeline-Framework/pipelineframework
+          ref: v26.5.2
+          path: pipelineframework-v26.5.2
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: pipelineframework-v26.5.2/**/*.xml
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            template-generator-node/package-lock.json
+
+      - name: Install bridge dependencies
+        run: npm ci
+
+      - name: Install vendored generator dependencies
+        run: npm --prefix template-generator-node ci
+
+      - name: Build bridge
+        run: npm run build
+
+      - name: Compile generated REST await union scaffold
+        run: npm run smoke:rest-await-union -- --framework-dir "${GITHUB_WORKSPACE}/pipelineframework-v26.5.2"

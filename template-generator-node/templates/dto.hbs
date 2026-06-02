@@ -1,9 +1,7 @@
 package {{basePackage}}.common.dto;
 
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.UUID;
-import lombok.*;
 
 {{#if hasDateFields}}
 import java.time.LocalDate;
@@ -44,17 +42,11 @@ import java.util.List;
 import java.util.Map;
 {{/if}}
 
-@Value
-@Builder
-@JsonDeserialize(builder = {{className}}.{{className}}Builder.class)
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class {{className}} {
-{{#unless hasIdField}}  UUID id;
+{{#unless hasIdField}}  public UUID id;
 {{/unless}}
 {{#each fields}}
-  {{{this.type}}} {{sanitizeJavaIdentifier this.name}};
+  public {{{this.type}}} {{sanitizeJavaIdentifier this.name}};
 {{/each}}
-
-  // Lombok will generate the builder, but Jackson needs to know how to interpret it
-  @JsonPOJOBuilder(withPrefix = "")
-  public static class {{className}}Builder {}
 }

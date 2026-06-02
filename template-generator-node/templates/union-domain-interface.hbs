@@ -1,0 +1,11 @@
+package {{basePackage}}.common.domain;
+
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import java.io.Serializable;
+
+@JsonSerialize(using = {{name}}JsonSerializer.class)
+@JsonDeserialize(using = {{name}}JsonDeserializer.class)
+public sealed interface {{name}} extends Serializable
+    permits {{#each variants}}{{typeName}}{{#unless @last}}, {{/unless}}{{/each}} {
+}

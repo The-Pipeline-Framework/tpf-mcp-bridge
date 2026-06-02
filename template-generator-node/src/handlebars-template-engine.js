@@ -432,6 +432,7 @@ class HandlebarsTemplateEngine {
         const resolvedAppName = options.appName;
         const resolvedBasePackage = options.basePackage;
         const resolvedSteps = options.steps;
+        const unionDefinitions = Array.isArray(options.unionDefinitions) ? options.unionDefinitions : [];
         const aspectConfig = options.aspects || {};
         const normalizedRuntimeLayout = this.normalizeRuntimeLayout(options.runtimeLayout);
         const transportMode = this.normalizeTransport(options.transport, normalizedRuntimeLayout);
@@ -475,6 +476,7 @@ class HandlebarsTemplateEngine {
             resolvedSteps,
             aspectDefinitions,
             transportMode,
+            unionDefinitions,
             options.outputPath
         );
 
@@ -578,6 +580,7 @@ class HandlebarsTemplateEngine {
                 basePackage: options.basePackage,
                 steps: Array.isArray(options.steps) ? options.steps : [],
                 aspects: options.aspects && typeof options.aspects === 'object' ? options.aspects : {},
+                unionDefinitions: Array.isArray(options.unionDefinitions) ? options.unionDefinitions : [],
                 transport: this.normalizeTransport(options.transport, normalizedLayout),
                 platform: this.normalizePlatform(options.platform),
                 runtimeLayout: normalizedLayout,
@@ -593,6 +596,7 @@ class HandlebarsTemplateEngine {
                     basePackage,
                     steps: Array.from(steps),
                     aspects: aspects && typeof aspects === 'object' ? aspects : {},
+                    unionDefinitions: [],
                     transport: this.normalizeTransport(transport, this.normalizeRuntimeLayout(runtimeLayout)),
                     platform: this.normalizePlatform(platform),
                     runtimeLayout: this.normalizeRuntimeLayout(runtimeLayout),
@@ -611,6 +615,7 @@ class HandlebarsTemplateEngine {
                         basePackage,
                         steps: numericKeys.map(index => steps[index]),
                         aspects: aspects && typeof aspects === 'object' ? aspects : {},
+                        unionDefinitions: [],
                         transport: this.normalizeTransport(transport, this.normalizeRuntimeLayout(runtimeLayout)),
                         platform: this.normalizePlatform(platform),
                         runtimeLayout: this.normalizeRuntimeLayout(runtimeLayout),
@@ -628,6 +633,7 @@ class HandlebarsTemplateEngine {
                 basePackage: options.basePackage,
                 steps: Array.isArray(options.steps) ? options.steps : [],
                 aspects: options.aspects && typeof options.aspects === 'object' ? options.aspects : {},
+                unionDefinitions: Array.isArray(options.unionDefinitions) ? options.unionDefinitions : [],
                 transport: this.normalizeTransport(options.transport, normalizedLayout),
                 platform: this.normalizePlatform(options.platform),
                 runtimeLayout: normalizedLayout,
@@ -650,6 +656,7 @@ class HandlebarsTemplateEngine {
             basePackage,
             steps: Array.isArray(steps) ? steps : [],
             aspects: aspects && typeof aspects === 'object' ? aspects : {},
+            unionDefinitions: [],
             transport: this.normalizeTransport(transport, this.normalizeRuntimeLayout(resolvedRuntimeLayout)),
             platform: this.normalizePlatform(resolvedPlatform),
             runtimeLayout: this.normalizeRuntimeLayout(resolvedRuntimeLayout),
@@ -687,7 +694,7 @@ class HandlebarsTemplateEngine {
         await fs.writeFile(pomPath, rendered);
     }
 
-    async generateCommonModule(appName, basePackage, steps, aspectDefinitions, transport, outputPath) {
+    async generateCommonModule(appName, basePackage, steps, aspectDefinitions, transport, unionDefinitions, outputPath) {
         const commonPath = path.join(outputPath, 'common');
         await fs.ensureDir(path.join(commonPath, 'src/main/java', this.toPath(basePackage + '.common.domain')));
         await fs.ensureDir(path.join(commonPath, 'src/main/java', this.toPath(basePackage + '.common.dto')));
@@ -710,6 +717,8 @@ class HandlebarsTemplateEngine {
             await this.generateDtoClasses(step, basePackage, commonPath, i);
             await this.generateMapperClasses(step, basePackage, commonPath, i);
         }
+
+        await this.generateUnionClasses(unionDefinitions, basePackage, commonPath);
 
         // Generate base entity
         await this.generateBaseEntity(basePackage, commonPath);
@@ -893,7 +902,7 @@ class HandlebarsTemplateEngine {
 
     async generateDomainClasses(step, basePackage, commonPath, stepIndex) {
         // Process input domain class only for first step
-        if (stepIndex === 0 && step.inputFields && step.inputTypeName) {
+        if (stepIndex === 0 && !step.inputIsUnion && step.inputFields && step.inputTypeName) {
             const inputContext = {
                 ...step,
                 basePackage,
@@ -918,7 +927,7 @@ class HandlebarsTemplateEngine {
         }
 
         // Process output domain class for all steps
-        if (step.outputFields && step.outputTypeName) {
+        if (!step.outputIsUnion && step.outputFields && step.outputTypeName) {
             const outputContext = {
                 ...step,
                 basePackage,
@@ -952,7 +961,7 @@ class HandlebarsTemplateEngine {
 
     async generateDtoClasses(step, basePackage, commonPath, stepIndex) {
         // Process input DTO class only for first step
-        if (stepIndex === 0 && step.inputFields && step.inputTypeName) {
+        if (stepIndex === 0 && !step.inputIsUnion && step.inputFields && step.inputTypeName) {
             const inputContext = {
                 ...step,
                 basePackage,
@@ -977,7 +986,7 @@ class HandlebarsTemplateEngine {
         }
 
         // Process output DTO class for all steps
-        if (step.outputFields && step.outputTypeName) {
+        if (!step.outputIsUnion && step.outputFields && step.outputTypeName) {
             const outputContext = {
                 ...step,
                 basePackage,
@@ -1004,22 +1013,53 @@ class HandlebarsTemplateEngine {
 
     async generateMapperClasses(step, basePackage, commonPath, stepIndex) {
         // Generate input mapper class only for first step (since other steps reference previous step's output)
-        if (stepIndex === 0 && step.inputTypeName) {
+        if (stepIndex === 0 && !step.inputIsUnion && step.inputTypeName) {
             await this.generateMapperClass(step.inputTypeName, step, basePackage, commonPath);
         }
 
         // Generate output mapper class for all steps
-        if (step.outputTypeName) {
+        if (!step.outputIsUnion && step.outputTypeName) {
             await this.generateMapperClass(step.outputTypeName, step, basePackage, commonPath);
         }
     }
 
+    async generateUnionClasses(unionDefinitions, basePackage, commonPath) {
+        if (!Array.isArray(unionDefinitions)) {
+            return;
+        }
+        for (const union of unionDefinitions) {
+            const domainDir = path.join(commonPath, 'src/main/java', this.toPath(basePackage + '.common.domain'));
+            const dtoDir = path.join(commonPath, 'src/main/java', this.toPath(basePackage + '.common.dto'));
+            const mapperDir = path.join(commonPath, 'src/main/java', this.toPath(basePackage + '.common.mapper'));
+            const context = { ...union, basePackage };
+
+            await fs.writeFile(path.join(domainDir, `${union.name}.java`), this.render('union-domain-interface', context));
+            await fs.writeFile(path.join(domainDir, `${union.name}JsonSerializer.java`), this.render('union-domain-json-serializer', context));
+            await fs.writeFile(path.join(domainDir, `${union.name}JsonDeserializer.java`), this.render('union-domain-json-deserializer', context));
+            await fs.writeFile(path.join(dtoDir, `${union.dtoName}.java`), this.render('union-dto-interface', context));
+            await fs.writeFile(path.join(dtoDir, `${union.dtoName}JsonSerializer.java`), this.render('union-dto-json-serializer', context));
+            await fs.writeFile(path.join(dtoDir, `${union.dtoName}JsonDeserializer.java`), this.render('union-dto-json-deserializer', context));
+            await fs.writeFile(path.join(mapperDir, `${union.name}Mapper.java`), this.render('union-mapper', context));
+
+            for (const variant of union.variants) {
+                const variantContext = { ...context, ...variant, unionName: union.name, unionDtoName: union.dtoName };
+                await fs.writeFile(path.join(domainDir, `${variant.typeName}.java`), this.render('union-domain-variant', variantContext));
+                await fs.writeFile(path.join(dtoDir, `${variant.dtoTypeName}.java`), this.render('union-dto-variant', variantContext));
+            }
+        }
+    }
+
     async generateMapperClass(className, step, basePackage, commonPath) {
-        const mapperFields = this.mapperFieldsForClass(className, step);
+        const mapperFields = this.mapperFieldsForClass(className, step)
+            .map(field => ({
+                ...field,
+                javaName: this.sanitizeJavaIdentifier(field.name),
+                accessorSuffix: this.javaAccessorSuffix(this.sanitizeJavaIdentifier(field.name))
+            }));
         const grpcMapFields = mapperFields
             .filter(field => field && typeof field.type === 'string' && field.type.startsWith('Map<'))
             .map(field => {
-                const javaName = this.sanitizeJavaIdentifier(field.name);
+                const javaName = field.javaName;
                 return {
                     ...field,
                     javaName,
@@ -1033,6 +1073,7 @@ class HandlebarsTemplateEngine {
             className,
             domainClass: className.replace('Dto', ''),
             dtoClass: className + 'Dto',
+            fields: mapperFields,
             grpcClass: basePackage + '.grpc.' + this.formatForProtoClassName(step.serviceName),
             grpcMapFields,
             hasGrpcMapFields: grpcMapFields.length > 0
