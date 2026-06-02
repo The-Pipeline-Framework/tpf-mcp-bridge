@@ -1001,31 +1001,13 @@ wrapperUrl=https://repo.maven.apache.org/maven2/org/apache/maven/wrapper/maven-w
         runtimeLayout,
         fileCallback
     ) {
-        const layouts = ['modular', 'pipeline-runtime', 'monolith'];
-        const fileNames = {
-            modular: 'modular-auto.yaml',
-            'pipeline-runtime': 'pipeline-runtime.yaml',
-            monolith: 'monolith.yaml'
-        };
-        for (const layout of layouts) {
-            const mapping = this.buildRuntimeMapping(
-                layout,
-                steps,
-                includePersistenceModule,
-                includeCacheInvalidationModule
-            );
-            await fileCallback(
-                `config/runtime-mapping/${fileNames[layout]}`,
-                this.toYaml(mapping)
-            );
-        }
         const active = this.buildRuntimeMapping(
             runtimeLayout,
             steps,
             includePersistenceModule,
             includeCacheInvalidationModule
         );
-        await fileCallback('config/runtime-mapping/pipeline-runtime-active.yaml', this.toYaml(active));
+        await fileCallback('config/pipeline.runtime.yaml', this.toYaml(active));
     }
 
     buildRuntimeMapping(layout, steps, includePersistenceModule, includeCacheInvalidationModule) {

@@ -1837,30 +1837,15 @@ wrapperUrl=https://repo.maven.apache.org/maven2/org/apache/maven/wrapper/maven-w
         runtimeLayout,
         outputPath
     ) {
-        const runtimeMappingDir = path.join(outputPath, 'config', 'runtime-mapping');
-        await fs.ensureDir(runtimeMappingDir);
-        const layouts = ['modular', 'pipeline-runtime', 'monolith'];
-        const fileNames = {
-            modular: 'modular-auto.yaml',
-            'pipeline-runtime': 'pipeline-runtime.yaml',
-            monolith: 'monolith.yaml'
-        };
-        for (const layout of layouts) {
-            const mapping = this.buildRuntimeMapping(
-                layout,
-                steps,
-                includePersistenceModule,
-                includeCacheInvalidationModule
-            );
-            await fs.writeFile(path.join(runtimeMappingDir, fileNames[layout]), YAML.dump(mapping, { lineWidth: -1 }));
-        }
         const active = this.buildRuntimeMapping(
             runtimeLayout,
             steps,
             includePersistenceModule,
             includeCacheInvalidationModule
         );
-        await fs.writeFile(path.join(runtimeMappingDir, 'pipeline-runtime-active.yaml'), YAML.dump(active, { lineWidth: -1 }));
+        const configDir = path.join(outputPath, 'config');
+        await fs.ensureDir(configDir);
+        await fs.writeFile(path.join(configDir, 'pipeline.runtime.yaml'), YAML.dump(active, { lineWidth: -1 }));
     }
 }
 
