@@ -226,6 +226,51 @@ steps:
     expect(mapper).not.toContain('getFetchHeaders().putAll');
   });
 
+  test('generateFromConfig emits only the active runtime mapping for monolith scaffolds', async () => {
+    const generator = new PipelineGenerator();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
+    const configPath = path.join(tempDir, 'restaurant-approval.yaml');
+    const outputDir = path.join(tempDir, 'generated-app');
+    fs.writeFileSync(configPath, `version: 2
+appName: RestaurantApproval
+basePackage: com.example.restaurant.approval
+transport: REST
+platform: COMPUTE
+runtimeLayout: MONOLITH
+messages:
+  ApprovalRequest:
+    fields:
+      - number: 1
+        name: restaurantId
+        type: uuid
+      - number: 2
+        name: requestedBy
+        type: string
+  ApprovalDecision:
+    fields:
+      - number: 1
+        name: restaurantId
+        type: uuid
+      - number: 2
+        name: decision
+        type: string
+steps:
+  - name: Validate Restaurant Request
+    cardinality: ONE_TO_ONE
+    inputTypeName: ApprovalRequest
+    outputTypeName: ApprovalDecision
+`);
+
+    await generator.generateFromConfig(configPath, outputDir);
+
+    const activeRuntimeMapping = YAML.load(
+      fs.readFileSync(path.join(outputDir, 'config', 'pipeline.runtime.yaml'), 'utf8')
+    );
+    expect(activeRuntimeMapping.layout).toBe('monolith');
+    expect(fs.existsSync(path.join(outputDir, 'config', 'runtime-mapping'))).toBe(false);
+    expect(fs.existsSync(path.join(outputDir, 'config', 'runtime-mapping', 'pipeline-runtime-active.yaml'))).toBe(false);
+  });
+
   test('toScaffoldConfig derives legacy field bindings from v2 messages', () => {
     const generator = new PipelineGenerator();
     const config = {

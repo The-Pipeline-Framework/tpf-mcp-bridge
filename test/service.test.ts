@@ -540,12 +540,17 @@ test("answer_contract_questions resolves onboarding contract ambiguity and enabl
   const fileNames = Object.keys(zip.files);
   assert.ok(fileNames.includes("pom.xml"));
   assert.ok(fileNames.includes("config/pipeline.yaml"));
+  assert.ok(fileNames.includes("config/pipeline.runtime.yaml"));
+  assert.ok(!fileNames.some((name) => name.startsWith("config/runtime-mapping/")));
   assert.ok(fileNames.every((name) => name.length < 240));
 
   const pipelineYaml = await zip.file("config/pipeline.yaml")!.async("string");
   const pipelineConfig = YAML.load(pipelineYaml) as DerivedConfig;
+  const runtimeMappingYaml = await zip.file("config/pipeline.runtime.yaml")!.async("string");
+  const runtimeMapping = YAML.load(runtimeMappingYaml) as { layout?: string };
   assertNoDuplicateMessageFields(pipelineConfig);
   assert.equal(pipelineConfig.basePackage, "com.example.onboarding.creation");
+  assert.equal(runtimeMapping.layout, "monolith");
   assert.ok(pipelineConfig.steps.every((step) => !/^save\b/i.test(step.name)));
 });
 
@@ -632,6 +637,9 @@ test("scaffold_from_brief writes a scaffold with REST + COMPUTE + MONOLITH defau
     assert.match(pipelineYaml, /transport: REST/);
     assert.match(pipelineYaml, /platform: COMPUTE/);
     assert.match(pipelineYaml, /runtimeLayout: monolith/);
+    const runtimeMappingYaml = await fs.readFile(path.join(outputDir, "config", "pipeline.runtime.yaml"), "utf8");
+    assert.equal((YAML.load(runtimeMappingYaml) as { layout?: string }).layout, "monolith");
+    await assert.rejects(fs.stat(path.join(outputDir, "config", "runtime-mapping")));
     await fs.stat(path.join(outputDir, "pom.xml"));
     await fs.stat(path.join(outputDir, "orchestrator-svc"));
   } finally {
