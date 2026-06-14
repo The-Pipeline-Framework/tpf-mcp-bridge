@@ -352,6 +352,7 @@ class BrowserTemplateEngine {
         const normalizedRuntimeLayout = normalizedOptions.runtimeLayout;
         const transportMode = normalizedOptions.transport;
         const aspectConfig = normalizedOptions.aspects;
+        const kafkaAwait = this.createKafkaAwaitContext(stepsValue, appNameValue);
         const includePersistenceModule = this.isAspectEnabled(aspectConfig, 'persistence');
         const includeCacheInvalidationModule = this.isAspectEnabled(aspectConfig, 'cache')
             || this.isAspectEnabled(aspectConfig, 'cache-invalidate')
@@ -405,6 +406,7 @@ class BrowserTemplateEngine {
             includeCacheInvalidationModule,
             aspectConfig,
             transportMode,
+            kafkaAwait,
             normalizedOptions.fileCallback);
 
         if (normalizedRuntimeLayout === 'pipeline-runtime') {
@@ -412,6 +414,7 @@ class BrowserTemplateEngine {
                 appNameValue,
                 basePackageValue,
                 stepsValue,
+                kafkaAwait,
                 normalizedOptions.fileCallback
             );
         } else if (normalizedRuntimeLayout === 'monolith') {
@@ -421,6 +424,7 @@ class BrowserTemplateEngine {
                 stepsValue,
                 includePersistenceModule,
                 includeCacheInvalidationModule,
+                kafkaAwait,
                 normalizedOptions.fileCallback
             );
         }
@@ -446,6 +450,45 @@ class BrowserTemplateEngine {
             includePersistenceModule,
             includeCacheInvalidationModule,
             normalizedOptions.fileCallback);
+    }
+
+    createKafkaAwaitContext(steps, appName) {
+        const kafkaSteps = (steps || [])
+            .filter(step => step && step.kind === 'await')
+            .filter(step => step.await && step.await.transport && step.await.transport.type === 'kafka');
+        if (kafkaSteps.length === 0) {
+            return null;
+        }
+        const rootProjectName = appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
+        const requestTopics = this.uniqueNonBlank(kafkaSteps.map(step => this.awaitTransportString(step, 'request', 'topic')
+            || this.awaitTransportString(step, 'config', 'topic')));
+        const responseTopics = this.uniqueNonBlank(kafkaSteps.map(step => this.awaitTransportString(step, 'response', 'topic')));
+        if (requestTopics.length === 0) {
+            throw new Error('Kafka await scaffold requires await.transport.request.topic.');
+        }
+        if (responseTopics.length === 0) {
+            throw new Error('Kafka await scaffold requires await.transport.response.topic.');
+        }
+        if (responseTopics.length > 1) {
+            throw new Error('Kafka await scaffold currently supports one response topic per generated runtime module.');
+        }
+        const explicitGroup = this.uniqueNonBlank(kafkaSteps.map(step => this.awaitTransportString(step, 'consumer', 'group')))[0];
+        const consumerGroup = explicitGroup || `${rootProjectName}-orchestrator`;
+        return {
+            requestTopic: requestTopics[0],
+            responseTopic: responseTopics[0],
+            consumerGroup,
+            consumerGroupProperty: '${TPF_AWAIT_KAFKA_RESPONSES_GROUP_ID:' + consumerGroup + '}'
+        };
+    }
+
+    awaitTransportString(step, section, key) {
+        const value = step?.await?.transport?.[section]?.[key];
+        return typeof value === 'string' && value.trim() ? value.trim() : null;
+    }
+
+    uniqueNonBlank(values) {
+        return Array.from(new Set((values || []).filter(value => typeof value === 'string' && value.trim())));
     }
 
     async generateParentPom(
@@ -501,11 +544,12 @@ class BrowserTemplateEngine {
         await this.generateCommonConverters(basePackage, fileCallback);
     }
 
-    async generatePipelineRuntimeModule(appName, basePackage, steps, fileCallback) {
+    async generatePipelineRuntimeModule(appName, basePackage, steps, kafkaAwait, fileCallback) {
         const rootProjectName = appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
         const context = {
             basePackage,
             rootProjectName,
+            kafkaAwait,
             sourceDirs: (steps || []).map((step, index) => {
                 const key = `s${index}`;
                 return {
@@ -521,7 +565,8 @@ class BrowserTemplateEngine {
         const appPropsContent = this.render('application-properties', {
             serviceName: 'pipeline-runtime-svc',
             rootProjectName,
-            portOffset: 1
+            portOffset: 1,
+            kafkaAwait
         });
         await fileCallback('pipeline-runtime-svc/src/main/resources/application.properties', appPropsContent);
         const appDevProps = this.render('module-application-dev-properties', {});
@@ -536,6 +581,7 @@ class BrowserTemplateEngine {
         steps,
         includePersistenceModule,
         includeCacheInvalidationModule,
+        kafkaAwait,
         fileCallback
     ) {
         const rootProjectName = appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
@@ -572,6 +618,7 @@ class BrowserTemplateEngine {
             rootProjectName,
             includePersistenceModule,
             includeCacheInvalidationModule,
+            kafkaAwait,
             sourceDirs
         };
         const pomContent = this.render('monolith-svc-pom', context);
@@ -580,7 +627,8 @@ class BrowserTemplateEngine {
         const appPropsContent = this.render('application-properties', {
             serviceName: 'monolith-svc',
             rootProjectName,
-            portOffset: 0
+            portOffset: 0,
+            kafkaAwait
         });
         await fileCallback('monolith-svc/src/main/resources/application.properties', appPropsContent);
         const appDevProps = this.render('module-application-dev-properties', {});
@@ -916,6 +964,7 @@ class BrowserTemplateEngine {
         includeCacheInvalidationModule,
         aspectDefinitions,
         transport,
+        kafkaAwait,
         fileCallback) {
         await this.generateOrchestratorApplication(appName, basePackage, fileCallback);
 
@@ -926,6 +975,7 @@ class BrowserTemplateEngine {
             includePersistenceModule,
             includeCacheInvalidationModule,
             transport,
+            kafkaAwait,
             fileCallback);
 
         await this.generateOrchestratorApplicationProperties(
@@ -936,6 +986,7 @@ class BrowserTemplateEngine {
             includeCacheInvalidationModule,
             aspectDefinitions,
             transport,
+            kafkaAwait,
             fileCallback);
         await this.generateOrchestratorApplicationDevProperties(basePackage, steps, fileCallback);
         await this.generateOrchestratorApplicationTestProperties(fileCallback);
@@ -955,6 +1006,7 @@ class BrowserTemplateEngine {
         includePersistenceModule,
         includeCacheInvalidationModule,
         transport,
+        kafkaAwait,
         fileCallback) {
         const transportMode = this.normalizeTransport(transport);
         const context = {
@@ -963,6 +1015,7 @@ class BrowserTemplateEngine {
             rootProjectName: appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-'),
             includePersistenceModule,
             includeCacheInvalidationModule,
+            kafkaAwait,
             isRestTransport: transportMode === 'REST',
             isGrpcTransport: transportMode === 'GRPC'
         };
@@ -979,6 +1032,7 @@ class BrowserTemplateEngine {
         includeCacheInvalidationModule,
         aspectDefinitions,
         transport,
+        kafkaAwait,
         fileCallback) {
         const transportMode = this.normalizeTransport(transport);
         const aspects = this.normalizeAspectDefinitions(aspectDefinitions);
@@ -986,6 +1040,7 @@ class BrowserTemplateEngine {
             appName,
             basePackage,
             transport,
+            kafkaAwait,
             isRestTransport: transportMode === 'REST',
             isGrpcTransport: transportMode !== 'REST',
             serviceName: 'orchestrator-svc',

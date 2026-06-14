@@ -55,6 +55,22 @@ pipeline.defaults.retry-wait-ms=500
 pipeline.defaults.recover-on-failure=false
 pipeline.defaults.max-backoff=30000
 pipeline.defaults.jitter=false
+{{#if kafkaAwait}}
+
+# Kafka await bridge
+pipeline.orchestrator.mode=${PIPELINE_ORCHESTRATOR_MODE:QUEUE_ASYNC}
+pipeline.orchestrator.resume-token-secret=${PIPELINE_ORCHESTRATOR_RESUME_TOKEN_SECRET}
+tpf.await.kafka.reactive-messaging.enabled=true
+kafka.bootstrap.servers=${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+mp.messaging.outgoing.tpf-await-kafka-requests.connector=smallrye-kafka
+mp.messaging.outgoing.tpf-await-kafka-requests.topic={{kafkaAwait.requestTopic}}
+mp.messaging.outgoing.tpf-await-kafka-requests.value.serializer=org.apache.kafka.common.serialization.StringSerializer
+mp.messaging.incoming.tpf-await-kafka-responses.connector=smallrye-kafka
+mp.messaging.incoming.tpf-await-kafka-responses.topic={{kafkaAwait.responseTopic}}
+mp.messaging.incoming.tpf-await-kafka-responses.group.id={{kafkaAwait.consumerGroupProperty}}
+mp.messaging.incoming.tpf-await-kafka-responses.auto.offset.reset=${TPF_AWAIT_KAFKA_RESPONSES_OFFSET_RESET:earliest}
+mp.messaging.incoming.tpf-await-kafka-responses.value.deserializer=org.apache.kafka.common.serialization.StringDeserializer
+{{/if}}
 {{#if hasCacheAspect}}
 pipeline.cache.policy=prefer-cache
 

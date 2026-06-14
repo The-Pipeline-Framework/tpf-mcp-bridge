@@ -511,6 +511,139 @@ steps:
     expect(fs.existsSync(path.join(javaRoot, 'domain', 'RestaurantOrderAccepted.java'))).toBe(true);
   });
 
+  test('generateFromConfig scaffolds Quarkus Kafka await runtime wiring', async () => {
+    const generator = new PipelineGenerator();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
+    const configPath = path.join(tempDir, 'kafka-await.yaml');
+    const outputDir = path.join(tempDir, 'generated-app');
+    fs.writeFileSync(configPath, `version: 2
+appName: KafkaAwaitApp
+basePackage: com.example.kafkaawait
+transport: REST
+platform: COMPUTE
+runtimeLayout: MODULAR
+messages:
+  PaymentRequest:
+    fields:
+      - number: 1
+        name: paymentId
+        type: uuid
+  PaymentResult:
+    fields:
+      - number: 1
+        name: paymentId
+        type: uuid
+      - number: 2
+        name: status
+        type: string
+steps:
+  - name: Await Payment Provider
+    kind: await
+    cardinality: ONE_TO_ONE
+    inputTypeName: PaymentRequest
+    outputTypeName: PaymentResult
+    timeout: PT2M
+    idempotencyKeyFields:
+      - paymentId
+    await:
+      correlation:
+        strategy: interactionId
+      transport:
+        type: kafka
+        request:
+          topic: payment.requests
+          key: interactionId
+        response:
+          topic: payment.results
+        consumer:
+          group: payment-await-orchestrator
+`);
+
+    await generator.generateFromConfig(configPath, outputDir);
+
+    const pom = fs.readFileSync(path.join(outputDir, 'orchestrator-svc', 'pom.xml'), 'utf8');
+    const applicationProperties = fs.readFileSync(
+      path.join(outputDir, 'orchestrator-svc', 'src', 'main', 'resources', 'application.properties'),
+      'utf8'
+    );
+
+    expect(pom).toContain('<artifactId>quarkus-messaging-kafka</artifactId>');
+    expect(applicationProperties).toContain('pipeline.orchestrator.mode=${PIPELINE_ORCHESTRATOR_MODE:QUEUE_ASYNC}');
+    expect(applicationProperties).toContain('tpf.await.kafka.reactive-messaging.enabled=true');
+    expect(applicationProperties).toContain('mp.messaging.outgoing.tpf-await-kafka-requests.topic=payment.requests');
+    expect(applicationProperties).toContain('mp.messaging.incoming.tpf-await-kafka-responses.topic=payment.results');
+    expect(applicationProperties).toContain('mp.messaging.incoming.tpf-await-kafka-responses.group.id=${TPF_AWAIT_KAFKA_RESPONSES_GROUP_ID:payment-await-orchestrator}');
+  });
+
+  test('generateFromConfig rejects Kafka await scaffolds with multiple response topics', async () => {
+    const generator = new PipelineGenerator();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
+    const configPath = path.join(tempDir, 'multi-kafka-await.yaml');
+    const outputDir = path.join(tempDir, 'generated-app');
+    fs.writeFileSync(configPath, `version: 2
+appName: KafkaAwaitApp
+basePackage: com.example.kafkaawait
+transport: REST
+platform: COMPUTE
+runtimeLayout: MODULAR
+messages:
+  PaymentRequest:
+    fields:
+      - number: 1
+        name: paymentId
+        type: uuid
+  PaymentResult:
+    fields:
+      - number: 1
+        name: paymentId
+        type: uuid
+  SettlementResult:
+    fields:
+      - number: 1
+        name: paymentId
+        type: uuid
+steps:
+  - name: Await Payment Provider
+    kind: await
+    cardinality: ONE_TO_ONE
+    inputTypeName: PaymentRequest
+    outputTypeName: PaymentResult
+    timeout: PT2M
+    idempotencyKeyFields:
+      - paymentId
+    await:
+      correlation:
+        strategy: interactionId
+      transport:
+        type: kafka
+        request:
+          topic: payment.requests
+        response:
+          topic: payment.results
+  - name: Await Settlement Provider
+    kind: await
+    cardinality: ONE_TO_ONE
+    inputTypeName: PaymentResult
+    outputTypeName: SettlementResult
+    timeout: PT2M
+    idempotencyKeyFields:
+      - paymentId
+    await:
+      correlation:
+        strategy: interactionId
+      transport:
+        type: kafka
+        request:
+          topic: settlement.requests
+        response:
+          topic: settlement.results
+`);
+
+    await expect(generator.generateFromConfig(configPath, outputDir))
+      .rejects
+      .toThrow('one response topic per generated runtime module');
+  });
+
   test('loadConfig rejects await config missing required structural fields', () => {
     const generator = new PipelineGenerator();
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));

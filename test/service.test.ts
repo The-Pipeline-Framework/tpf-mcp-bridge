@@ -778,6 +778,25 @@ test("shared scaffold ZIP includes REST await union DTO and mapper helpers", asy
   assert.match(service, /RestaurantDecision output = null;/);
 });
 
+test("shared scaffold ZIP includes Kafka await Quarkus runtime wiring", async () => {
+  const config: DerivedConfig = buildKafkaAwaitConfig();
+  const zipBytes = await generateScaffoldZip(config);
+  const zip = await JSZip.loadAsync(zipBytes);
+
+  const pom = await zip.file("orchestrator-svc/pom.xml")!.async("string");
+  const applicationProperties = await zip.file("orchestrator-svc/src/main/resources/application.properties")!.async("string");
+
+  assert.match(pom, /<artifactId>quarkus-messaging-kafka<\/artifactId>/);
+  assert.match(applicationProperties, /pipeline\.orchestrator\.mode=\$\{PIPELINE_ORCHESTRATOR_MODE:QUEUE_ASYNC\}/);
+  assert.match(applicationProperties, /tpf\.await\.kafka\.reactive-messaging\.enabled=true/);
+  assert.match(applicationProperties, /mp\.messaging\.outgoing\.tpf-await-kafka-requests\.topic=payment\.requests/);
+  assert.match(applicationProperties, /mp\.messaging\.incoming\.tpf-await-kafka-responses\.topic=payment\.results/);
+  assert.match(
+    applicationProperties,
+    /mp\.messaging\.incoming\.tpf-await-kafka-responses\.group\.id=\$\{TPF_AWAIT_KAFKA_RESPONSES_GROUP_ID:payment-await-orchestrator\}/
+  );
+});
+
 test("planner drafts that materialize persistence as business steps are rejected", async () => {
   const planner = {
     async planInitialBrief(): Promise<PlannerDraft> {
@@ -2161,6 +2180,59 @@ function buildRestaurantApprovalUnionConfig(): DerivedConfig {
         cardinality: "ONE_TO_ONE",
         inputTypeName: "RestaurantDecision",
         outputTypeName: "TerminalOrderState"
+      }
+    ]
+  };
+}
+
+function buildKafkaAwaitConfig(): DerivedConfig {
+  return {
+    version: 2,
+    appName: "KafkaAwaitApp",
+    basePackage: "com.example.kafkaawait",
+    transport: "REST",
+    platform: "COMPUTE",
+    runtimeLayout: "MODULAR",
+    messages: {
+      PaymentRequest: {
+        fields: [
+          { number: 1, name: "paymentId", type: "uuid" }
+        ]
+      },
+      PaymentResult: {
+        fields: [
+          { number: 1, name: "paymentId", type: "uuid" },
+          { number: 2, name: "status", type: "string" }
+        ]
+      }
+    },
+    steps: [
+      {
+        name: "Await Payment Provider",
+        kind: "await",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "PaymentRequest",
+        outputTypeName: "PaymentResult",
+        timeout: "PT2M",
+        idempotencyKeyFields: ["paymentId"],
+        await: {
+          correlation: {
+            strategy: "interactionId"
+          },
+          transport: {
+            type: "kafka",
+            request: {
+              topic: "payment.requests",
+              key: "interactionId"
+            },
+            response: {
+              topic: "payment.results"
+            },
+            consumer: {
+              group: "payment-await-orchestrator"
+            }
+          }
+        }
       }
     ]
   };
