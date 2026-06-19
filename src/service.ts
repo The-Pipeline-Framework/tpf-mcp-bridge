@@ -42,7 +42,7 @@ export async function scaffoldFromBriefTool(input: BriefInput): Promise<Scaffold
     };
   }
 
-  const generatedPath = await generateScaffold(validatedConfig, input.outputDir);
+  const generatedPath = await generateScaffold(validatedConfig, input.outputDir, analysis.compositionManifest);
   return {
     ...analysis,
     status: "generated",

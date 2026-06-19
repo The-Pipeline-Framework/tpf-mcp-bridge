@@ -1,9 +1,11 @@
-import type { DerivedConfig } from "./types.js";
+import type { DerivedConfig, PipelineCompositionManifest } from "./types.js";
 
 const MAX_BASE_PACKAGE_LENGTH = 80;
 const MAX_PACKAGE_SEGMENTS = 8;
 const MAX_PACKAGE_SEGMENT_LENGTH = 24;
 const MAX_APP_NAME_LENGTH = 80;
+const MAX_COMPOSITION_PIPELINE_ID_LENGTH = 80;
+const MAX_COMPOSITION_PIPELINE_PATH_LENGTH = 240;
 
 export class DerivedConfigValidationError extends Error {
   constructor(message: string) {
@@ -36,6 +38,7 @@ export function assertDerivedConfigInvariants(config: DerivedConfig): void {
       }
     });
   }
+  validateBoundaries(config);
 
   const knownMessages = new Set(messageEntries.map(([name]) => name));
   const unionEntries = Object.entries(config.unions || {});
@@ -62,6 +65,35 @@ export function assertDerivedConfigInvariants(config: DerivedConfig): void {
       throw new DerivedConfigValidationError(`Step '${step.name}' references unknown output type '${step.outputTypeName}'.`);
     }
     validateAwaitStep(config, step);
+  }
+}
+
+export function assertCompositionManifestInvariants(manifest: PipelineCompositionManifest | undefined): void {
+  if (!manifest) {
+    return;
+  }
+  if (manifest.version !== 1) {
+    throw new DerivedConfigValidationError("Pipeline composition manifest version must be 1.");
+  }
+  if (!manifest.name?.trim()) {
+    throw new DerivedConfigValidationError("Pipeline composition manifest must include a non-empty name.");
+  }
+  if (!manifest.pipelines?.length) {
+    throw new DerivedConfigValidationError("Pipeline composition manifest must include at least one pipeline.");
+  }
+  for (const pipeline of manifest.pipelines) {
+    if (!/^[a-zA-Z][a-zA-Z0-9._-]*$/.test(pipeline.id)) {
+      throw new DerivedConfigValidationError(`Pipeline composition id '${pipeline.id}' is invalid.`);
+    }
+    if (pipeline.id.length > MAX_COMPOSITION_PIPELINE_ID_LENGTH) {
+      throw new DerivedConfigValidationError(`Pipeline composition id '${pipeline.id}' exceeds the supported length budget.`);
+    }
+    if (!pipeline.path?.trim()) {
+      throw new DerivedConfigValidationError(`Pipeline composition entry '${pipeline.id}' must include a path.`);
+    }
+    if (pipeline.path.length > MAX_COMPOSITION_PIPELINE_PATH_LENGTH) {
+      throw new DerivedConfigValidationError(`Pipeline composition path for '${pipeline.id}' exceeds the supported length budget.`);
+    }
   }
 }
 
@@ -152,6 +184,18 @@ function validateAwaitStep(config: DerivedConfig, step: DerivedConfig["steps"][n
       );
     }
   }
+  if (step.await.transport.type === "sqs") {
+    const request = step.await.transport.request;
+    const response = step.await.transport.response;
+    const requestQueueUrl = typeof request?.queueUrl === "string" ? request.queueUrl : undefined;
+    const responseQueueUrl = typeof response?.queueUrl === "string" ? response.queueUrl : undefined;
+    if (!requestQueueUrl?.trim()) {
+      throw new DerivedConfigValidationError(`Await step '${step.name}' with sqs transport must declare request.queueUrl.`);
+    }
+    if (!responseQueueUrl?.trim()) {
+      throw new DerivedConfigValidationError(`Await step '${step.name}' with sqs transport must declare response.queueUrl.`);
+    }
+  }
   const dispatchMode = step.await.dispatch?.mode;
   if (dispatchMode && dispatchMode !== "single" && dispatchMode !== "per-item") {
     throw new DerivedConfigValidationError(
@@ -167,5 +211,41 @@ function validateAwaitStep(config: DerivedConfig, step: DerivedConfig["steps"][n
     throw new DerivedConfigValidationError(
       `Await step '${step.name}' uses await.dispatch.mode=per-item, which is only supported for MANY_TO_MANY cardinality.`
     );
+  }
+}
+
+function validateBoundaries(config: DerivedConfig): void {
+  const subscription = config.input?.subscription;
+  const checkpoint = config.output?.checkpoint;
+  if (subscription) {
+    validateBoundaryName(subscription.publication, "input.subscription.publication");
+    if (subscription.mapper && !/^[a-zA-Z_$][a-zA-Z\d_$]*(\.[a-zA-Z_$][a-zA-Z\d_$]*)*\.[A-Z][a-zA-Z\d_$]*$/.test(subscription.mapper)) {
+      throw new DerivedConfigValidationError(`Input subscription mapper '${subscription.mapper}' is not a valid Java type name.`);
+    }
+  }
+  if (checkpoint) {
+    validateBoundaryName(checkpoint.publication, "output.checkpoint.publication");
+    if (checkpoint.idempotencyKeyFields?.length) {
+      // Checkpoint idempotency is keyed against the terminal forward output, including await outputs.
+      const lastStep = [...(config.steps || [])].reverse().find((step) => step.kind !== "await" || step.outputTypeName);
+      const outputFields = lastStep ? config.messages[lastStep.outputTypeName]?.fields || [] : [];
+      const fieldNames = new Set(outputFields.map((field) => field.name));
+      for (const field of checkpoint.idempotencyKeyFields) {
+        if (!fieldNames.has(field)) {
+          throw new DerivedConfigValidationError(
+            `Output checkpoint '${checkpoint.publication}' references unknown terminal output idempotency field '${field}'.`
+          );
+        }
+      }
+    }
+  }
+}
+
+function validateBoundaryName(value: string, label: string): void {
+  if (!value?.trim()) {
+    throw new DerivedConfigValidationError(`Derived config ${label} must not be empty.`);
+  }
+  if (!/^[a-zA-Z][a-zA-Z0-9._-]*$/.test(value)) {
+    throw new DerivedConfigValidationError(`Derived config ${label} '${value}' is not a valid checkpoint publication name.`);
   }
 }

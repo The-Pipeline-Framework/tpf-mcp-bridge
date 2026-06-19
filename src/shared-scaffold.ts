@@ -1,7 +1,7 @@
 import YAML from "js-yaml";
 import JSZip from "jszip";
-import { assertDerivedConfigInvariants } from "./derived-config-validation.js";
-import type { DerivedConfig, MessageDefinition, MessageField } from "./types.js";
+import { assertCompositionManifestInvariants, assertDerivedConfigInvariants } from "./derived-config-validation.js";
+import type { DerivedConfig, MessageDefinition, MessageField, PipelineCompositionManifest } from "./types.js";
 
 type BrowserTemplateEngineCtor = new (templates?: Record<string, string>) => {
   generateApplication(options: {
@@ -9,6 +9,7 @@ type BrowserTemplateEngineCtor = new (templates?: Record<string, string>) => {
     basePackage: string;
     steps: Array<Record<string, unknown>>;
     aspects?: Record<string, unknown>;
+    unionDefinitions?: Array<Record<string, unknown>>;
     transport?: string;
     platform?: string;
     runtimeLayout?: string;
@@ -18,8 +19,12 @@ type BrowserTemplateEngineCtor = new (templates?: Record<string, string>) => {
 
 const browserTemplateEnginePromise = initializeBrowserTemplateEngine();
 
-export async function generateScaffoldZip(config: DerivedConfig): Promise<Uint8Array> {
+export async function generateScaffoldZip(
+  config: DerivedConfig,
+  compositionManifest?: PipelineCompositionManifest
+): Promise<Uint8Array> {
   assertDerivedConfigInvariants(config);
+  assertCompositionManifestInvariants(compositionManifest);
   const zip = new JSZip();
   const engine = await browserTemplateEnginePromise;
   const scaffoldConfig = toWorkerScaffoldConfig(config);
@@ -30,6 +35,9 @@ export async function generateScaffoldZip(config: DerivedConfig): Promise<Uint8A
     }
   });
   zip.file("config/pipeline.yaml", YAML.dump(config, { lineWidth: -1 }));
+  if (compositionManifest) {
+    zip.file("config/pipeline-composition.yaml", YAML.dump(compositionManifest, { lineWidth: -1 }));
+  }
   return zip.generateAsync({ type: "uint8array" });
 }
 
@@ -65,14 +73,18 @@ function toWorkerScaffoldConfig(config: DerivedConfig): {
   basePackage: string;
   steps: Array<Record<string, unknown>>;
   aspects?: Record<string, unknown>;
+  unionDefinitions?: Array<Record<string, unknown>>;
   transport?: string;
   platform?: string;
   runtimeLayout?: string;
 } {
+  const unions = config.unions || {};
   const materializedSteps = config.steps.map((step) => ({
     ...step,
-    inputFields: materializeStepFields(step.inputTypeName, undefined, config.messages),
-    outputFields: materializeStepFields(step.outputTypeName, undefined, config.messages)
+    inputIsUnion: Boolean(step.inputTypeName && unions[step.inputTypeName]),
+    outputIsUnion: Boolean(step.outputTypeName && unions[step.outputTypeName]),
+    inputFields: materializeStepFields(step.inputTypeName, undefined, config.messages, unions),
+    outputFields: materializeStepFields(step.outputTypeName, undefined, config.messages, unions)
   }));
 
   return {
@@ -80,6 +92,7 @@ function toWorkerScaffoldConfig(config: DerivedConfig): {
     basePackage: config.basePackage,
     steps: processSteps(materializedSteps),
     aspects: config.aspects,
+    unionDefinitions: toScaffoldUnions(config.unions, config.messages),
     transport: normalizeTransport(config.transport, normalizeRuntimeLayout(config.runtimeLayout)),
     platform: normalizePlatform(config.platform),
     runtimeLayout: normalizeRuntimeLayout(config.runtimeLayout)
@@ -89,8 +102,12 @@ function toWorkerScaffoldConfig(config: DerivedConfig): {
 function materializeStepFields(
   typeName: string,
   inlineFields: MessageField[] | undefined,
-  messages: Record<string, MessageDefinition>
+  messages: Record<string, MessageDefinition>,
+  unions: DerivedConfig["unions"] = {}
 ): Array<Record<string, unknown>> {
+  if (typeName && unions[typeName]) {
+    return inlineFields ? inlineFields.map((field) => toScaffoldField(field)) : [];
+  }
   const messageDefinition = typeName ? messages[typeName] : undefined;
   const topLevel = messageDefinition?.fields;
   if (typeName && !topLevel && !inlineFields) {
@@ -98,6 +115,53 @@ function materializeStepFields(
   }
   const sourceFields = topLevel || inlineFields || [];
   return sourceFields.map((field) => toScaffoldField(field));
+}
+
+function toScaffoldUnions(
+  unions: DerivedConfig["unions"],
+  messages: Record<string, MessageDefinition>
+): Array<Record<string, unknown>> {
+  if (!unions || typeof unions !== "object") {
+    return [];
+  }
+  return Object.entries(unions).map(([name, definition]) => {
+    const variants = Object.entries(definition?.variants || {})
+      .sort((left, right) => Number(left[1]?.number || 0) - Number(right[1]?.number || 0))
+      .map(([variantName, variant]) => {
+        const message = messages[variant.type];
+        if (!message || !Array.isArray(message.fields)) {
+          throw new Error(`Missing message definition for union variant '${name}.${variantName}' type '${variant.type}'`);
+        }
+        const fields = message.fields.map((field) => {
+          const scaffoldField = toScaffoldField(field);
+          const javaName = sanitizeJavaIdentifier(String(scaffoldField.name || ""));
+          return {
+            ...scaffoldField,
+            javaName,
+            accessorSuffix: javaAccessorSuffix(javaName)
+          };
+        });
+        return {
+          name: variantName,
+          number: variant.number,
+          typeName: variant.type,
+          dtoTypeName: `${variant.type}Dto`,
+          fields,
+          hasFields: fields.length > 0,
+          ...importFlagsForFields(fields),
+          hasUtilFields: hasListField(fields),
+          hasMapFields: hasMapField(fields)
+        };
+      });
+    return {
+      name,
+      dtoName: `${name}Dto`,
+      variants,
+      ...importFlagsForFields(variants.flatMap((variant) => variant.fields)),
+      hasUtilFields: hasListField(variants.flatMap((variant) => variant.fields)),
+      hasMapFields: hasMapField(variants.flatMap((variant) => variant.fields))
+    };
+  });
 }
 
 function toScaffoldField(field: MessageField & { keyType?: string; valueType?: string }): Record<string, unknown> {
@@ -147,6 +211,9 @@ function processSteps(steps: Array<Record<string, unknown>>): Array<Record<strin
   return steps.map((step, index) => {
     const processedStep = { ...step } as Record<string, unknown>;
     const name = String(step.name || "");
+    if (processedStep.kind === "await") {
+      processedStep.generatesServiceModule = false;
+    }
 
     if (!processedStep.serviceName) {
       processedStep.serviceName = `${name.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase()}-svc`;
@@ -288,4 +355,60 @@ function toTitleCase(input: string): string {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
     .join("");
+}
+
+function hasImportFlag(fields: Array<Record<string, unknown>>, types: string[]): boolean {
+  const requiredTypes = new Set(types);
+  return fields.some((field) => extractTypeTokens(String(field.type || "")).some((token) => requiredTypes.has(token)));
+}
+
+function importFlagsForFields(fields: Array<Record<string, unknown>>): Record<string, boolean> {
+  return {
+    hasDateFields: hasImportFlag(fields, ["LocalDate", "LocalDateTime", "OffsetDateTime", "ZonedDateTime", "Instant", "Duration", "Period"]),
+    hasBigIntegerFields: hasImportFlag(fields, ["BigInteger"]),
+    hasBigDecimalFields: hasImportFlag(fields, ["BigDecimal"]),
+    hasCurrencyFields: hasImportFlag(fields, ["Currency"]),
+    hasPathFields: hasImportFlag(fields, ["Path"]),
+    hasNetFields: hasImportFlag(fields, ["URI", "URL"]),
+    hasIoFields: hasImportFlag(fields, ["File"]),
+    hasAtomicFields: hasImportFlag(fields, ["AtomicInteger", "AtomicLong"])
+  };
+}
+
+function hasListField(fields: Array<Record<string, unknown>>): boolean {
+  return fields.some((field) => String(field.type || "").startsWith("List<"));
+}
+
+function hasMapField(fields: Array<Record<string, unknown>>): boolean {
+  return fields.some((field) => String(field.type || "").startsWith("Map<"));
+}
+
+function extractTypeTokens(typeName: string): string[] {
+  return typeName.match(/[A-Za-z_$][A-Za-z0-9_$]*/g) || [];
+}
+
+function sanitizeJavaIdentifier(fieldName: string): string {
+  const reservedWords = new Set([
+    "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char", "class",
+    "const", "continue", "default", "do", "double", "else", "enum", "extends", "final",
+    "finally", "float", "for", "goto", "if", "implements", "import", "instanceof", "int",
+    "interface", "long", "native", "new", "package", "private", "protected", "public",
+    "return", "short", "static", "strictfp", "super", "switch", "synchronized", "this",
+    "throw", "throws", "transient", "try", "void", "volatile", "while", "true", "false", "null"
+  ]);
+  let sanitized = fieldName.replace(/[^a-zA-Z0-9_$]/g, "_");
+  if (sanitized.length > 0 && /\d/.test(sanitized[0])) {
+    sanitized = `_${sanitized}`;
+  }
+  if (!sanitized) {
+    sanitized = "field";
+  }
+  if (reservedWords.has(sanitized.toLowerCase())) {
+    return `${sanitized}_`;
+  }
+  return sanitized;
+}
+
+function javaAccessorSuffix(fieldName: string): string {
+  return fieldName.charAt(0).toUpperCase() + fieldName.slice(1);
 }

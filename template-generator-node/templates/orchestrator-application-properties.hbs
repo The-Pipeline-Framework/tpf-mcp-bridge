@@ -55,6 +55,42 @@ pipeline.defaults.retry-wait-ms=500
 pipeline.defaults.recover-on-failure=false
 pipeline.defaults.max-backoff=30000
 pipeline.defaults.jitter=false
+{{#if hasAwaitSteps}}
+
+# Await steps require queue-async orchestration so executions can park and resume.
+pipeline.orchestrator.mode=QUEUE_ASYNC
+# Set TPF_RESUME_TOKEN_SECRET to a deployment secret before starting an await-enabled runtime.
+pipeline.orchestrator.resume-token-secret=${TPF_RESUME_TOKEN_SECRET}
+
+# Operator-owned redrive/replay policy remains external to the scaffold.
+# Keep await handlers idempotent over the configured idempotencyKeyFields.
+{{#if hasKafkaAwait}}
+
+# Kafka await transport starter settings.
+# mp.messaging.outgoing.<await-request-channel>.topic=<request-topic>
+# mp.messaging.incoming.<await-response-channel>.topic=<response-topic>
+# mp.messaging.incoming.<await-response-channel>.group.id={{rootProjectName}}-await-responses
+{{/if}}
+{{#if hasSqsAwait}}
+
+# SQS await transport starter settings.
+# tpf.await.sqs.poller.enabled=true
+# tpf.await.sqs.request-queue-url=${TPF_AWAIT_SQS_REQUEST_QUEUE_URL}
+# tpf.await.sqs.response-queue-url=${TPF_AWAIT_SQS_RESPONSE_QUEUE_URL}
+# quarkus.sqs.aws.region=${AWS_REGION:us-east-1}
+# quarkus.sqs.endpoint-override=${SQS_ENDPOINT_OVERRIDE:}
+{{/if}}
+{{#if hasWebhookAwait}}
+
+# Webhook await transport starter settings.
+# tpf.await.webhook.callback-base-url=${TPF_AWAIT_WEBHOOK_CALLBACK_BASE_URL}
+{{/if}}
+{{#if hasInteractionApiAwait}}
+
+# Interaction API await transport starter settings.
+# tpf.await.interaction-api.base-path=/pipeline/interactions
+{{/if}}
+{{/if}}
 {{#if hasCacheAspect}}
 pipeline.cache.policy=prefer-cache
 

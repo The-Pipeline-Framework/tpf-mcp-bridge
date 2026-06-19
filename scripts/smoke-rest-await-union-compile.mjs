@@ -30,6 +30,11 @@ if (existsSync(legacyConfigPath)) {
   throw new Error(`Generated scaffold contains legacy duplicate pipeline config: ${legacyConfigPath}`);
 }
 
+const awaitServiceModulePath = path.join(outputDir, "await-restaurant-decision-svc");
+if (existsSync(awaitServiceModulePath)) {
+  throw new Error(`Generated scaffold contains a service module for the await boundary: ${awaitServiceModulePath}`);
+}
+
 await run(
   path.join(frameworkDir, "mvnw"),
   ["-f", `examples/${smokeName}/pom.xml`, "-DskipTests", "compile"],

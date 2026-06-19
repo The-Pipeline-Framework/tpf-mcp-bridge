@@ -137,7 +137,7 @@ steps:
     expect(commonPom).not.toContain('com/google/protobuf');
   });
 
-  test('generateFromConfig emits generated poms against TPF framework 26.5.2', async () => {
+  test('generateFromConfig emits generated poms against TPF framework 26.6.1', async () => {
     const generator = new PipelineGenerator();
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
     const configPath = path.join(tempDir, 'version-config.yaml');
@@ -176,7 +176,8 @@ steps:
 
     for (const pomPath of pomPaths) {
       const pom = fs.readFileSync(pomPath, 'utf8');
-      expect(pom).toContain('<version>26.5.2</version>');
+      expect(pom).toContain('<version>26.6.1</version>');
+      expect(pom).not.toContain('<version>26.5.2</version>');
       expect(pom).not.toContain('<version>26.2.2</version>');
     }
   });
@@ -492,10 +493,6 @@ steps:
     const serializer = fs.readFileSync(path.join(javaRoot, 'dto', 'RestaurantDecisionDtoJsonSerializer.java'), 'utf8');
     const deserializer = fs.readFileSync(path.join(javaRoot, 'dto', 'RestaurantDecisionDtoJsonDeserializer.java'), 'utf8');
     const mapper = fs.readFileSync(path.join(javaRoot, 'mapper', 'RestaurantDecisionMapper.java'), 'utf8');
-    const service = fs.readFileSync(
-      path.join(outputDir, 'await-restaurant-decision-svc', 'src', 'main', 'java', 'com', 'example', 'restaurantapproval', 'await_restaurant_decision', 'service', 'ProcessAwaitRestaurantDecisionService.java'),
-      'utf8'
-    );
 
     expect(decisionDto).toContain('public sealed interface RestaurantDecisionDto');
     expect(decisionDto).toContain('permits RestaurantOrderAcceptedDto, RestaurantOrderDeclinedDto');
@@ -506,7 +503,7 @@ steps:
     expect(mapper).toContain('implements Mapper<RestaurantDecision, RestaurantDecisionDto>');
     expect(mapper).toContain('external instanceof RestaurantOrderAcceptedDto source');
     expect(mapper).toContain('domain instanceof RestaurantOrderDeclined source');
-    expect(service).toContain('RestaurantDecision output = null;');
+    expect(fs.existsSync(path.join(outputDir, 'await-restaurant-decision-svc'))).toBe(false);
     expect(fs.existsSync(path.join(javaRoot, 'domain', 'RestaurantDecision.java'))).toBe(true);
     expect(fs.existsSync(path.join(javaRoot, 'domain', 'RestaurantOrderAccepted.java'))).toBe(true);
   });

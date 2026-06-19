@@ -26,6 +26,22 @@ try {
     distTemplates = null;
 }
 
+function extractTypeTokens(typeName) {
+    if (typeof typeName !== 'string') return [];
+    return typeName.match(/[A-Za-z_$][A-Za-z0-9_$]*/g) || [];
+}
+
+function hasFieldType(fields, types) {
+    if (!Array.isArray(fields)) return false;
+    const expected = new Set(types.map(normalizeExpectedType));
+    return fields.some(field => extractTypeTokens(field && field.type).some(token => expected.has(token)));
+}
+
+function normalizeExpectedType(typeName) {
+    const tokens = extractTypeTokens(typeName);
+    return tokens.length > 0 && /[<[\],]/.test(typeName) ? tokens[0] : typeName;
+}
+
 // Register helper for replacing characters in strings
 Handlebars.registerHelper('replace', function(str, find, repl) {
     if (typeof str !== 'string' || typeof find !== 'string') return str;
@@ -256,45 +272,35 @@ Handlebars.registerHelper('mapValueType', function(type) {
 
 // Register helper for adding import flags
 Handlebars.registerHelper('hasDateFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => 
-        ['LocalDate', 'LocalDateTime', 'OffsetDateTime', 'ZonedDateTime', 'Instant', 'Duration', 'Period'].includes(field.type)
-    );
+    return hasFieldType(fields, ['LocalDate', 'LocalDateTime', 'OffsetDateTime', 'ZonedDateTime', 'Instant', 'Duration', 'Period']);
 });
 
 Handlebars.registerHelper('hasBigIntegerFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => field.type === 'BigInteger');
+    return hasFieldType(fields, ['BigInteger']);
 });
 
 Handlebars.registerHelper('hasBigDecimalFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => field.type === 'BigDecimal');
+    return hasFieldType(fields, ['BigDecimal']);
 });
 
 Handlebars.registerHelper('hasCurrencyFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => field.type === 'Currency');
+    return hasFieldType(fields, ['Currency']);
 });
 
 Handlebars.registerHelper('hasPathFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => field.type === 'Path');
+    return hasFieldType(fields, ['Path']);
 });
 
 Handlebars.registerHelper('hasNetFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => ['URI', 'URL'].includes(field.type));
+    return hasFieldType(fields, ['URI', 'URL']);
 });
 
 Handlebars.registerHelper('hasIoFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => field.type === 'File');
+    return hasFieldType(fields, ['File']);
 });
 
 Handlebars.registerHelper('hasAtomicFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => ['AtomicInteger', 'AtomicLong'].includes(field.type));
+    return hasFieldType(fields, ['AtomicInteger', 'AtomicLong']);
 });
 
 Handlebars.registerHelper('hasUtilFields', function(fields) {
@@ -433,6 +439,7 @@ class HandlebarsTemplateEngine {
         const resolvedBasePackage = options.basePackage;
         const resolvedSteps = options.steps;
         const unionDefinitions = Array.isArray(options.unionDefinitions) ? options.unionDefinitions : [];
+        const serviceSteps = resolvedSteps.filter(step => step.generatesServiceModule !== false && step.kind !== 'await');
         const aspectConfig = options.aspects || {};
         const normalizedRuntimeLayout = this.normalizeRuntimeLayout(options.runtimeLayout);
         const transportMode = this.normalizeTransport(options.transport, normalizedRuntimeLayout);
@@ -461,7 +468,7 @@ class HandlebarsTemplateEngine {
         await this.generateParentPom(
             resolvedAppName,
             resolvedBasePackage,
-            resolvedSteps,
+            serviceSteps,
             includePersistenceModule,
             includeCacheInvalidationModule,
             transportMode,
@@ -481,27 +488,27 @@ class HandlebarsTemplateEngine {
         );
 
         // Generate each step service
-        for (let i = 0; i < resolvedSteps.length; i++) {
+        for (let i = 0; i < serviceSteps.length; i++) {
             await this.generateStepService(
                 resolvedAppName,
                 resolvedBasePackage,
-                resolvedSteps[i],
+                serviceSteps[i],
                 options.outputPath,
                 i,
-                resolvedSteps,
+                serviceSteps,
                 transportMode
             );
         }
 
         if (includePersistenceModule) {
-            await this.generatePersistenceModule(resolvedAppName, resolvedBasePackage, resolvedSteps, options.outputPath);
+            await this.generatePersistenceModule(resolvedAppName, resolvedBasePackage, serviceSteps, options.outputPath);
         }
 
         if (includeCacheInvalidationModule) {
             await this.generateCacheInvalidationModule(
                 resolvedAppName,
                 resolvedBasePackage,
-                resolvedSteps,
+                serviceSteps,
                 includePersistenceModule,
                 options.outputPath
             );
@@ -522,20 +529,20 @@ class HandlebarsTemplateEngine {
             await this.generatePipelineRuntimeModule(
                 resolvedAppName,
                 resolvedBasePackage,
-                resolvedSteps,
+                serviceSteps,
                 options.outputPath);
         } else if (normalizedRuntimeLayout === 'monolith') {
             await this.generateMonolithModule(
                 resolvedAppName,
                 resolvedBasePackage,
-                resolvedSteps,
+                serviceSteps,
                 includePersistenceModule,
                 includeCacheInvalidationModule,
                 options.outputPath);
         }
 
         await this.generateRuntimeMappingFiles(
-            resolvedSteps,
+            serviceSteps,
             includePersistenceModule,
             includeCacheInvalidationModule,
             normalizedRuntimeLayout,
@@ -555,7 +562,7 @@ class HandlebarsTemplateEngine {
         await this.generateOtherFiles(
             resolvedAppName,
             resolvedBasePackage,
-            resolvedSteps,
+            serviceSteps,
             includePersistenceModule,
             includeCacheInvalidationModule,
             options.outputPath);
@@ -1233,7 +1240,13 @@ class HandlebarsTemplateEngine {
         transport,
         orchPath) {
         // Create context for orchestrator properties
-        const context = { appName, basePackage, steps, transport };
+        const serviceSteps = steps.filter(step => step.generatesServiceModule !== false && step.kind !== 'await');
+        const awaitTransports = new Set((steps || [])
+            .filter(step => step.kind === 'await')
+            .map(step => step.await && step.await.transport && step.await.transport.type)
+            .map(type => typeof type === 'string' ? type.toLowerCase() : type)
+            .filter(Boolean));
+        const context = { appName, basePackage, steps: serviceSteps, transport };
         const transportMode = typeof transport === 'string' && transport.trim()
             ? transport.trim().toUpperCase()
             : 'GRPC';
@@ -1246,11 +1259,16 @@ class HandlebarsTemplateEngine {
         context.rootProjectName = appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
         context.includePersistenceModule = includePersistenceModule;
         context.includeCacheInvalidationModule = includeCacheInvalidationModule;
+        context.hasAwaitSteps = awaitTransports.size > 0;
+        context.hasKafkaAwait = awaitTransports.has('kafka');
+        context.hasSqsAwait = awaitTransports.has('sqs');
+        context.hasWebhookAwait = awaitTransports.has('webhook');
+        context.hasInteractionApiAwait = awaitTransports.has('interaction-api');
         context.hasCacheAspect = (aspectDefinitions || []).some(aspect => aspect.name === 'cache');
         if (includePersistenceModule) {
-            context.persistencePortOffset = steps.length + 1;
+            context.persistencePortOffset = serviceSteps.length + 1;
             const outputTypes = new Set();
-            steps.forEach(step => {
+            serviceSteps.forEach(step => {
                 if (step.outputTypeName) {
                     outputTypes.add(step.outputTypeName);
                 }
@@ -1265,10 +1283,10 @@ class HandlebarsTemplateEngine {
                 .map(aspect => aspect.name);
         }
         if (includeCacheInvalidationModule) {
-            const baseOffset = steps.length + (includePersistenceModule ? 2 : 1);
+            const baseOffset = serviceSteps.length + (includePersistenceModule ? 2 : 1);
             context.cacheInvalidationPortOffset = baseOffset;
             const inputTypes = new Set();
-            steps.forEach(step => {
+            serviceSteps.forEach(step => {
                 if (step.inputTypeName) {
                     inputTypes.add(step.inputTypeName);
                 }
@@ -1282,7 +1300,7 @@ class HandlebarsTemplateEngine {
                 })
                 .map(aspect => aspect.name);
             const outputTypes = new Set();
-            steps.forEach(step => {
+            serviceSteps.forEach(step => {
                 if (step.outputTypeName) {
                     outputTypes.add(step.outputTypeName);
                 }
@@ -1297,7 +1315,7 @@ class HandlebarsTemplateEngine {
                 .map(aspect => aspect.name);
         }
         // Process steps to add additional properties for template
-        context.steps = steps.map((step, index) => ({
+        context.steps = serviceSteps.map((step, index) => ({
             ...step,
             portOffset: index + 1,
             serviceNameForPackage: step.serviceName.replace('-svc', '').replace(/-/g, '_'),
@@ -1487,6 +1505,7 @@ class HandlebarsTemplateEngine {
             includePersistenceModule,
             includeCacheInvalidationModule,
             transport,
+            steps,
             orchPath);
 
         // Generate orchestrator application.properties
@@ -1515,14 +1534,25 @@ class HandlebarsTemplateEngine {
         includePersistenceModule,
         includeCacheInvalidationModule,
         transport,
+        steps,
         orchPath) {
         const transportMode = this.normalizeTransport(transport);
+        const awaitTransports = new Set((steps || [])
+            .filter(step => step.kind === 'await')
+            .map(step => step.await && step.await.transport && step.await.transport.type)
+            .map(type => typeof type === 'string' ? type.toLowerCase() : type)
+            .filter(Boolean));
         const context = {
             basePackage,
             artifactId: 'orchestrator-svc',
             rootProjectName: appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-'),
             includePersistenceModule,
             includeCacheInvalidationModule,
+            hasAwaitSteps: awaitTransports.size > 0,
+            hasKafkaAwait: awaitTransports.has('kafka'),
+            hasSqsAwait: awaitTransports.has('sqs'),
+            hasWebhookAwait: awaitTransports.has('webhook'),
+            hasInteractionApiAwait: awaitTransports.has('interaction-api'),
             isRestTransport: transportMode === 'REST',
             isGrpcTransport: transportMode === 'GRPC'
         };
@@ -1647,8 +1677,7 @@ wrapperUrl=https://repo.maven.apache.org/maven2/org/apache/maven/wrapper/maven-w
     }
 
     hasImportFlag(fields, types) {
-        if (!Array.isArray(fields)) return false;
-        return fields.some(field => types.includes(field.type));
+        return hasFieldType(fields, types);
     }
 
     hasMapType(fields) {

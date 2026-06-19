@@ -248,22 +248,18 @@ class PipelineGenerator {
                         typeName,
                         dtoTypeName: `${typeName}Dto`,
                         fields,
-                        hasFields: fields.length > 0
+                        hasFields: fields.length > 0,
+                        ...this.importFlagsForFields(fields),
+                        hasUtilFields: this.hasListType(fields),
+                        hasMapFields: this.hasMapType(fields)
                     };
                 });
             return {
                 name,
                 dtoName: `${name}Dto`,
                 variants,
-                hasDateFields: this.hasImportFlag(variants.flatMap((variant) => variant.fields), ['LocalDate', 'LocalDateTime', 'OffsetDateTime', 'ZonedDateTime', 'Instant', 'Duration', 'Period']),
-                hasBigIntegerFields: this.hasImportFlag(variants.flatMap((variant) => variant.fields), ['BigInteger']),
-                hasBigDecimalFields: this.hasImportFlag(variants.flatMap((variant) => variant.fields), ['BigDecimal']),
-                hasCurrencyFields: this.hasImportFlag(variants.flatMap((variant) => variant.fields), ['Currency']),
-                hasPathFields: this.hasImportFlag(variants.flatMap((variant) => variant.fields), ['Path']),
-                hasNetFields: this.hasImportFlag(variants.flatMap((variant) => variant.fields), ['URI', 'URL']),
-                hasIoFields: this.hasImportFlag(variants.flatMap((variant) => variant.fields), ['File']),
-                hasAtomicFields: this.hasImportFlag(variants.flatMap((variant) => variant.fields), ['AtomicInteger', 'AtomicLong']),
-                hasUtilFields: this.hasImportFlag(variants.flatMap((variant) => variant.fields), ['List<String>']),
+                ...this.importFlagsForFields(variants.flatMap((variant) => variant.fields)),
+                hasUtilFields: this.hasListType(variants.flatMap((variant) => variant.fields)),
                 hasMapFields: this.hasMapType(variants.flatMap((variant) => variant.fields))
             };
         });
@@ -553,6 +549,9 @@ class PipelineGenerator {
     processSteps(steps) {
         return steps.map((step, i) => {
             const processedStep = { ...step };
+            if (processedStep.kind === 'await') {
+                processedStep.generatesServiceModule = false;
+            }
             
             // Add missing properties if not already present
             if (!processedStep.serviceName) {
@@ -678,7 +677,40 @@ class PipelineGenerator {
         if (!Array.isArray(fields)) {
             return false;
         }
-        return fields.some(field => field && types.includes(field.type));
+        const expected = new Set(types.map(type => this.normalizeExpectedType(type)));
+        return fields.some(field => this.extractTypeTokens(field && field.type).some(token => expected.has(token)));
+    }
+
+    normalizeExpectedType(typeName) {
+        const tokens = this.extractTypeTokens(typeName);
+        return tokens.length > 0 && /[<[\],]/.test(typeName) ? tokens[0] : typeName;
+    }
+
+    importFlagsForFields(fields) {
+        return {
+            hasDateFields: this.hasImportFlag(fields, ['LocalDate', 'LocalDateTime', 'OffsetDateTime', 'ZonedDateTime', 'Instant', 'Duration', 'Period']),
+            hasBigIntegerFields: this.hasImportFlag(fields, ['BigInteger']),
+            hasBigDecimalFields: this.hasImportFlag(fields, ['BigDecimal']),
+            hasCurrencyFields: this.hasImportFlag(fields, ['Currency']),
+            hasPathFields: this.hasImportFlag(fields, ['Path']),
+            hasNetFields: this.hasImportFlag(fields, ['URI', 'URL']),
+            hasIoFields: this.hasImportFlag(fields, ['File']),
+            hasAtomicFields: this.hasImportFlag(fields, ['AtomicInteger', 'AtomicLong'])
+        };
+    }
+
+    extractTypeTokens(typeName) {
+        if (typeof typeName !== 'string') {
+            return [];
+        }
+        return typeName.match(/[A-Za-z_$][A-Za-z0-9_$]*/g) || [];
+    }
+
+    hasListType(fields) {
+        if (!Array.isArray(fields)) {
+            return false;
+        }
+        return fields.some(field => field && typeof field.type === 'string' && field.type.startsWith('List<'));
     }
 
     hasMapType(fields) {

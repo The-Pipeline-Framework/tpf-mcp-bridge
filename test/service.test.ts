@@ -558,7 +558,10 @@ test("answer_contract_questions resolves onboarding contract ambiguity and enabl
 test("await-step planner drafts survive normalization and scaffold ZIP generation", async () => {
   const planner = {
     async planInitialBrief(): Promise<PlannerDraft> {
-      return buildAwaitPlannerDraft();
+      return {
+        ...buildAwaitPlannerDraft(),
+        runtimeLayout: "MODULAR"
+      };
     },
     async revisePlanWithAnswers(): Promise<PlannerDraft> {
       return buildAwaitPlannerDraft();
@@ -585,6 +588,72 @@ test("await-step planner drafts survive normalization and scaffold ZIP generatio
   assert.equal(awaitStep?.timeout, "PT10M");
   assert.deepEqual(awaitStep?.idempotencyKeyFields, ["transferId"]);
   assert.equal(awaitStep?.await?.transport.type, "webhook");
+  const fileNames = Object.keys(zip.files);
+  assert.ok(fileNames.some((name) => name.startsWith("validate-transfer-request-svc/")));
+  assert.ok(fileNames.some((name) => name.startsWith("finalize-transfer-state-svc/")));
+  assert.ok(!fileNames.some((name) => name.startsWith("await-fraud-decision-svc/")));
+});
+
+test("sqs await drafts generate queue-async scaffold guidance without a fake await module", async () => {
+  const planner = {
+    async planInitialBrief(): Promise<PlannerDraft> {
+      return buildSqsAwaitPlannerDraft();
+    },
+    async revisePlanWithAnswers(): Promise<PlannerDraft> {
+      return buildSqsAwaitPlannerDraft();
+    }
+  };
+
+  const service = new BriefSessionService(new InMemorySessionStore(), new LocalFileArtifactStore(), planner);
+  const session = await service.startSession({
+    briefText: "Submit a provider request over SQS, await the provider response, then finalize.",
+    platform: "COMPUTE"
+  });
+  assert.equal(session.status, "ready");
+  assert.equal(session.inferredSteps[1]?.await?.transport.type, "sqs");
+
+  const generated = await service.generateScaffold({ sessionId: session.sessionId });
+  const zipBytes = await fs.readFile(generated.artifact!.localPath!);
+  const zip = await JSZip.loadAsync(zipBytes);
+  const pipelineYaml = await zip.file("config/pipeline.yaml")!.async("string");
+  const pipelineConfig = YAML.load(pipelineYaml) as DerivedConfig;
+  assert.equal(pipelineConfig.steps[1].await?.transport.type, "sqs");
+  assert.equal(pipelineConfig.steps[1].await?.transport.request?.queueUrl, "https://sqs.example/request");
+  assert.equal(pipelineConfig.steps[1].await?.transport.response?.queueUrl, "https://sqs.example/response");
+  const fileNames = Object.keys(zip.files);
+  assert.ok(!fileNames.some((name) => name.startsWith("await-fraud-decision-svc/")));
+  const orchestratorPom = await zip.file("orchestrator-svc/pom.xml")!.async("string");
+  assert.match(orchestratorPom, /quarkus-amazon-sqs/);
+});
+
+test("checkpoint handoff drafts emit pipeline boundaries and composition sidecar", async () => {
+  const planner = {
+    async planInitialBrief(): Promise<PlannerDraft> {
+      return buildCheckpointPlannerDraft();
+    },
+    async revisePlanWithAnswers(): Promise<PlannerDraft> {
+      return buildCheckpointPlannerDraft();
+    }
+  };
+
+  const service = new BriefSessionService(new InMemorySessionStore(), new LocalFileArtifactStore(), planner);
+  const session = await service.startSession({
+    briefText: "Finalize a transfer and publish a checkpoint to a downstream settlement pipeline."
+  });
+  assert.equal(session.status, "ready");
+  assert.equal(session.derivedConfig.output?.checkpoint?.publication, "transfer.finalized");
+  assert.equal(session.compositionManifest?.name, "transfer-settlement-composition");
+
+  const generated = await service.generateScaffold({ sessionId: session.sessionId });
+  const zipBytes = await fs.readFile(generated.artifact!.localPath!);
+  const zip = await JSZip.loadAsync(zipBytes);
+  const pipelineYaml = await zip.file("config/pipeline.yaml")!.async("string");
+  const pipelineConfig = YAML.load(pipelineYaml) as DerivedConfig;
+  assert.equal(pipelineConfig.output?.checkpoint?.publication, "transfer.finalized");
+  const compositionYaml = await zip.file("config/pipeline-composition.yaml")!.async("string");
+  const composition = YAML.load(compositionYaml) as { version: number; name: string; pipelines: Array<{ id: string; path: string }> };
+  assert.equal(composition.version, 1);
+  assert.equal(composition.pipelines[0].id, "wire-transfer");
 });
 
 test("get_brief_session returns persisted session state after answers are merged", async () => {
@@ -767,15 +836,19 @@ test("shared scaffold ZIP includes REST await union DTO and mapper helpers", asy
 
   const mapper = await zip.file(`${commonRoot}/mapper/RestaurantDecisionMapper.java`)!.async("string");
   const serializer = await zip.file(`${commonRoot}/dto/RestaurantDecisionDtoJsonSerializer.java`)!.async("string");
-  const service = await zip.file(
-    "await-restaurant-decision-svc/src/main/java/com/example/restaurantapproval/await_restaurant_decision/service/ProcessAwaitRestaurantDecisionService.java"
-  )!.async("string");
+  const acceptedDomain = await zip.file(`${commonRoot}/domain/RestaurantOrderAccepted.java`)!.async("string");
+  const pipelineConfig = YAML.load(await zip.file("config/pipeline.yaml")!.async("string")) as DerivedConfig;
 
   assert.match(mapper, /implements Mapper<RestaurantDecision, RestaurantDecisionDto>/);
   assert.match(mapper, /external instanceof RestaurantOrderAcceptedDto source/);
   assert.match(mapper, /domain instanceof RestaurantOrderDeclined source/);
   assert.match(serializer, /gen\.writeStringField\("type", "accepted"\)/);
-  assert.match(service, /RestaurantDecision output = null;/);
+  assert.match(acceptedDomain, /import java\.math\.BigDecimal;/);
+  assert.match(acceptedDomain, /import java\.time\.LocalDate;/);
+  assert.match(acceptedDomain, /import java\.util\.List;/);
+  assert.match(acceptedDomain, /import java\.util\.Map;/);
+  assert.equal(pipelineConfig.steps[0].kind, "await");
+  assert.ok(!fileNames.some((name) => name.startsWith("await-restaurant-decision-svc/")));
 });
 
 test("planner drafts that materialize persistence as business steps are rejected", async () => {
@@ -1685,6 +1758,50 @@ function buildAwaitPlannerDraft(): PlannerDraft {
   };
 }
 
+function buildSqsAwaitPlannerDraft(): PlannerDraft {
+  const draft = JSON.parse(JSON.stringify(buildAwaitPlannerDraft())) as PlannerDraft;
+  draft.runtimeLayout = "MODULAR";
+  for (const step of [...draft.businessSteps, ...draft.pipelineSteps, ...draft.stepContracts]) {
+    if (step.kind !== "await" || !step.await) {
+      continue;
+    }
+    step.await.transport = {
+      type: "sqs",
+      request: { queueUrl: "https://sqs.example/request" },
+      response: { queueUrl: "https://sqs.example/response" }
+    };
+  }
+  draft.assumptions = ["QUEUE_ASYNC orchestrator mode is available for SQS await execution."];
+  return draft;
+}
+
+function buildCheckpointPlannerDraft(): PlannerDraft {
+  const draft = JSON.parse(JSON.stringify(buildAwaitPlannerDraft())) as PlannerDraft;
+  draft.outputBoundary = {
+    checkpoint: {
+      publication: "transfer.finalized",
+      idempotencyKeyFields: ["transferId"]
+    }
+  };
+  draft.compositionManifest = {
+    version: 1,
+    name: "transfer-settlement-composition",
+    pipelines: [
+      { id: "wire-transfer", path: "config/pipeline.yaml" },
+      { id: "settlement", path: "../settlement/config/pipeline.yaml" }
+    ]
+  };
+  draft.technicalConcerns = [
+    ...(draft.technicalConcerns || []),
+    {
+      concern: "checkpoint-handoff",
+      appliesToSteps: ["finalize-transfer-state"],
+      details: "The finalized transfer checkpoint is published for downstream settlement ownership."
+    }
+  ];
+  return draft;
+}
+
 async function buildPlannedSessionStates(briefText: string): Promise<{ initialSession: SessionState; readySession: SessionState }> {
   const sessionStore = new InMemorySessionStore();
   const planner = briefText === onboardingBrief
@@ -2106,7 +2223,9 @@ function buildRestaurantApprovalUnionConfig(): DerivedConfig {
         fields: [
           { number: 1, name: "orderId", type: "uuid" },
           { number: 2, name: "decidedAt", type: "timestamp" },
-          { number: 3, name: "note", type: "string" }
+          { number: 3, name: "note", type: "string" },
+          { number: 4, name: "adjustments", type: "decimal", repeated: true },
+          { number: 5, name: "serviceDates", type: "map", keyType: "string", valueType: "date" }
         ]
       },
       RestaurantOrderDeclined: {

@@ -94,7 +94,7 @@ export class BriefSessionService {
     }
 
     assertDerivedConfigInvariants(session.analysis.derivedConfig);
-    const zipBytes = await generateScaffoldZip(session.analysis.derivedConfig);
+    const zipBytes = await generateScaffoldZip(session.analysis.derivedConfig, session.analysis.compositionManifest);
     const artifact = await this.artifactStore.put(session.sessionId, zipBytes, {
       ttlSeconds: options.artifactTtlSeconds,
       baseUrl: options.artifactBaseUrl

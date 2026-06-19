@@ -18,7 +18,7 @@ export type StepFlowRole = "forward" | "query" | "resume" | "expansion" | "reduc
 export type StepKind = "internal" | "delegated" | "remote" | "await";
 export type AwaitCorrelationStrategy = "interactionId" | "signedResumeToken";
 export type AwaitDispatchMode = "single" | "per-item";
-export type AwaitTransportType = "interaction-api" | "webhook" | "kafka";
+export type AwaitTransportType = "interaction-api" | "webhook" | "kafka" | "sqs";
 
 export type QuestionKey =
   | "businessFlow"
@@ -107,6 +107,8 @@ export interface MessageField {
   number: number;
   name: string;
   type: string;
+  keyType?: string;
+  valueType?: string;
   repeated?: boolean;
   optional?: boolean;
 }
@@ -136,11 +138,14 @@ export interface AwaitCorrelationConfig {
 
 export interface AwaitTransportConfig {
   type: AwaitTransportType;
+  config?: Record<string, unknown>;
   request?: Record<string, unknown>;
   callback?: Record<string, unknown>;
   response?: Record<string, unknown>;
   consumer?: Record<string, unknown>;
   headers?: Record<string, string>;
+  dispatch?: Record<string, unknown>;
+  url?: string;
 }
 
 export interface AwaitStepConfig {
@@ -166,6 +171,35 @@ export interface PipelineStep {
   batchTimeoutMs?: number;
 }
 
+export interface CheckpointPublication {
+  publication: string;
+  idempotencyKeyFields?: string[];
+}
+
+export interface CheckpointSubscription {
+  publication: string;
+  mapper?: string;
+}
+
+export interface PipelineInputBoundary {
+  subscription?: CheckpointSubscription;
+}
+
+export interface PipelineOutputBoundary {
+  checkpoint?: CheckpointPublication;
+}
+
+export interface PipelineCompositionPipeline {
+  id: string;
+  path: string;
+}
+
+export interface PipelineCompositionManifest {
+  version: 1;
+  name: string;
+  pipelines: PipelineCompositionPipeline[];
+}
+
 export interface DerivedConfig {
   version: 2;
   appName: string;
@@ -173,6 +207,8 @@ export interface DerivedConfig {
   transport?: Transport;
   platform?: Platform;
   runtimeLayout?: RuntimeLayout | LowercaseRuntimeLayout;
+  input?: PipelineInputBoundary;
+  output?: PipelineOutputBoundary;
   messages: Record<string, MessageDefinition>;
   unions?: Record<string, UnionDefinition>;
   steps: PipelineStep[];
@@ -316,6 +352,9 @@ export interface PlannerDraft {
   platform?: Platform;
   runtimeLayout?: RuntimeLayout;
   aspects?: Record<string, AspectConfig>;
+  inputBoundary?: PipelineInputBoundary;
+  outputBoundary?: PipelineOutputBoundary;
+  compositionManifest?: PipelineCompositionManifest;
   technicalConcerns?: TechnicalConcern[];
   couplingFindings?: CouplingFinding[];
 }
@@ -353,6 +392,7 @@ export interface AnalyzeResult {
   aspects: Record<string, AspectConfig>;
   derivedConfig: DerivedConfig;
   derivedConfigYaml: string;
+  compositionManifest?: PipelineCompositionManifest;
 }
 
 export interface ScaffoldResult extends AnalyzeResult {

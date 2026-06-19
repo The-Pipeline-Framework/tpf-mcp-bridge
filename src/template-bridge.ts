@@ -5,8 +5,8 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import YAML from "js-yaml";
 import JSZip from "jszip";
-import { assertDerivedConfigInvariants } from "./derived-config-validation.js";
-import type { DerivedConfig } from "./types.js";
+import { assertCompositionManifestInvariants, assertDerivedConfigInvariants } from "./derived-config-validation.js";
+import type { DerivedConfig, PipelineCompositionManifest } from "./types.js";
 
 const require = createRequire(import.meta.url);
 const packageRoot = resolvePackageRoot();
@@ -62,26 +62,38 @@ export async function validateDerivedConfig(config: DerivedConfig): Promise<Deri
   }
 }
 
-export async function generateScaffold(config: DerivedConfig, outputDir: string): Promise<string> {
+export async function generateScaffold(
+  config: DerivedConfig,
+  outputDir: string,
+  compositionManifest?: PipelineCompositionManifest
+): Promise<string> {
   const resolvedOutput = path.isAbsolute(outputDir) ? outputDir : path.resolve(process.cwd(), outputDir);
   await generateScaffoldFiles(config, async (filePath, content) => {
     const targetPath = path.join(resolvedOutput, filePath);
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
     await fs.writeFile(targetPath, content, "utf8");
-  });
+  }, compositionManifest);
   return resolvedOutput;
 }
 
-export async function generateScaffoldZip(config: DerivedConfig): Promise<Uint8Array> {
+export async function generateScaffoldZip(
+  config: DerivedConfig,
+  compositionManifest?: PipelineCompositionManifest
+): Promise<Uint8Array> {
   const zip = new JSZip();
   await generateScaffoldFiles(config, async (filePath, content) => {
     zip.file(filePath, content);
-  });
+  }, compositionManifest);
   return zip.generateAsync({ type: "uint8array" });
 }
 
-export async function generateScaffoldFiles(config: DerivedConfig, fileCallback: FileCallback): Promise<void> {
+export async function generateScaffoldFiles(
+  config: DerivedConfig,
+  fileCallback: FileCallback,
+  compositionManifest?: PipelineCompositionManifest
+): Promise<void> {
   assertDerivedConfigInvariants(config);
+  assertCompositionManifestInvariants(compositionManifest);
   const generator = new PipelineGenerator() as PipelineGeneratorInstance;
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "tpf-mcp-shared-generate-"));
   try {
@@ -102,6 +114,9 @@ export async function generateScaffoldFiles(config: DerivedConfig, fileCallback:
       fileCallback
     });
     await fileCallback("config/pipeline.yaml", YAML.dump(loaded, { lineWidth: -1 }));
+    if (compositionManifest) {
+      await fileCallback("config/pipeline-composition.yaml", YAML.dump(compositionManifest, { lineWidth: -1 }));
+    }
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
