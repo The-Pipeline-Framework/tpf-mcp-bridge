@@ -627,6 +627,43 @@ test("sqs await drafts generate queue-async scaffold guidance without a fake awa
   assert.match(orchestratorPom, /quarkus-amazon-sqs/);
 });
 
+test("kafka await drafts generate reactive messaging scaffold wiring without a fake await module", async () => {
+  const planner = {
+    async planInitialBrief(): Promise<PlannerDraft> {
+      return buildKafkaAwaitPlannerDraft();
+    },
+    async revisePlanWithAnswers(): Promise<PlannerDraft> {
+      return buildKafkaAwaitPlannerDraft();
+    }
+  };
+
+  const service = new BriefSessionService(new InMemorySessionStore(), new LocalFileArtifactStore(), planner);
+  const session = await service.startSession({
+    briefText: "Submit a payment request over Kafka, await the provider response, then finalize.",
+    platform: "COMPUTE"
+  });
+  assert.equal(session.status, "ready");
+  assert.equal(session.inferredSteps[1]?.await?.transport.type, "kafka");
+
+  const generated = await service.generateScaffold({ sessionId: session.sessionId });
+  const zipBytes = await fs.readFile(generated.artifact!.localPath!);
+  const zip = await JSZip.loadAsync(zipBytes);
+  const pipelineYaml = await zip.file("config/pipeline.yaml")!.async("string");
+  const pipelineConfig = YAML.load(pipelineYaml) as DerivedConfig;
+  assert.equal(pipelineConfig.steps[1].await?.transport.type, "kafka");
+  assert.equal(pipelineConfig.steps[1].await?.transport.request?.topic, "payment.requests");
+  assert.equal(pipelineConfig.steps[1].await?.transport.response?.topic, "payment.results");
+  const fileNames = Object.keys(zip.files);
+  assert.ok(!fileNames.some((name) => name.startsWith("await-fraud-decision-svc/")));
+  const orchestratorPom = await zip.file("orchestrator-svc/pom.xml")!.async("string");
+  assert.match(orchestratorPom, /quarkus-messaging-kafka/);
+  const applicationProperties = await zip.file("orchestrator-svc/src/main/resources/application.properties")!.async("string");
+  assert.match(applicationProperties, /tpf\.await\.kafka\.reactive-messaging\.enabled=true/);
+  assert.match(applicationProperties, /mp\.messaging\.outgoing\.tpf-await-kafka-requests\.topic=payment\.requests/);
+  assert.match(applicationProperties, /mp\.messaging\.incoming\.tpf-await-kafka-responses\.topic=payment\.results/);
+  assert.ok(applicationProperties.includes("mp.messaging.incoming.tpf-await-kafka-responses.group.id=${TPF_AWAIT_KAFKA_RESPONSES_GROUP_ID:payment-await-orchestrator}"));
+});
+
 test("checkpoint handoff drafts emit pipeline boundaries and composition sidecar", async () => {
   const planner = {
     async planInitialBrief(): Promise<PlannerDraft> {
@@ -1818,6 +1855,24 @@ function buildSqsAwaitPlannerDraft(): PlannerDraft {
     };
   }
   draft.assumptions = ["QUEUE_ASYNC orchestrator mode is available for SQS await execution."];
+  return draft;
+}
+
+function buildKafkaAwaitPlannerDraft(): PlannerDraft {
+  const draft = JSON.parse(JSON.stringify(buildAwaitPlannerDraft())) as PlannerDraft;
+  draft.runtimeLayout = "MODULAR";
+  for (const step of [...draft.businessSteps, ...draft.pipelineSteps, ...draft.stepContracts]) {
+    if (step.kind !== "await" || !step.await) {
+      continue;
+    }
+    step.await.transport = {
+      type: "kafka",
+      request: { topic: "payment.requests" },
+      response: { topic: "payment.results" },
+      consumer: { group: "payment-await-orchestrator" }
+    };
+  }
+  draft.assumptions = ["QUEUE_ASYNC orchestrator mode is available for Kafka await execution."];
   return draft;
 }
 

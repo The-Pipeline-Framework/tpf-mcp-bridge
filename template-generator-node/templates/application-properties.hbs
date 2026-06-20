@@ -26,6 +26,22 @@ quarkus.grpc.server.plain-text=false
 quarkus.http.ssl.certificate.key-store-file=${SERVER_KEYSTORE_PATH:../target/dev-certs/{{serviceName}}/server-keystore.jks}
 quarkus.http.ssl.certificate.key-store-password=secret
 quarkus.http.insecure-requests=disabled
+{{#if kafkaAwait}}
+
+# Kafka await transport starter settings.
+pipeline.orchestrator.mode=QUEUE_ASYNC
+pipeline.orchestrator.resume-token-secret=${TPF_RESUME_TOKEN_SECRET}
+tpf.await.kafka.reactive-messaging.enabled=true
+kafka.bootstrap.servers=${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+mp.messaging.outgoing.tpf-await-kafka-requests.connector=smallrye-kafka
+mp.messaging.outgoing.tpf-await-kafka-requests.topic={{kafkaAwait.requestTopic}}
+mp.messaging.outgoing.tpf-await-kafka-requests.value.serializer=org.apache.kafka.common.serialization.StringSerializer
+mp.messaging.incoming.tpf-await-kafka-responses.connector=smallrye-kafka
+mp.messaging.incoming.tpf-await-kafka-responses.topic={{kafkaAwait.responseTopic}}
+mp.messaging.incoming.tpf-await-kafka-responses.group.id={{kafkaAwait.consumerGroupProperty}}
+mp.messaging.incoming.tpf-await-kafka-responses.auto.offset.reset=${TPF_AWAIT_KAFKA_RESPONSES_OFFSET_RESET:earliest}
+mp.messaging.incoming.tpf-await-kafka-responses.value.deserializer=org.apache.kafka.common.serialization.StringDeserializer
+{{/if}}
 
 # Micrometer configuration
 quarkus.micrometer.export.prometheus.enabled=${QUARKUS_MICROMETER_EXPORT_PROMETHEUS_ENABLED:false}
