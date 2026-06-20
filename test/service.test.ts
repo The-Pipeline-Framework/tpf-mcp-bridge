@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { promises as fs } from "node:fs";
 import YAML from "js-yaml";
 import JSZip from "jszip";
@@ -1528,6 +1529,51 @@ test("standalone readme documents host installs, provider modes, and schema sync
   assert.match(developerGuide, /npm test/);
   assert.match(developerGuide, /npm pack --dry-run/);
   assert.match(developerGuide, /npm run start:worker/);
+});
+
+test("release parity audit classifies scaffold-relevant release deltas", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "tpf-release-audit-"));
+  try {
+    const diffFile = path.join(tempDir, "name-status.txt");
+    await fs.writeFile(diffFile, [
+      "M\tframework/deployment/src/main/resources/META-INF/pipeline/pipeline-template-schema.json",
+      "M\tframework/runtime/src/main/java/org/pipelineframework/awaitable/kafka/KafkaAwaitCompletionConsumer.java",
+      "A\tframework/runtime/src/main/java/org/pipelineframework/awaitable/SqsAwaitTransportAdapter.java",
+      "A\tframework/runtime/src/main/resources/META-INF/pipeline/pipeline-composition-schema.json",
+      "M\texamples/csv-payments/config/pipeline.yaml",
+      "A\texamples/restaurant-approval/self-host/start-worker.sh",
+      "A\tframework/runtime-spring/src/main/java/org/pipelineframework/runtime/spring/SpringPipelineRunner.java",
+      "A\tdocs/guide/getting-started/index.md",
+    ].join("\n"), "utf8");
+
+    const report = execFileSync("node", [
+      "scripts/audit-release-parity.mjs",
+      "--diff-file",
+      diffFile,
+      "--framework-dir",
+      tempDir,
+    ], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+
+    assert.match(report, /Baseline: `v26\.5\.2\.\.v26\.6\.1`/);
+    assert.match(report, /## Known Gap/);
+    assert.match(report, /Kafka await productization is represented in draft PR #20/i);
+    assert.match(report, /## Covered By Current Bridge/);
+    assert.match(report, /check:pipeline-schema/);
+    assert.match(report, /## Added File Follow-Up/);
+    assert.match(report, /SQS surface changed/i);
+    assert.match(report, /Composition\/checkpoint surface changed/i);
+    assert.match(report, /Self-host\/coordinator\/worker surface touched/i);
+    assert.match(report, /Spring adapter surface touched/i);
+    assert.match(report, /## Needs Human Review/);
+    assert.match(report, /examples\/csv-payments\/config\/pipeline\.yaml/);
+    assert.match(report, /## Probably No Scaffold Impact/);
+    assert.match(report, /docs\/guide\/getting-started\/index\.md/);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
 });
 
 class MemoryStorage {
