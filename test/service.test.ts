@@ -1699,9 +1699,15 @@ test("release parity audit classifies scaffold-relevant release deltas", async (
     const diffFile = path.join(tempDir, "name-status.txt");
     await fs.writeFile(diffFile, [
       "M\tframework/deployment/src/main/resources/META-INF/pipeline/pipeline-template-schema.json",
+      "M\tframework/runtime/src/main/java/org/pipelineframework/annotation/PipelineStep.java",
+      "M\tframework/runtime/src/main/java/org/pipelineframework/blocking/BlockingExecutions.java",
+      "M\tframework/deployment/src/main/java/org/pipelineframework/processor/parser/StepDefinitionParser.java",
       "M\tframework/runtime/src/main/java/org/pipelineframework/awaitable/kafka/KafkaAwaitCompletionConsumer.java",
       "A\tframework/runtime/src/main/java/org/pipelineframework/awaitable/SqsAwaitTransportAdapter.java",
       "A\tframework/runtime/src/main/resources/META-INF/pipeline/pipeline-composition-schema.json",
+      "A\tconnectors/object-ingest/pom.xml",
+      "A\tconnectors/query-jpa/pom.xml",
+      "A\tframework/spring-blocking-smoke-tests/pom.xml",
       "M\texamples/csv-payments/config/pipeline.yaml",
       "A\texamples/restaurant-approval/self-host/start-worker.sh",
       "A\tframework/runtime-spring/src/main/java/org/pipelineframework/runtime/spring/SpringPipelineRunner.java",
@@ -1719,11 +1725,15 @@ test("release parity audit classifies scaffold-relevant release deltas", async (
       encoding: "utf8",
     });
 
-    assert.match(report, /Baseline: `v26\.5\.2\.\.v26\.6\.1`/);
-    assert.match(report, /## Known Gap/);
-    assert.match(report, /Kafka await productization is represented in draft PR #20/i);
-    assert.match(report, /## Covered By Current Bridge/);
-    assert.match(report, /check:pipeline-schema/);
+    assert.match(report, /Baseline: `v26\.6\.1\.\.HEAD`/);
+    assert.match(report, /## Fix Now/);
+    assert.match(report, /Sync the vendored generator schema/i);
+    assert.match(report, /generated Java\/templates must compile/i);
+    assert.match(report, /virtual-thread authoring/i);
+    assert.match(report, /## Defer Issue/);
+    assert.match(report, /connectors\/object-ingest\/pom\.xml/);
+    assert.match(report, /connectors\/query-jpa\/pom\.xml/);
+    assert.match(report, /framework\/spring-blocking-smoke-tests\/pom\.xml/);
     assert.match(report, /## Added File Follow-Up/);
     assert.match(report, /SQS surface changed/i);
     assert.match(report, /Composition\/checkpoint surface changed/i);
@@ -1731,11 +1741,41 @@ test("release parity audit classifies scaffold-relevant release deltas", async (
     assert.match(report, /Spring adapter surface touched/i);
     assert.match(report, /## Needs Human Review/);
     assert.match(report, /examples\/csv-payments\/config\/pipeline\.yaml/);
-    assert.match(report, /## Probably No Scaffold Impact/);
+    assert.match(report, /## No Scaffold Impact/);
     assert.match(report, /docs\/guide\/getting-started\/index\.md/);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
+});
+
+test("derived config rejects virtual-thread flags on non-internal steps", async () => {
+  const config: DerivedConfig = {
+    version: 2,
+    appName: "VirtualThreadApp",
+    basePackage: "com.example.virtualthread",
+    transport: "REST",
+    platform: "COMPUTE",
+    runtimeLayout: "MODULAR",
+    messages: {
+      Input: { fields: [{ number: 1, name: "id", type: "uuid" }] },
+      Output: { fields: [{ number: 1, name: "id", type: "uuid" }] }
+    },
+    steps: [
+      {
+        name: "Remote Call",
+        kind: "remote",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "Input",
+        outputTypeName: "Output",
+        runOnVirtualThreads: true
+      }
+    ]
+  };
+
+  await assert.rejects(
+    () => validateDerivedConfig(config),
+    /runOnVirtualThreads, which is valid only for internal service steps/
+  );
 });
 
 class MemoryStorage {

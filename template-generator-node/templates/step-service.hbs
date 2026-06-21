@@ -18,8 +18,7 @@ import org.jboss.logging.Logger;
     stepType = org.pipelineframework.step.{{stepType}}.class,
     backendType = org.pipelineframework.grpc.{{grpcAdapter}}.class,
     inboundMapper = {{basePackage}}.common.mapper.{{inputTypeName}}Mapper.class,
-    outboundMapper = {{basePackage}}.common.mapper.{{outputTypeName}}Mapper.class,
-    runOnVirtualThreads = false
+    outboundMapper = {{basePackage}}.common.mapper.{{outputTypeName}}Mapper.class
 )
 @ApplicationScoped
 @Getter

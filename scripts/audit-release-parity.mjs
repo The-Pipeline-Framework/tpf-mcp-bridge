@@ -22,15 +22,16 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const CATEGORY_ORDER = [
-  "known gap",
+  "fix now",
+  "defer issue",
   "needs human review",
   "added file follow-up",
-  "covered by current bridge",
-  "probably no scaffold impact",
+  "covered",
+  "no scaffold impact",
 ];
 
-const DEFAULT_FROM = "v26.5.2";
-const DEFAULT_TO = "v26.6.1";
+const DEFAULT_FROM = "v26.6.1";
+const DEFAULT_TO = "HEAD";
 
 const options = parseArgs(process.argv.slice(2));
 
@@ -114,11 +115,11 @@ function printHelp() {
 
 Usage:
   npm run audit:release-parity -- --framework-dir ../pipelineframework
-  npm run audit:release-parity -- --from v26.5.2 --to v26.6.1 --framework-dir ../pipelineframework --output reports/parity.md
+  npm run audit:release-parity -- --from v26.6.1 --to HEAD --framework-dir ../pipelineframework --output reports/parity.md
 
 Options:
-  --from <tag>           Previous TPF release tag. Default: ${DEFAULT_FROM}
-  --to <tag>             Target TPF release tag. Default: ${DEFAULT_TO}
+  --from <ref>           Previous TPF release tag/ref. Default: ${DEFAULT_FROM}
+  --to <ref>             Target TPF release tag/ref. Default: ${DEFAULT_TO}
   --framework-dir <dir>  External pipelineframework checkout. Default: $TPF_FRAMEWORK_DIR or ../pipelineframework
   --diff-file <file>     Read git diff --name-status output from a fixture file instead of running git
   --output <file>        Write Markdown report to a file instead of stdout
@@ -162,21 +163,27 @@ function classifyEntry(entry) {
   const oldPath = entry.oldPath ? normalizePath(entry.oldPath) : undefined;
   const subject = `${filePath} ${oldPath ?? ""}`.toLowerCase();
   const notes = [];
-  let category = "probably no scaffold impact";
+  let category = "no scaffold impact";
   let owner = "docs/non-runtime";
 
-  if (isKnownKafkaAwaitGap(subject)) {
-    category = "known gap";
-    owner = "await transport scaffold";
-    notes.push("Kafka await productization is represented in draft PR #20 and should be ported after PR #21.");
-  } else if (entry.kind === "A" && isScaffoldRelevant(filePath)) {
-    category = "added file follow-up";
-    owner = ownerFor(filePath);
-    notes.push("Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.");
-  } else if (isPipelineTemplateSchema(filePath)) {
-    category = "covered by current bridge";
+  if (isPipelineTemplateSchema(filePath)) {
+    category = "fix now";
     owner = "deployment schema";
-    notes.push("Covered by sync:pipeline-schema and check:pipeline-schema against the exported deployment schema.");
+    notes.push("Sync the vendored generator schema and run check:pipeline-schema against this release candidate.");
+    notes.push("Inspect schema additions such as query, object source/publish, and YAML-owned execution flags.");
+  } else if (isGeneratedCompileBreakSurface(filePath)) {
+    category = "fix now";
+    owner = ownerFor(filePath);
+    notes.push("Framework authoring/runtime API changed; generated Java/templates must compile against the release candidate.");
+  } else if (entry.kind === "A" && isScaffoldRelevant(filePath)) {
+    owner = ownerFor(filePath);
+    if (isProductScopeSurface(filePath)) {
+      category = "defer issue";
+      notes.push("New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.");
+    } else {
+      category = "added file follow-up";
+      notes.push("Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.");
+    }
   } else if (isCompositionSchema(filePath)) {
     category = "needs human review";
     owner = "composition schema";
@@ -200,17 +207,32 @@ function classifyEntry(entry) {
   }
   if (subject.includes("composition") || subject.includes("checkpoint")) {
     notes.push("Composition/checkpoint surface changed; confirm pipeline.yaml and pipeline-composition.yaml generation.");
+    notes.push("Follow-up coverage is tracked by #25.");
   }
   if (subject.includes("runtime-core")) {
     notes.push("Runtime-core split touched; confirm generated dependency assumptions still hold.");
+    notes.push("Dependency/layout audit is tracked by #28.");
   }
   if (subject.includes("spring")) {
     notes.push("Spring adapter surface touched; decide whether scaffold support is in scope or explicitly deferred.");
+    notes.push("Spring scaffold scope is tracked by #26.");
+  }
+  if (subject.includes("query")) {
+    notes.push("Query connector/surface touched; decide whether MCP should model it or defer product scope.");
+    notes.push("Query connector scaffold scope is tracked by #31.");
+  }
+  if (subject.includes("object-ingest") || subject.includes("objectsource") || subject.includes("object-source")) {
+    notes.push("Object ingest/source surface touched; decide whether scaffold support is product scope or docs-only.");
+    notes.push("Object-ingest connector scaffold scope is tracked by #30.");
+  }
+  if (subject.includes("runonvirtualthreads") || subject.includes("blocking")) {
+    notes.push("Blocking or virtual-thread authoring changed; generated service templates must avoid stale annotation attributes.");
   }
   if (subject.includes("self-host") || subject.includes("worker") || subject.includes("controlplane") || subject.includes("control-plane")) {
     notes.push("Self-host/coordinator/worker surface touched; confirm this is docs-only or add generator guidance.");
+    notes.push("Self-host/coordinator/worker scope is tracked by #27.");
   }
-  if (category === "probably no scaffold impact") {
+  if (category === "no scaffold impact") {
     notes.length = 0;
   }
 
@@ -228,15 +250,13 @@ function normalizePath(value) {
   return value.replaceAll("\\", "/");
 }
 
-function isKnownKafkaAwaitGap(subject) {
-  return subject.includes("kafka") && subject.includes("await");
-}
-
 function isScaffoldRelevant(filePath) {
   return isPipelineTemplateSchema(filePath)
     || isCompositionSchema(filePath)
     || isExampleConfig(filePath)
     || isSelfHostExampleSurface(filePath)
+    || isConnectorSurface(filePath)
+    || isSpringSmokeSurface(filePath)
     || isDeploymentRuntimeSurface(filePath)
     || isRuntimeRootHighSignal(filePath)
     || isHighSignalDoc(filePath);
@@ -255,9 +275,28 @@ function isExampleConfig(filePath) {
     || /^examples\/[^/]+\/config\/.*\.ya?ml$/.test(filePath);
 }
 
+function isConnectorSurface(filePath) {
+  return /^connectors\/(?:object-ingest|query-jpa)\//.test(filePath)
+    || /^docs\/guide\/connectors\//.test(filePath);
+}
+
+function isSpringSmokeSurface(filePath) {
+  return /^framework\/spring-blocking-smoke-tests\//.test(filePath);
+}
+
 function isSelfHostExampleSurface(filePath) {
   return /^examples\/[^/]+\/self-host\//.test(filePath)
     || /^examples\/[^/]+\/.*\/self-host\//.test(filePath);
+}
+
+function isGeneratedCompileBreakSurface(filePath) {
+  return filePath === "framework/runtime/src/main/java/org/pipelineframework/annotation/PipelineStep.java"
+    || /framework\/deployment\/src\/main\/java\/org\/pipelineframework\/processor\/(?:parser\/StepDefinitionParser|ir\/StepDefinition|schema\/PipelineTemplateSchemaExporter|phase\/ModelExtractionPhase)\.java$/.test(filePath)
+    || /^framework\/runtime\/src\/main\/java\/org\/pipelineframework\/blocking\//.test(filePath);
+}
+
+function isProductScopeSurface(filePath) {
+  return isConnectorSurface(filePath) || isSpringSmokeSurface(filePath);
 }
 
 function isDeploymentRuntimeSurface(filePath) {
@@ -272,8 +311,8 @@ function isRuntimeRootHighSignal(filePath) {
 }
 
 function isHighSignalDoc(filePath) {
-  return /^docs\/guide\/(?:build|development\/orchestrator-runtime|operations|plugins)\//.test(filePath)
-    && /(await|queue|checkpoint|composition|runtime|configuration|persistence|caching|operators|replay|self-host)/i.test(filePath);
+  return /^(docs\/guide\/(?:build|development\/orchestrator-runtime|operations|plugins|connectors)\/|docs\/(?:deploy|develop|design|evolve)\/)/.test(filePath)
+    && /(await|queue|checkpoint|composition|runtime|configuration|persistence|caching|operators|replay|self-host|spring|blocking|connector|query|object|source|publish)/i.test(filePath);
 }
 
 function ownerFor(filePath) {
@@ -285,6 +324,15 @@ function ownerFor(filePath) {
   }
   if (filePath.includes("/runtime-spring/")) {
     return "spring runtime adapter";
+  }
+  if (filePath.startsWith("connectors/object-ingest/")) {
+    return "object ingest connector";
+  }
+  if (filePath.startsWith("connectors/query-jpa/")) {
+    return "query connector";
+  }
+  if (filePath.startsWith("framework/spring-blocking-smoke-tests/")) {
+    return "spring blocking smoke";
   }
   if (filePath.includes("/runtime/")) {
     return "runtime/orchestrator";
@@ -299,8 +347,8 @@ function ownerFor(filePath) {
 }
 
 function renderReport({ from, to, frameworkDir, source, findings }) {
-  const relevant = findings.filter((finding) => finding.category !== "probably no scaffold impact");
-  const ignored = findings.filter((finding) => finding.category === "probably no scaffold impact");
+  const relevant = findings.filter((finding) => finding.category !== "no scaffold impact");
+  const ignored = findings.filter((finding) => finding.category === "no scaffold impact");
   const lines = [
     `# TPF MCP Release Parity Audit`,
     "",
@@ -313,7 +361,8 @@ function renderReport({ from, to, frameworkDir, source, findings }) {
     "## Required Follow-Up",
     "",
     "- Inspect open and draft MCP bridge PRs before starting release parity work.",
-    "- Port useful Kafka await scaffold wiring from draft PR #20 after PR #21 is the baseline.",
+    "- Treat `fix now` items as release blockers for scaffold/MCP parity.",
+    "- Convert `defer issue` items into explicit GitHub issues or update existing ones.",
     "- Treat added files as a second-pass review queue; do not rely on schema drift alone.",
     "- Choose or update generated-scaffold compile smokes for every runtime/config surface accepted into scope.",
     "",
@@ -326,7 +375,7 @@ function renderReport({ from, to, frameworkDir, source, findings }) {
     }
 
     lines.push(`## ${titleCase(category)}`, "");
-    const displayedFindings = category === "probably no scaffold impact"
+    const displayedFindings = category === "no scaffold impact"
       ? categoryFindings.slice(0, 25)
       : categoryFindings;
     for (const finding of displayedFindings) {
@@ -345,7 +394,7 @@ function renderReport({ from, to, frameworkDir, source, findings }) {
   }
 
   if (ignored.length === 0) {
-    lines.push("## Probably No Scaffold Impact", "", "- No docs-only or unrelated files were ignored.", "");
+    lines.push("## No Scaffold Impact", "", "- No docs-only or unrelated files were ignored.", "");
   }
 
   return `${lines.join("\n").trimEnd()}\n`;

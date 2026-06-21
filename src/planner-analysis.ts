@@ -397,6 +397,7 @@ function assertCoherentStepViews(
   if ((businessStep.timeout || "") !== (contract.timeout || "") || (businessStep.timeout || "") !== (pipelineStep.timeout || "")) {
     throw new Error(`Planner draft defines inconsistent await timeouts for business step '${businessStep.name}'.`);
   }
+  assertVirtualThreadSemantics(businessStep, contract, pipelineStep);
 }
 
 function inferFlowRole(
@@ -512,6 +513,30 @@ function assertAwaitSemantics(
   if (businessStep.await.transport.type !== contract.await.transport.type
     || businessStep.await.transport.type !== pipelineStep.await.transport.type) {
     throw new Error(`Planner draft defines inconsistent await transport type for '${stepName}'.`);
+  }
+}
+
+function assertVirtualThreadSemantics(
+  businessStep: BusinessStep,
+  contract: StepContract,
+  pipelineStep: PipelineStep
+): void {
+  const declarations = [
+    businessStep.runOnVirtualThreads,
+    contract.runOnVirtualThreads,
+    pipelineStep.runOnVirtualThreads
+  ];
+  const declaredValues = declarations.filter((value): value is boolean => typeof value === "boolean");
+  if (declaredValues.length === 0) {
+    return;
+  }
+  if (declaredValues.some((value) => value !== declaredValues[0])) {
+    throw new Error(`Planner draft defines inconsistent runOnVirtualThreads values for '${businessStep.name}'.`);
+  }
+  if (normalizeStepKind(businessStep.kind) !== "internal") {
+    throw new Error(
+      `Planner draft violates TPF semantics: '${businessStep.name}' declares runOnVirtualThreads, which is valid only for internal service steps.`
+    );
   }
 }
 

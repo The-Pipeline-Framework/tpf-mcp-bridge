@@ -158,7 +158,8 @@ const stepDraftCommonSchema = z.object({
   flowBoundaryRationale: z.string().optional(),
   timeout: z.string().optional(),
   idempotencyKeyFields: z.array(z.string()).optional(),
-  await: awaitConfigSchema.optional()
+  await: awaitConfigSchema.optional(),
+  runOnVirtualThreads: z.boolean().optional()
 });
 
 const checkpointPublicationSchema = z.object({

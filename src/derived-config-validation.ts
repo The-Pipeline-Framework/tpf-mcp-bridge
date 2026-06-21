@@ -64,6 +64,7 @@ export function assertDerivedConfigInvariants(config: DerivedConfig): void {
     if (!knownBoundaryTypes.has(step.outputTypeName)) {
       throw new DerivedConfigValidationError(`Step '${step.name}' references unknown output type '${step.outputTypeName}'.`);
     }
+    validateVirtualThreadStep(step);
     validateAwaitStep(config, step);
   }
 }
@@ -210,6 +211,17 @@ function validateAwaitStep(config: DerivedConfig, step: DerivedConfig["steps"][n
   if (step.cardinality !== "MANY_TO_MANY" && dispatchMode === "per-item") {
     throw new DerivedConfigValidationError(
       `Await step '${step.name}' uses await.dispatch.mode=per-item, which is only supported for MANY_TO_MANY cardinality.`
+    );
+  }
+}
+
+function validateVirtualThreadStep(step: DerivedConfig["steps"][number]): void {
+  if (!step.runOnVirtualThreads) {
+    return;
+  }
+  if (step.kind && step.kind !== "internal") {
+    throw new DerivedConfigValidationError(
+      `Step '${step.name}' declares runOnVirtualThreads, which is valid only for internal service steps.`
     );
   }
 }
