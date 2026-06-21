@@ -87,11 +87,11 @@ mp.messaging.incoming.tpf-await-kafka-responses.value.deserializer=org.apache.ka
 {{#if hasSqsAwait}}
 
 # SQS await transport starter settings.
-# tpf.await.sqs.poller.enabled=true
-# tpf.await.sqs.request-queue-url=${TPF_AWAIT_SQS_REQUEST_QUEUE_URL}
-# tpf.await.sqs.response-queue-url=${TPF_AWAIT_SQS_RESPONSE_QUEUE_URL}
-# quarkus.sqs.aws.region=${AWS_REGION:us-east-1}
-# quarkus.sqs.endpoint-override=${SQS_ENDPOINT_OVERRIDE:}
+tpf.await.sqs.poller.enabled=true
+tpf.await.sqs.request-queue-url=${TPF_AWAIT_SQS_REQUEST_QUEUE_URL}
+tpf.await.sqs.response-queue-url=${TPF_AWAIT_SQS_RESPONSE_QUEUE_URL}
+quarkus.sqs.aws.region=${AWS_REGION:us-east-1}
+quarkus.sqs.endpoint-override=${SQS_ENDPOINT_OVERRIDE:}
 {{/if}}
 {{#if hasWebhookAwait}}
 

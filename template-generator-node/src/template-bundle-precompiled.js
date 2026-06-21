@@ -561,7 +561,7 @@ module.exports = {
     + container.escapeExpression(((helper = (helper = lookupProperty(helpers,"rootProjectName") || (depth0 != null ? lookupProperty(depth0,"rootProjectName") : depth0)) != null ? helper : container.hooks.helperMissing),(typeof helper === "function" ? helper.call(depth0 != null ? depth0 : (container.nullContext || {}),{"name":"rootProjectName","hash":{},"data":data,"loc":{"start":{"line":84,"column":58},"end":{"line":84,"column":77}}}) : helper)))
     + "-await-responses\n";
 },"6":function(container,depth0,helpers,partials,data) {
-    return "\n# SQS await transport starter settings.\n# tpf.await.sqs.poller.enabled=true\n# tpf.await.sqs.request-queue-url=${TPF_AWAIT_SQS_REQUEST_QUEUE_URL}\n# tpf.await.sqs.response-queue-url=${TPF_AWAIT_SQS_RESPONSE_QUEUE_URL}\n# quarkus.sqs.aws.region=${AWS_REGION:us-east-1}\n# quarkus.sqs.endpoint-override=${SQS_ENDPOINT_OVERRIDE:}\n";
+    return "\n# SQS await transport starter settings.\ntpf.await.sqs.poller.enabled=true\ntpf.await.sqs.request-queue-url=${TPF_AWAIT_SQS_REQUEST_QUEUE_URL}\ntpf.await.sqs.response-queue-url=${TPF_AWAIT_SQS_RESPONSE_QUEUE_URL}\nquarkus.sqs.aws.region=${AWS_REGION:us-east-1}\nquarkus.sqs.endpoint-override=${SQS_ENDPOINT_OVERRIDE:}\n";
 },"7":function(container,depth0,helpers,partials,data) {
     return "\n# Webhook await transport starter settings.\n# tpf.await.webhook.callback-base-url=${TPF_AWAIT_WEBHOOK_CALLBACK_BASE_URL}\n";
 },"8":function(container,depth0,helpers,partials,data) {

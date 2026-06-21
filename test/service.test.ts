@@ -625,6 +625,11 @@ test("sqs await drafts generate queue-async scaffold guidance without a fake awa
   assert.ok(!fileNames.some((name) => name.startsWith("await-fraud-decision-svc/")));
   const orchestratorPom = await zip.file("orchestrator-svc/pom.xml")!.async("string");
   assert.match(orchestratorPom, /quarkus-amazon-sqs/);
+  const applicationProperties = await zip.file("orchestrator-svc/src/main/resources/application.properties")!.async("string");
+  assert.match(applicationProperties, /^tpf\.await\.sqs\.poller\.enabled=true$/m);
+  assert.match(applicationProperties, /^tpf\.await\.sqs\.request-queue-url=\$\{TPF_AWAIT_SQS_REQUEST_QUEUE_URL\}$/m);
+  assert.match(applicationProperties, /^tpf\.await\.sqs\.response-queue-url=\$\{TPF_AWAIT_SQS_RESPONSE_QUEUE_URL\}$/m);
+  assert.match(applicationProperties, /^quarkus\.sqs\.aws\.region=\$\{AWS_REGION:us-east-1\}$/m);
 });
 
 test("kafka await drafts generate reactive messaging scaffold wiring without a fake await module", async () => {

@@ -10,6 +10,7 @@ const DEFAULT_SMOKE_NAME = "kafka-await-smoke";
 const args = parseArgs(process.argv.slice(2));
 const frameworkDirArg = args.frameworkDir || process.env.TPF_FRAMEWORK_DIR;
 const smokeName = args.smokeName || process.env.TPF_SMOKE_NAME || DEFAULT_SMOKE_NAME;
+validateSmokeName(smokeName);
 
 if (!frameworkDirArg) {
   usage("Missing --framework-dir or TPF_FRAMEWORK_DIR.");
@@ -70,6 +71,12 @@ function usage(message) {
   console.error(message);
   console.error(`Usage: node scripts/${scriptName} --framework-dir /path/to/pipelineframework-tag-worktree`);
   process.exit(2);
+}
+
+function validateSmokeName(value) {
+  if (!value || value.includes("..") || value.includes("/") || value.includes("\\")) {
+    usage(`Invalid smoke name: ${value}. Use a simple directory name without path traversal or separators.`);
+  }
 }
 
 function run(command, args, cwd) {
