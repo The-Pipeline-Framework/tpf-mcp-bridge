@@ -441,6 +441,7 @@ class HandlebarsTemplateEngine {
         const unionDefinitions = Array.isArray(options.unionDefinitions) ? options.unionDefinitions : [];
         const serviceSteps = resolvedSteps.filter(step => step.generatesServiceModule !== false && step.kind !== 'await');
         const kafkaAwait = this.createKafkaAwaitContext(resolvedSteps, resolvedAppName);
+        const hasCheckpointBoundaries = this.hasCheckpointBoundaries(options.input, options.output);
         const aspectConfig = options.aspects || {};
         const normalizedRuntimeLayout = this.normalizeRuntimeLayout(options.runtimeLayout);
         const transportMode = this.normalizeTransport(options.transport, normalizedRuntimeLayout);
@@ -524,6 +525,7 @@ class HandlebarsTemplateEngine {
             includeCacheInvalidationModule,
             aspectDefinitions,
             transportMode,
+            hasCheckpointBoundaries,
             options.outputPath);
 
         if (normalizedRuntimeLayout === 'pipeline-runtime') {
@@ -532,6 +534,7 @@ class HandlebarsTemplateEngine {
                 resolvedBasePackage,
                 serviceSteps,
                 kafkaAwait,
+                hasCheckpointBoundaries,
                 options.outputPath);
         } else if (normalizedRuntimeLayout === 'monolith') {
             await this.generateMonolithModule(
@@ -541,6 +544,7 @@ class HandlebarsTemplateEngine {
                 includePersistenceModule,
                 includeCacheInvalidationModule,
                 kafkaAwait,
+                hasCheckpointBoundaries,
                 options.outputPath);
         }
 
@@ -594,6 +598,8 @@ class HandlebarsTemplateEngine {
                 transport: this.normalizeTransport(options.transport, normalizedLayout),
                 platform: this.normalizePlatform(options.platform),
                 runtimeLayout: normalizedLayout,
+                input: options.input && typeof options.input === 'object' ? options.input : undefined,
+                output: options.output && typeof options.output === 'object' ? options.output : undefined,
                 outputPath: options.outputPath
             };
         }
@@ -647,6 +653,8 @@ class HandlebarsTemplateEngine {
                 transport: this.normalizeTransport(options.transport, normalizedLayout),
                 platform: this.normalizePlatform(options.platform),
                 runtimeLayout: normalizedLayout,
+                input: options.input && typeof options.input === 'object' ? options.input : undefined,
+                output: options.output && typeof options.output === 'object' ? options.output : undefined,
                 outputPath: options.outputPath
             };
         }
@@ -670,6 +678,8 @@ class HandlebarsTemplateEngine {
             transport: this.normalizeTransport(transport, this.normalizeRuntimeLayout(resolvedRuntimeLayout)),
             platform: this.normalizePlatform(resolvedPlatform),
             runtimeLayout: this.normalizeRuntimeLayout(resolvedRuntimeLayout),
+            input: undefined,
+            output: undefined,
             outputPath: resolvedOutputPath
         };
     }
@@ -791,7 +801,15 @@ class HandlebarsTemplateEngine {
         return Array.from(new Set((values || []).filter(value => typeof value === 'string' && value.trim())));
     }
 
-    async generatePipelineRuntimeModule(appName, basePackage, steps, kafkaAwait, outputPath) {
+    hasCheckpointBoundaries(input, output) {
+        return Boolean((input && input.subscription) || (output && output.checkpoint));
+    }
+
+    hasAwaitSteps(steps) {
+        return (steps || []).some(step => step && step.kind === 'await');
+    }
+
+    async generatePipelineRuntimeModule(appName, basePackage, steps, kafkaAwait, hasCheckpointBoundaries, outputPath) {
         const modulePath = path.join(outputPath, 'pipeline-runtime-svc');
         await fs.ensureDir(path.join(modulePath, 'src/main/resources', 'META-INF'));
 
@@ -817,7 +835,9 @@ class HandlebarsTemplateEngine {
             serviceName: 'pipeline-runtime-svc',
             rootProjectName: context.rootProjectName,
             portOffset: 1,
-            kafkaAwait
+            kafkaAwait,
+            hasCheckpointBoundaries,
+            hasQueueAsyncRuntime: hasCheckpointBoundaries || this.hasAwaitSteps(steps)
         });
         await fs.writeFile(path.join(modulePath, 'src/main/resources', 'application.properties'), appProps);
         await this.generateModuleDevProperties(modulePath);
@@ -832,6 +852,7 @@ class HandlebarsTemplateEngine {
         includePersistenceModule,
         includeCacheInvalidationModule,
         kafkaAwait,
+        hasCheckpointBoundaries,
         outputPath
     ) {
         const modulePath = path.join(outputPath, 'monolith-svc');
@@ -881,7 +902,9 @@ class HandlebarsTemplateEngine {
             serviceName: 'monolith-svc',
             rootProjectName: context.rootProjectName,
             portOffset: 0,
-            kafkaAwait
+            kafkaAwait,
+            hasCheckpointBoundaries,
+            hasQueueAsyncRuntime: hasCheckpointBoundaries || this.hasAwaitSteps(steps)
         });
         await fs.writeFile(path.join(modulePath, 'src/main/resources', 'application.properties'), appProps);
         await this.generateModuleDevProperties(modulePath);
@@ -1297,6 +1320,7 @@ class HandlebarsTemplateEngine {
         includeCacheInvalidationModule,
         aspectDefinitions,
         transport,
+        hasCheckpointBoundaries,
         orchPath) {
         // Create context for orchestrator properties
         const serviceSteps = steps.filter(step => step.generatesServiceModule !== false && step.kind !== 'await');
@@ -1319,6 +1343,8 @@ class HandlebarsTemplateEngine {
         context.includePersistenceModule = includePersistenceModule;
         context.includeCacheInvalidationModule = includeCacheInvalidationModule;
         context.kafkaAwait = this.createKafkaAwaitContext(steps, appName);
+        context.hasCheckpointBoundaries = hasCheckpointBoundaries;
+        context.hasQueueAsyncRuntime = hasCheckpointBoundaries || awaitTransports.size > 0;
         context.hasAwaitSteps = awaitTransports.size > 0;
         context.hasKafkaAwait = awaitTransports.has('kafka');
         context.hasSqsAwait = awaitTransports.has('sqs');
@@ -1549,6 +1575,7 @@ class HandlebarsTemplateEngine {
         includeCacheInvalidationModule,
         aspectDefinitions,
         transport,
+        hasCheckpointBoundaries,
         outputPath) {
         const orchPath = path.join(outputPath, 'orchestrator-svc');
         const classPath = path.join(orchPath, 'src/main/java', this.toPath(basePackage + '.orchestrator.service'));
@@ -1577,6 +1604,7 @@ class HandlebarsTemplateEngine {
             includeCacheInvalidationModule,
             aspectDefinitions,
             transport,
+            hasCheckpointBoundaries,
             orchPath);
 
         // Generate orchestrator application-dev.properties

@@ -817,6 +817,9 @@ test("checkpoint handoff drafts emit pipeline boundaries and composition sidecar
   const composition = YAML.load(compositionYaml) as { version: number; name: string; pipelines: Array<{ id: string; path: string }> };
   assert.equal(composition.version, 1);
   assert.equal(composition.pipelines[0].id, "wire-transfer");
+  const applicationProperties = await zip.file("orchestrator-svc/src/main/resources/application.properties")!.async("string");
+  assert.match(applicationProperties, /pipeline\.orchestrator\.mode=QUEUE_ASYNC/);
+  assert.match(applicationProperties, /checkpoint publishers\/subscribers/i);
 });
 
 test("get_brief_session returns persisted session state after answers are merged", async () => {
