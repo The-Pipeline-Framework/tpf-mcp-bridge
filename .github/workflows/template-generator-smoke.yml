@@ -16,11 +16,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Checkout framework 26.6.2 candidate
+      - name: Checkout framework main
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           repository: The-Pipeline-Framework/pipelineframework
-          ref: refs/pull/423/merge
+          ref: main
           path: pipelineframework-26.6.2-candidate
           persist-credentials: false
 
@@ -74,3 +74,6 @@ jobs:
 
       - name: Compile generated SQS await scaffold
         run: npm run smoke:sqs-await -- --framework-dir "${GITHUB_WORKSPACE}/pipelineframework-26.6.2-candidate"
+
+      - name: Validate generated checkpoint/composition scaffold
+        run: npm run smoke:checkpoint-composition -- --framework-dir "${GITHUB_WORKSPACE}/pipelineframework-26.6.2-candidate"

@@ -13,6 +13,8 @@ type BrowserTemplateEngineCtor = new (templates?: Record<string, string>) => {
     transport?: string;
     platform?: string;
     runtimeLayout?: string;
+    input?: unknown;
+    output?: unknown;
     fileCallback: (filePath: string, content: string) => Promise<void> | void;
   }): Promise<void>;
 };
@@ -77,6 +79,8 @@ function toWorkerScaffoldConfig(config: DerivedConfig): {
   transport?: string;
   platform?: string;
   runtimeLayout?: string;
+  input?: unknown;
+  output?: unknown;
 } {
   const unions = config.unions || {};
   const materializedSteps = config.steps.map((step) => ({
@@ -95,7 +99,9 @@ function toWorkerScaffoldConfig(config: DerivedConfig): {
     unionDefinitions: toScaffoldUnions(config.unions, config.messages),
     transport: normalizeTransport(config.transport, normalizeRuntimeLayout(config.runtimeLayout)),
     platform: normalizePlatform(config.platform),
-    runtimeLayout: normalizeRuntimeLayout(config.runtimeLayout)
+    runtimeLayout: normalizeRuntimeLayout(config.runtimeLayout),
+    input: config.input,
+    output: config.output
   };
 }
 

@@ -55,15 +55,20 @@ pipeline.defaults.retry-wait-ms=500
 pipeline.defaults.recover-on-failure=false
 pipeline.defaults.max-backoff=30000
 pipeline.defaults.jitter=false
-{{#if hasAwaitSteps}}
+{{#if hasQueueAsyncRuntime}}
 
-# Await steps require queue-async orchestration so executions can park and resume.
+# Await steps and checkpoint hand-offs require queue-async orchestration so executions can park, resume, or publish boundaries.
 pipeline.orchestrator.mode=QUEUE_ASYNC
-# Set TPF_RESUME_TOKEN_SECRET to a deployment secret before starting an await-enabled runtime.
+# Set TPF_RESUME_TOKEN_SECRET to a deployment secret before starting a queue-async runtime.
 pipeline.orchestrator.resume-token-secret=${TPF_RESUME_TOKEN_SECRET}
 
 # Operator-owned redrive/replay policy remains external to the scaffold.
+{{#if hasAwaitSteps}}
 # Keep await handlers idempotent over the configured idempotencyKeyFields.
+{{/if}}
+{{#if hasCheckpointBoundaries}}
+# Keep checkpoint publishers/subscribers idempotent over the configured boundary key fields.
+{{/if}}
 {{#if hasKafkaAwait}}
 
 # Kafka await transport starter settings.

@@ -36,7 +36,7 @@ class PipelineGenerator {
     async generateFromConfig(configPath, outputPath) {
         const config = this.loadConfig(configPath);
         const scaffoldConfig = this.toScaffoldConfig(config);
-        const { appName, basePackage, steps, aspects, transport, platform, runtimeLayout, unionDefinitions } = scaffoldConfig;
+        const { appName, basePackage, steps, aspects, transport, platform, runtimeLayout, unionDefinitions, input, output } = scaffoldConfig;
         await this.engine.generateApplication({
             appName,
             basePackage,
@@ -46,6 +46,8 @@ class PipelineGenerator {
             platform,
             runtimeLayout,
             unionDefinitions,
+            input,
+            output,
             outputPath
         });
         await this.copyConfig(config, outputPath);

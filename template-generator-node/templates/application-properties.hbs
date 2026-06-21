@@ -26,11 +26,18 @@ quarkus.grpc.server.plain-text=false
 quarkus.http.ssl.certificate.key-store-file=${SERVER_KEYSTORE_PATH:../target/dev-certs/{{serviceName}}/server-keystore.jks}
 quarkus.http.ssl.certificate.key-store-password=secret
 quarkus.http.insecure-requests=disabled
+{{#if hasQueueAsyncRuntime}}
+
+# Await steps and checkpoint hand-offs require queue-async orchestration so executions can park, resume, or publish boundaries.
+pipeline.orchestrator.mode=QUEUE_ASYNC
+pipeline.orchestrator.resume-token-secret=${TPF_RESUME_TOKEN_SECRET}
+{{#if hasCheckpointBoundaries}}
+# Keep checkpoint publishers/subscribers idempotent over the configured boundary key fields.
+{{/if}}
+{{/if}}
 {{#if kafkaAwait}}
 
 # Kafka await transport starter settings.
-pipeline.orchestrator.mode=QUEUE_ASYNC
-pipeline.orchestrator.resume-token-secret=${TPF_RESUME_TOKEN_SECRET}
 tpf.await.kafka.reactive-messaging.enabled=true
 kafka.bootstrap.servers=${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
 mp.messaging.outgoing.tpf-await-kafka-requests.connector=smallrye-kafka

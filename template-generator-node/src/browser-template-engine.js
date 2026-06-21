@@ -337,6 +337,8 @@ class BrowserTemplateEngine {
             aspects: options.aspects && typeof options.aspects === 'object' ? options.aspects : {},
             unionDefinitions: Array.isArray(options.unionDefinitions) ? options.unionDefinitions : [],
             runtimeLayout: this.normalizeRuntimeLayout(options.runtimeLayout),
+            input: options.input && typeof options.input === 'object' ? options.input : undefined,
+            output: options.output && typeof options.output === 'object' ? options.output : undefined,
             fileCallback: options.fileCallback
         };
         normalizedOptions.transport = this.normalizeTransport(
@@ -357,6 +359,7 @@ class BrowserTemplateEngine {
         const stepsValue = normalizedOptions.steps;
         const serviceSteps = stepsValue.filter(step => step.generatesServiceModule !== false && step.kind !== 'await');
         const kafkaAwait = this.createKafkaAwaitContext(stepsValue, appNameValue);
+        const hasCheckpointBoundaries = this.hasCheckpointBoundaries(normalizedOptions.input, normalizedOptions.output);
         const normalizedRuntimeLayout = normalizedOptions.runtimeLayout;
         const transportMode = normalizedOptions.transport;
         const aspectConfig = normalizedOptions.aspects;
@@ -413,6 +416,7 @@ class BrowserTemplateEngine {
             includeCacheInvalidationModule,
             aspectConfig,
             transportMode,
+            hasCheckpointBoundaries,
             normalizedOptions.fileCallback);
 
         if (normalizedRuntimeLayout === 'pipeline-runtime') {
@@ -421,6 +425,7 @@ class BrowserTemplateEngine {
                 basePackageValue,
                 serviceSteps,
                 kafkaAwait,
+                hasCheckpointBoundaries,
                 normalizedOptions.fileCallback
             );
         } else if (normalizedRuntimeLayout === 'monolith') {
@@ -431,6 +436,7 @@ class BrowserTemplateEngine {
                 includePersistenceModule,
                 includeCacheInvalidationModule,
                 kafkaAwait,
+                hasCheckpointBoundaries,
                 normalizedOptions.fileCallback
             );
         }
@@ -562,7 +568,15 @@ class BrowserTemplateEngine {
         return Array.from(new Set((values || []).filter(value => typeof value === 'string' && value.trim())));
     }
 
-    async generatePipelineRuntimeModule(appName, basePackage, steps, kafkaAwait, fileCallback) {
+    hasCheckpointBoundaries(input, output) {
+        return Boolean((input && input.subscription) || (output && output.checkpoint));
+    }
+
+    hasAwaitSteps(steps) {
+        return (steps || []).some(step => step && step.kind === 'await');
+    }
+
+    async generatePipelineRuntimeModule(appName, basePackage, steps, kafkaAwait, hasCheckpointBoundaries, fileCallback) {
         const rootProjectName = appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
         const context = {
             basePackage,
@@ -584,7 +598,9 @@ class BrowserTemplateEngine {
             serviceName: 'pipeline-runtime-svc',
             rootProjectName,
             portOffset: 1,
-            kafkaAwait
+            kafkaAwait,
+            hasCheckpointBoundaries,
+            hasQueueAsyncRuntime: hasCheckpointBoundaries || this.hasAwaitSteps(steps)
         });
         await fileCallback('pipeline-runtime-svc/src/main/resources/application.properties', appPropsContent);
         const appDevProps = this.render('module-application-dev-properties', {});
@@ -600,6 +616,7 @@ class BrowserTemplateEngine {
         includePersistenceModule,
         includeCacheInvalidationModule,
         kafkaAwait,
+        hasCheckpointBoundaries,
         fileCallback
     ) {
         const rootProjectName = appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
@@ -646,7 +663,9 @@ class BrowserTemplateEngine {
             serviceName: 'monolith-svc',
             rootProjectName,
             portOffset: 0,
-            kafkaAwait
+            kafkaAwait,
+            hasCheckpointBoundaries,
+            hasQueueAsyncRuntime: hasCheckpointBoundaries || this.hasAwaitSteps(steps)
         });
         await fileCallback('monolith-svc/src/main/resources/application.properties', appPropsContent);
         const appDevProps = this.render('module-application-dev-properties', {});
@@ -982,6 +1001,7 @@ class BrowserTemplateEngine {
         includeCacheInvalidationModule,
         aspectDefinitions,
         transport,
+        hasCheckpointBoundaries,
         fileCallback) {
         await this.generateOrchestratorApplication(appName, basePackage, fileCallback);
 
@@ -1003,6 +1023,7 @@ class BrowserTemplateEngine {
             includeCacheInvalidationModule,
             aspectDefinitions,
             transport,
+            hasCheckpointBoundaries,
             fileCallback);
         await this.generateOrchestratorApplicationDevProperties(basePackage, steps, fileCallback);
         await this.generateOrchestratorApplicationTestProperties(fileCallback);
@@ -1058,6 +1079,7 @@ class BrowserTemplateEngine {
         includeCacheInvalidationModule,
         aspectDefinitions,
         transport,
+        hasCheckpointBoundaries,
         fileCallback) {
         const transportMode = this.normalizeTransport(transport);
         const aspects = this.normalizeAspectDefinitions(aspectDefinitions);
@@ -1079,6 +1101,8 @@ class BrowserTemplateEngine {
             includePersistenceModule,
             includeCacheInvalidationModule,
             kafkaAwait: this.createKafkaAwaitContext(steps, appName),
+            hasCheckpointBoundaries,
+            hasQueueAsyncRuntime: hasCheckpointBoundaries || awaitTransports.size > 0,
             hasAwaitSteps: awaitTransports.size > 0,
             hasKafkaAwait: awaitTransports.has('kafka'),
             hasSqsAwait: awaitTransports.has('sqs'),
