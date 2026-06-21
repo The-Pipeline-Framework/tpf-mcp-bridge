@@ -16,12 +16,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Checkout framework v26.6.1
+      - name: Checkout framework 26.6.2 candidate
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           repository: The-Pipeline-Framework/pipelineframework
-          ref: v26.6.1
-          path: pipelineframework-v26.6.1
+          ref: refs/pull/423/merge
+          path: pipelineframework-26.6.2-candidate
           persist-credentials: false
 
       - name: Setup Java 21
@@ -30,7 +30,7 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
-          cache-dependency-path: pipelineframework-v26.6.1/**/*.xml
+          cache-dependency-path: pipelineframework-26.6.2-candidate/**/*.xml
 
       - name: Setup Node.js 24
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
@@ -50,14 +50,27 @@ jobs:
       - name: Build bridge
         run: npm run build
 
+      - name: Normalize framework candidate version for scaffold smokes
+        run: |
+          find pipelineframework-26.6.2-candidate -name '*.xml' -print0 \
+            | xargs -0 perl -0pi -e 's/26\.6\.2-SNAPSHOT/26.6.2/g'
+
+      - name: Install framework root candidate POM locally
+        run: ./mvnw -N install
+        working-directory: pipelineframework-26.6.2-candidate
+
+      - name: Install framework candidate artifacts locally
+        run: ./mvnw -f framework/pom.xml -DskipTests install
+        working-directory: pipelineframework-26.6.2-candidate
+
       - name: Check vendored pipeline schema
-        run: npm run check:pipeline-schema -- "${GITHUB_WORKSPACE}/pipelineframework-v26.6.1/framework/deployment/src/main/resources/META-INF/pipeline/pipeline-template-schema.json"
+        run: npm run check:pipeline-schema -- "${GITHUB_WORKSPACE}/pipelineframework-26.6.2-candidate/framework/deployment/src/main/resources/META-INF/pipeline/pipeline-template-schema.json"
 
       - name: Compile generated REST await union scaffold
-        run: npm run smoke:rest-await-union -- --framework-dir "${GITHUB_WORKSPACE}/pipelineframework-v26.6.1"
+        run: npm run smoke:rest-await-union -- --framework-dir "${GITHUB_WORKSPACE}/pipelineframework-26.6.2-candidate"
 
       - name: Compile generated Kafka await scaffold
-        run: npm run smoke:kafka-await -- --framework-dir "${GITHUB_WORKSPACE}/pipelineframework-v26.6.1"
+        run: npm run smoke:kafka-await -- --framework-dir "${GITHUB_WORKSPACE}/pipelineframework-26.6.2-candidate"
 
       - name: Compile generated SQS await scaffold
-        run: npm run smoke:sqs-await -- --framework-dir "${GITHUB_WORKSPACE}/pipelineframework-v26.6.1"
+        run: npm run smoke:sqs-await -- --framework-dir "${GITHUB_WORKSPACE}/pipelineframework-26.6.2-candidate"

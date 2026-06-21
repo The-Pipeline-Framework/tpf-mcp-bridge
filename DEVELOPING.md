@@ -69,7 +69,7 @@ Run a parity audit before starting scaffold/MCP work for a new TPF release. The 
 
 ```bash
 npm run audit:release-parity -- --framework-dir ../pipelineframework
-npm run audit:release-parity -- --from v26.5.2 --to v26.6.1 --framework-dir ../pipelineframework --output reports/tpf-26.6.1-parity.md
+npm run audit:release-parity -- --from v26.6.1 --to HEAD --framework-dir ../pipelineframework --output reports/tpf-26.6.2-parity.md
 ```
 
 Required release checklist:
@@ -77,5 +77,13 @@ Required release checklist:
 1. Run `npm run check:pipeline-schema -- <pipelineframework>/framework/deployment/src/main/resources/META-INF/pipeline/pipeline-template-schema.json`.
 2. Run `npm run audit:release-parity -- --from <previous-tag> --to <target-tag> --framework-dir <pipelineframework>`.
 3. Inspect `added file follow-up` separately from changed files; new runtime concepts often enter through new packages, examples, or docs.
-4. Inspect open and draft `tpf-mcp-bridge` PRs before implementing parity work. For the 26.6.1 audit, draft PR #20 contains useful Kafka await scaffold wiring that should be ported after PR #21 is the baseline.
+4. Inspect open and draft `tpf-mcp-bridge` PRs before implementing parity work.
 5. Choose generated-scaffold compile smokes based on the accepted release surfaces. Schema checks and ZIP assertions are not enough when POMs, runtime config, await transports, or generated Java are involved.
+
+For a pre-release candidate that includes an unmerged framework PR, create a clean framework worktree at the PR merge ref and use `--to HEAD`, for example:
+
+```bash
+git fetch origin main pull/423/merge:refs/tpf-candidates/pr-423-merge
+git worktree add --detach /tmp/tpf-26.6.2-candidate refs/tpf-candidates/pr-423-merge
+npm run audit:release-parity -- --from v26.6.1 --to HEAD --framework-dir /tmp/tpf-26.6.2-candidate --output reports/tpf-26.6.2-parity.md
+```

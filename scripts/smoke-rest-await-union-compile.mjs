@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,6 +33,17 @@ if (existsSync(legacyConfigPath)) {
 const awaitServiceModulePath = path.join(outputDir, "await-restaurant-decision-svc");
 if (existsSync(awaitServiceModulePath)) {
   throw new Error(`Generated scaffold contains a service module for the await boundary: ${awaitServiceModulePath}`);
+}
+
+const generatedServices = findFiles(outputDir, /^Process.*Service\.java$/);
+if (generatedServices.length === 0) {
+  throw new Error("Generated scaffold did not contain any business service stubs.");
+}
+for (const servicePath of generatedServices) {
+  const source = readFileSync(servicePath, "utf8");
+  if (source.includes("runOnVirtualThreads")) {
+    throw new Error(`Generated service still references removed @PipelineStep runOnVirtualThreads attribute: ${servicePath}`);
+  }
 }
 
 await run(
@@ -75,6 +86,19 @@ function run(command, args, cwd) {
       }
     });
   });
+}
+
+function findFiles(root, pattern) {
+  const found = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const entryPath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      found.push(...findFiles(entryPath, pattern));
+    } else if (pattern.test(entry.name)) {
+      found.push(entryPath);
+    }
+  }
+  return found;
 }
 
 function buildRestaurantApprovalUnionConfig() {

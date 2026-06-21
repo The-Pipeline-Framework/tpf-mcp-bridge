@@ -166,6 +166,7 @@ export interface PipelineStep {
   timeout?: string;
   idempotencyKeyFields?: string[];
   await?: AwaitStepConfig;
+  runOnVirtualThreads?: boolean;
   parallel?: boolean;
   batchSize?: number;
   batchTimeoutMs?: number;
@@ -248,6 +249,7 @@ export interface BusinessStep {
   timeout?: string;
   idempotencyKeyFields?: string[];
   await?: AwaitStepConfig;
+  runOnVirtualThreads?: boolean;
   inputFields: MessageField[];
   outputFields: MessageField[];
 }
@@ -263,6 +265,7 @@ export interface StepContract {
   timeout?: string;
   idempotencyKeyFields?: string[];
   await?: AwaitStepConfig;
+  runOnVirtualThreads?: boolean;
   inputFields: MessageField[];
   outputFields: MessageField[];
   continuity: "coherent" | "clarification_needed";

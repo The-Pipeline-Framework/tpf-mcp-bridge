@@ -1,0 +1,637 @@
+# TPF MCP Release Parity Audit
+
+- Baseline: `v26.6.1..HEAD`
+- Framework checkout: `/tmp/tpf-26.6.2-candidate`
+- Source: `git diff --name-status`
+- Files inspected: 612
+- Scaffold-relevant findings: 219
+
+## Required Follow-Up
+
+- Inspect open and draft MCP bridge PRs before starting release parity work.
+- Treat `fix now` items as release blockers for scaffold/MCP parity.
+- Convert `defer issue` items into explicit GitHub issues or update existing ones.
+- Treat added files as a second-pass review queue; do not rely on schema drift alone.
+- Choose or update generated-scaffold compile smokes for every runtime/config surface accepted into scope.
+
+## Fix Now
+
+- `M` `framework/deployment/src/main/java/org/pipelineframework/processor/ir/StepDefinition.java` (deployment/compiler)
+  - Framework authoring/runtime API changed; generated Java/templates must compile against the release candidate.
+- `M` `framework/deployment/src/main/java/org/pipelineframework/processor/parser/StepDefinitionParser.java` (deployment/compiler)
+  - Framework authoring/runtime API changed; generated Java/templates must compile against the release candidate.
+- `M` `framework/deployment/src/main/java/org/pipelineframework/processor/phase/ModelExtractionPhase.java` (deployment/compiler)
+  - Framework authoring/runtime API changed; generated Java/templates must compile against the release candidate.
+- `M` `framework/deployment/src/main/java/org/pipelineframework/processor/schema/PipelineTemplateSchemaExporter.java` (deployment/compiler)
+  - Framework authoring/runtime API changed; generated Java/templates must compile against the release candidate.
+- `M` `framework/deployment/src/main/resources/META-INF/pipeline/pipeline-template-schema.json` (deployment schema)
+  - Sync the vendored generator schema and run check:pipeline-schema against this release candidate.
+  - Inspect schema additions such as query, object source/publish, and YAML-owned execution flags.
+- `M` `framework/runtime/src/main/java/org/pipelineframework/annotation/PipelineStep.java` (runtime/orchestrator)
+  - Framework authoring/runtime API changed; generated Java/templates must compile against the release candidate.
+- `M` `framework/runtime/src/main/java/org/pipelineframework/blocking/BlockingExecutions.java` (runtime/orchestrator)
+  - Framework authoring/runtime API changed; generated Java/templates must compile against the release candidate.
+  - Blocking or virtual-thread authoring changed; generated service templates must avoid stale annotation attributes.
+
+## Defer Issue
+
+- `A` `connectors/object-ingest/pom.xml` (object ingest connector)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Object ingest/source surface touched; decide whether scaffold support is product scope or docs-only.
+  - Object-ingest connector scaffold scope is tracked by #30.
+- `A` `connectors/object-ingest/src/main/java/org/pipelineframework/connector/objectingest/FilesystemObjectSourceProvider.java` (object ingest connector)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Object ingest/source surface touched; decide whether scaffold support is product scope or docs-only.
+  - Object-ingest connector scaffold scope is tracked by #30.
+- `A` `connectors/object-ingest/src/main/java/org/pipelineframework/connector/objectingest/S3ObjectSourceProvider.java` (object ingest connector)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Object ingest/source surface touched; decide whether scaffold support is product scope or docs-only.
+  - Object-ingest connector scaffold scope is tracked by #30.
+- `A` `connectors/object-ingest/src/main/resources/META-INF/services/org.pipelineframework.objectingest.ObjectSourceProvider` (object ingest connector)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Object ingest/source surface touched; decide whether scaffold support is product scope or docs-only.
+  - Object-ingest connector scaffold scope is tracked by #30.
+- `A` `connectors/object-ingest/src/test/java/org/pipelineframework/connector/objectingest/FilesystemObjectSourceProviderTest.java` (object ingest connector)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Object ingest/source surface touched; decide whether scaffold support is product scope or docs-only.
+  - Object-ingest connector scaffold scope is tracked by #30.
+- `A` `connectors/object-ingest/src/test/java/org/pipelineframework/connector/objectingest/S3ObjectSourceProviderTest.java` (object ingest connector)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Object ingest/source surface touched; decide whether scaffold support is product scope or docs-only.
+  - Object-ingest connector scaffold scope is tracked by #30.
+- `A` `connectors/query-jpa/pom.xml` (query connector)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Query connector/surface touched; decide whether MCP should model it or defer product scope.
+  - Query connector scaffold scope is tracked by #31.
+- `A` `connectors/query-jpa/src/main/java/org/pipelineframework/connector/query/jpa/JpaQueryConnector.java` (query connector)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Query connector/surface touched; decide whether MCP should model it or defer product scope.
+  - Query connector scaffold scope is tracked by #31.
+- `A` `connectors/query-jpa/src/main/java/org/pipelineframework/connector/query/jpa/JpaQueryPlan.java` (query connector)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Query connector/surface touched; decide whether MCP should model it or defer product scope.
+  - Query connector scaffold scope is tracked by #31.
+- `A` `connectors/query-jpa/src/main/java/org/pipelineframework/connector/query/jpa/JpaQueryProjection.java` (query connector)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Query connector/surface touched; decide whether MCP should model it or defer product scope.
+  - Query connector scaffold scope is tracked by #31.
+- `A` `connectors/query-jpa/src/main/java/org/pipelineframework/connector/query/jpa/JpaQueryReflection.java` (query connector)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Query connector/surface touched; decide whether MCP should model it or defer product scope.
+  - Query connector scaffold scope is tracked by #31.
+- `A` `connectors/query-jpa/src/test/java/org/pipelineframework/connector/query/jpa/CustomerRiskEntity.java` (query connector)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Query connector/surface touched; decide whether MCP should model it or defer product scope.
+  - Query connector scaffold scope is tracked by #31.
+- `A` `connectors/query-jpa/src/test/java/org/pipelineframework/connector/query/jpa/JpaQueryConnectorQuarkusTest.java` (query connector)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Query connector/surface touched; decide whether MCP should model it or defer product scope.
+  - Query connector scaffold scope is tracked by #31.
+- `A` `connectors/query-jpa/src/test/java/org/pipelineframework/connector/query/jpa/JpaQueryPlanTest.java` (query connector)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Query connector/surface touched; decide whether MCP should model it or defer product scope.
+  - Query connector scaffold scope is tracked by #31.
+- `A` `connectors/query-jpa/src/test/java/org/pipelineframework/connector/query/jpa/JpaQueryProjectionTest.java` (query connector)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Query connector/surface touched; decide whether MCP should model it or defer product scope.
+  - Query connector scaffold scope is tracked by #31.
+- `A` `connectors/query-jpa/src/test/resources/application.properties` (query connector)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Query connector/surface touched; decide whether MCP should model it or defer product scope.
+  - Query connector scaffold scope is tracked by #31.
+- `A` `docs/guide/connectors/index.md` (release docs)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+- `A` `docs/guide/connectors/object-ingest.md` (release docs)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Object ingest/source surface touched; decide whether scaffold support is product scope or docs-only.
+  - Object-ingest connector scaffold scope is tracked by #30.
+- `A` `framework/spring-blocking-smoke-tests/pom.xml` (spring blocking smoke)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Spring adapter surface touched; decide whether scaffold support is in scope or explicitly deferred.
+  - Spring scaffold scope is tracked by #26.
+  - Blocking or virtual-thread authoring changed; generated service templates must avoid stale annotation attributes.
+- `A` `framework/spring-blocking-smoke-tests/src/main/java/com/example/blocking/SpringBlockingSmokeApplication.java` (spring blocking smoke)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Spring adapter surface touched; decide whether scaffold support is in scope or explicitly deferred.
+  - Spring scaffold scope is tracked by #26.
+  - Blocking or virtual-thread authoring changed; generated service templates must avoid stale annotation attributes.
+- `A` `framework/spring-blocking-smoke-tests/src/main/java/com/example/blocking/domain/PaymentRecord.java` (spring blocking smoke)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Spring adapter surface touched; decide whether scaffold support is in scope or explicitly deferred.
+  - Spring scaffold scope is tracked by #26.
+  - Blocking or virtual-thread authoring changed; generated service templates must avoid stale annotation attributes.
+- `A` `framework/spring-blocking-smoke-tests/src/main/java/com/example/blocking/domain/PaymentStatus.java` (spring blocking smoke)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Spring adapter surface touched; decide whether scaffold support is in scope or explicitly deferred.
+  - Spring scaffold scope is tracked by #26.
+  - Blocking or virtual-thread authoring changed; generated service templates must avoid stale annotation attributes.
+- `A` `framework/spring-blocking-smoke-tests/src/main/java/com/example/blocking/dto/PaymentRecordDto.java` (spring blocking smoke)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Spring adapter surface touched; decide whether scaffold support is in scope or explicitly deferred.
+  - Spring scaffold scope is tracked by #26.
+  - Blocking or virtual-thread authoring changed; generated service templates must avoid stale annotation attributes.
+- `A` `framework/spring-blocking-smoke-tests/src/main/java/com/example/blocking/dto/PaymentStatusDto.java` (spring blocking smoke)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Spring adapter surface touched; decide whether scaffold support is in scope or explicitly deferred.
+  - Spring scaffold scope is tracked by #26.
+  - Blocking or virtual-thread authoring changed; generated service templates must avoid stale annotation attributes.
+- `A` `framework/spring-blocking-smoke-tests/src/main/java/com/example/blocking/mapper/PaymentRecordMapper.java` (spring blocking smoke)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Spring adapter surface touched; decide whether scaffold support is in scope or explicitly deferred.
+  - Spring scaffold scope is tracked by #26.
+  - Blocking or virtual-thread authoring changed; generated service templates must avoid stale annotation attributes.
+- `A` `framework/spring-blocking-smoke-tests/src/main/java/com/example/blocking/mapper/PaymentStatusMapper.java` (spring blocking smoke)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Spring adapter surface touched; decide whether scaffold support is in scope or explicitly deferred.
+  - Spring scaffold scope is tracked by #26.
+  - Blocking or virtual-thread authoring changed; generated service templates must avoid stale annotation attributes.
+- `A` `framework/spring-blocking-smoke-tests/src/main/java/com/example/blocking/service/PaymentService.java` (spring blocking smoke)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Spring adapter surface touched; decide whether scaffold support is in scope or explicitly deferred.
+  - Spring scaffold scope is tracked by #26.
+  - Blocking or virtual-thread authoring changed; generated service templates must avoid stale annotation attributes.
+- `A` `framework/spring-blocking-smoke-tests/src/main/resources/pipeline.yaml` (spring blocking smoke)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Spring adapter surface touched; decide whether scaffold support is in scope or explicitly deferred.
+  - Spring scaffold scope is tracked by #26.
+  - Blocking or virtual-thread authoring changed; generated service templates must avoid stale annotation attributes.
+- `A` `framework/spring-blocking-smoke-tests/src/test/java/com/example/blocking/GeneratedSpringBlockingRestSmokeTest.java` (spring blocking smoke)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Spring adapter surface touched; decide whether scaffold support is in scope or explicitly deferred.
+  - Spring scaffold scope is tracked by #26.
+  - Blocking or virtual-thread authoring changed; generated service templates must avoid stale annotation attributes.
+- `A` `framework/spring-blocking-smoke-tests/src/test/java/com/example/blocking/SpringBlockingSmokeDependencyGuardTest.java` (spring blocking smoke)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Spring adapter surface touched; decide whether scaffold support is in scope or explicitly deferred.
+  - Spring scaffold scope is tracked by #26.
+  - Blocking or virtual-thread authoring changed; generated service templates must avoid stale annotation attributes.
+- `A` `framework/spring-blocking-smoke-tests/src/test/resources/application.properties` (spring blocking smoke)
+  - New product surface; create or update a scoped follow-up issue instead of silently adding scaffold behavior.
+  - Spring adapter surface touched; decide whether scaffold support is in scope or explicitly deferred.
+  - Spring scaffold scope is tracked by #26.
+  - Blocking or virtual-thread authoring changed; generated service templates must avoid stale annotation attributes.
+
+## Needs Human Review
+
+- `M` `docs/guide/build/configuration/index.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/build/operators-architecture.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/build/operators.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/build/runtime-layouts/csv-payments-monolith.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/build/runtime-layouts/csv-payments-pipeline-runtime.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/build/runtime-layouts/function-providers.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/build/runtime-layouts/index.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/build/runtime-layouts/maven-migration.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/build/runtime-layouts/pom-layout-matrix.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/build/runtime-layouts/search-azure-functions.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/build/runtime-layouts/search-lambda.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/build/runtime-layouts/using-runtime-mapping.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/development/orchestrator-runtime/await.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/development/orchestrator-runtime/checkpoint-handoff.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+  - Composition/checkpoint surface changed; confirm pipeline.yaml and pipeline-composition.yaml generation.
+  - Follow-up coverage is tracked by #25.
+- `M` `docs/guide/development/orchestrator-runtime/index.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/development/orchestrator-runtime/queue-async.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/operations/await-boundaries.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/operations/observability/replay.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/operations/operators-playbook.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/operations/operators-troubleshooting.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/operations/operators.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/plugins/caching/cache-vs-persistence.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/plugins/caching/configuration.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/plugins/caching/index.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/plugins/caching/invalidation.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/plugins/caching/key-strategy.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/plugins/caching/policies.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/plugins/caching/replay-walkthrough.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `docs/guide/plugins/persistence.md` (release docs)
+  - User-facing runtime/build docs changed; inspect for scaffold semantics that are not schema-visible.
+- `M` `examples/checkout/checkout-orchestrator-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/checkout/common/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/checkout/compensation-failure-orchestrator-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/checkout/consumer-validation-orchestrator-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/checkout/create-order-orchestrator-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/checkout/delivery-execution-orchestrator-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/checkout/dispatch-orchestrator-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/checkout/kitchen-preparation-orchestrator-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/checkout/payment-capture-orchestrator-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/checkout/pipeline-runtime-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/checkout/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/checkout/restaurant-acceptance-orchestrator-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/checkout/tpfgo-e2e-tests/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/csv-payments/common/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/csv-payments/input-csv-file-processing-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/csv-payments/monolith-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/csv-payments/orchestrator-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/csv-payments/output-csv-file-processing-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/csv-payments/payment-status-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/csv-payments/payments-processing-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/csv-payments/persistence-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/csv-payments/pipeline-runtime-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/csv-payments/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/restaurant-approval/common/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/restaurant-approval/create-pending-approval-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/restaurant-approval/finalize-restaurant-decision-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/restaurant-approval/monolith-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/restaurant-approval/orchestrator-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/restaurant-approval/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/restaurant-approval/validate-order-request-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/search/cache-invalidation-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/search/common/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/search/crawl-source-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/search/embed-content-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/search/index-document-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/search/orchestrator-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/search/parse-document-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/search/persistence-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/search/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `examples/search/tokenize-content-svc/pom.xml` (canonical examples)
+  - Example config/POM/property changes may encode scaffold defaults or required starter dependencies.
+- `M` `framework/deployment/src/main/java/org/pipelineframework/processor/extractor/PipelineStepIRExtractor.java` (deployment/compiler)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+- `M` `framework/deployment/src/main/java/org/pipelineframework/processor/ir/GenerationTarget.java` (deployment/compiler)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+- `M` `framework/deployment/src/main/java/org/pipelineframework/processor/ir/PipelineStepModel.java` (deployment/compiler)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+- `M` `framework/deployment/src/main/java/org/pipelineframework/processor/ir/StepKind.java` (deployment/compiler)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+- `M` `framework/deployment/src/main/java/org/pipelineframework/processor/phase/CheckpointBoundaryValidator.java` (deployment/compiler)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+  - Composition/checkpoint surface changed; confirm pipeline.yaml and pipeline-composition.yaml generation.
+  - Follow-up coverage is tracked by #25.
+- `M` `framework/deployment/src/main/java/org/pipelineframework/processor/phase/PipelineGenerationPhase.java` (deployment/compiler)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+- `M` `framework/deployment/src/main/java/org/pipelineframework/processor/phase/PipelineTargetResolutionPhase.java` (deployment/compiler)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+- `M` `framework/deployment/src/main/java/org/pipelineframework/processor/phase/SpringRendererProfileSupport.java` (deployment/compiler)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+  - Spring adapter surface touched; decide whether scaffold support is in scope or explicitly deferred.
+  - Spring scaffold scope is tracked by #26.
+- `M` `framework/deployment/src/main/java/org/pipelineframework/processor/phase/StepArtifactGenerationService.java` (deployment/compiler)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+- `M` `framework/deployment/src/main/java/org/pipelineframework/processor/renderer/RemoteOperatorAdapterRenderer.java` (deployment/compiler)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+- `M` `framework/deployment/src/main/java/org/pipelineframework/processor/renderer/SpringLocalClientStepRenderer.java` (deployment/compiler)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+  - Spring adapter surface touched; decide whether scaffold support is in scope or explicitly deferred.
+  - Spring scaffold scope is tracked by #26.
+- `M` `framework/deployment/src/main/java/org/pipelineframework/processor/renderer/SpringRestResourceRenderer.java` (deployment/compiler)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+  - Spring adapter surface touched; decide whether scaffold support is in scope or explicitly deferred.
+  - Spring scaffold scope is tracked by #26.
+- `M` `framework/deployment/src/main/java/org/pipelineframework/processor/util/PipelineOrderMetadataGenerator.java` (deployment/compiler)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+- `M` `framework/runtime-core/pom.xml` (runtime-core)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+  - Runtime-core split touched; confirm generated dependency assumptions still hold.
+  - Dependency/layout audit is tracked by #28.
+- `M` `framework/runtime-spring/pom.xml` (spring runtime adapter)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+  - Spring adapter surface touched; decide whether scaffold support is in scope or explicitly deferred.
+  - Spring scaffold scope is tracked by #26.
+- `M` `framework/runtime/pom.xml` (runtime/orchestrator)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+- `M` `framework/runtime/src/main/java/org/pipelineframework/checkpoint/CheckpointPublicationService.java` (runtime/orchestrator)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+  - Composition/checkpoint surface changed; confirm pipeline.yaml and pipeline-composition.yaml generation.
+  - Follow-up coverage is tracked by #25.
+- `M` `framework/runtime/src/main/java/org/pipelineframework/checkpoint/CheckpointPublicationTargetDispatcher.java` (runtime/orchestrator)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+  - Composition/checkpoint surface changed; confirm pipeline.yaml and pipeline-composition.yaml generation.
+  - Follow-up coverage is tracked by #25.
+- `M` `framework/runtime/src/main/java/org/pipelineframework/checkpoint/GrpcCheckpointPublicationTargetDispatcher.java` (runtime/orchestrator)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+  - Composition/checkpoint surface changed; confirm pipeline.yaml and pipeline-composition.yaml generation.
+  - Follow-up coverage is tracked by #25.
+- `M` `framework/runtime/src/main/java/org/pipelineframework/checkpoint/HttpCheckpointPublicationTargetDispatcher.java` (runtime/orchestrator)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+  - Composition/checkpoint surface changed; confirm pipeline.yaml and pipeline-composition.yaml generation.
+  - Follow-up coverage is tracked by #25.
+- `M` `framework/runtime/src/main/java/org/pipelineframework/checkpoint/PipelineHandoffConfig.java` (runtime/orchestrator)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+  - Composition/checkpoint surface changed; confirm pipeline.yaml and pipeline-composition.yaml generation.
+  - Follow-up coverage is tracked by #25.
+- `M` `framework/runtime/src/main/java/org/pipelineframework/checkpoint/PublicationTargetKind.java` (runtime/orchestrator)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+  - Composition/checkpoint surface changed; confirm pipeline.yaml and pipeline-composition.yaml generation.
+  - Follow-up coverage is tracked by #25.
+- `M` `framework/runtime/src/main/java/org/pipelineframework/checkpoint/ResolvedCheckpointPublicationTarget.java` (runtime/orchestrator)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+  - Composition/checkpoint surface changed; confirm pipeline.yaml and pipeline-composition.yaml generation.
+  - Follow-up coverage is tracked by #25.
+- `M` `framework/runtime/src/main/java/org/pipelineframework/config/boundary/PipelineInputBoundaryConfig.java` (runtime/orchestrator)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+- `M` `framework/runtime/src/main/java/org/pipelineframework/config/pipeline/PipelineYamlConfig.java` (runtime/orchestrator)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+- `M` `framework/runtime/src/main/java/org/pipelineframework/config/pipeline/PipelineYamlConfigLoader.java` (runtime/orchestrator)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+- `M` `framework/runtime/src/main/java/org/pipelineframework/config/pipeline/PipelineYamlStep.java` (runtime/orchestrator)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+- `M` `framework/runtime/src/main/java/org/pipelineframework/config/template/PipelineTemplateConfig.java` (runtime/orchestrator)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+- `M` `framework/runtime/src/main/java/org/pipelineframework/config/template/PipelineTemplateConfigLoader.java` (runtime/orchestrator)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+- `M` `framework/runtime/src/main/java/org/pipelineframework/invocation/InvocationContextSnapshot.java` (runtime/orchestrator)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+- `M` `framework/runtime/src/main/java/org/pipelineframework/proto/PipelineProtoGenerator.java` (runtime/orchestrator)
+  - Framework compile/runtime surface changed; check planner, validation, templates, and compile smokes.
+
+## Added File Follow-Up
+
+- `A` `docs/deploy/orchestrator-runtime/await.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/deploy/orchestrator-runtime/checkpoint-handoff.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+  - Composition/checkpoint surface changed; confirm pipeline.yaml and pipeline-composition.yaml generation.
+  - Follow-up coverage is tracked by #25.
+- `A` `docs/deploy/orchestrator-runtime/index.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/deploy/orchestrator-runtime/queue-async.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/deploy/runtime-layouts/csv-payments-monolith.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/deploy/runtime-layouts/csv-payments-pipeline-runtime.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/deploy/runtime-layouts/index.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/deploy/runtime-layouts/maven-migration.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/deploy/runtime-layouts/pom-layout-matrix.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/deploy/runtime-layouts/using-runtime-mapping.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/design/await-boundaries.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/design/await.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/design/caching/cache-vs-persistence.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/design/caching/configuration.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/design/caching/index.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/design/caching/invalidation.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/design/caching/key-strategy.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/design/caching/policies.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/design/caching/replay-walkthrough.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/design/object-ingest.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+  - Object ingest/source surface touched; decide whether scaffold support is product scope or docs-only.
+  - Object-ingest connector scaffold scope is tracked by #30.
+- `A` `docs/design/operators.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/design/persistence.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/design/runtime-layouts/csv-payments-monolith.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/design/runtime-layouts/csv-payments-pipeline-runtime.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/design/runtime-layouts/index.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/design/runtime-layouts/maven-migration.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/design/runtime-layouts/pom-layout-matrix.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/design/runtime-layouts/using-runtime-mapping.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/design/runtime-topology-strategy.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/develop/configuration/application.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/develop/configuration/index.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/develop/configuration/lambda-focused.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/develop/configuration/replay-viewer-parameters.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/develop/extension/orchestrator-runtime.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/develop/extension/rest-resources.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/develop/operators-build-troubleshooting.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/develop/operators.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/evolve/await-unit-runtime/index.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/evolve/await-unit-runtime/operations-and-debt.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/evolve/await-unit-runtime/patterns.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/evolve/await-unit-runtime/sequences.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/evolve/durable-coordinator/runtime-boundaries-performance.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/evolve/durable-coordinator/self-hosted-deployment.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+  - Self-host/coordinator/worker surface touched; confirm this is docs-only or add generator guidance.
+  - Self-host/coordinator/worker scope is tracked by #27.
+- `A` `docs/evolve/durable-coordinator/self-hosted-ha-roadmap.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+  - Self-host/coordinator/worker surface touched; confirm this is docs-only or add generator guidance.
+  - Self-host/coordinator/worker scope is tracked by #27.
+- `A` `docs/evolve/durable-coordinator/self-hosted-milestone.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+  - Self-host/coordinator/worker surface touched; confirm this is docs-only or add generator guidance.
+  - Self-host/coordinator/worker scope is tracked by #27.
+- `A` `docs/evolve/framework-portability-assessment/persistence.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/evolve/framework-portability-assessment/runtime-split.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/evolve/operators/architecture.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/evolve/operators/index.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/evolve/operators/internals.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/evolve/publishing.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/evolve/runtime-core-decoupling.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+  - Runtime-core split touched; confirm generated dependency assumptions still hold.
+  - Dependency/layout audit is tracked by #28.
+- `A` `docs/evolve/runtime-mapping/annotation-processing.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/evolve/runtime-mapping/build-topologies.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/evolve/runtime-mapping/cheat-sheet.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/evolve/runtime-mapping/implementation-plan.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/evolve/runtime-mapping/index.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/evolve/runtime-mapping/schema.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/evolve/runtime-mapping/synthetics.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/evolve/runtime-mapping/tdd-plan.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `docs/evolve/runtime-mapping/validation-migration-examples.md` (release docs)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `examples/csv-payments/config/pipeline.object-ingest.yaml` (canonical examples)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+  - Object ingest/source surface touched; decide whether scaffold support is product scope or docs-only.
+  - Object-ingest connector scaffold scope is tracked by #30.
+- `A` `examples/restaurant-approval/self-host/container/run-container-ha-recovery.sh` (canonical examples)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+  - Self-host/coordinator/worker surface touched; confirm this is docs-only or add generator guidance.
+  - Self-host/coordinator/worker scope is tracked by #27.
+- `A` `examples/search/config/pipeline.s3-object-ingest.yaml` (canonical examples)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+  - Object ingest/source surface touched; decide whether scaffold support is product scope or docs-only.
+  - Object-ingest connector scaffold scope is tracked by #30.
+- `A` `framework/deployment/src/main/java/org/pipelineframework/processor/ir/ReactiveReturnKind.java` (deployment/compiler)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `framework/deployment/src/main/java/org/pipelineframework/processor/renderer/QueryClientStepRenderer.java` (deployment/compiler)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+  - Query connector/surface touched; decide whether MCP should model it or defer product scope.
+  - Query connector scaffold scope is tracked by #31.
+- `A` `framework/runtime/src/main/java/org/pipelineframework/checkpoint/CheckpointPublicationEnvelope.java` (runtime/orchestrator)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+  - Composition/checkpoint surface changed; confirm pipeline.yaml and pipeline-composition.yaml generation.
+  - Follow-up coverage is tracked by #25.
+- `A` `framework/runtime/src/main/java/org/pipelineframework/checkpoint/kafka/KafkaCheckpointPublicationConsumer.java` (runtime/orchestrator)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+  - Composition/checkpoint surface changed; confirm pipeline.yaml and pipeline-composition.yaml generation.
+  - Follow-up coverage is tracked by #25.
+- `A` `framework/runtime/src/main/java/org/pipelineframework/checkpoint/kafka/KafkaCheckpointPublicationRequest.java` (runtime/orchestrator)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+  - Composition/checkpoint surface changed; confirm pipeline.yaml and pipeline-composition.yaml generation.
+  - Follow-up coverage is tracked by #25.
+- `A` `framework/runtime/src/main/java/org/pipelineframework/checkpoint/kafka/KafkaCheckpointPublicationTargetDispatcher.java` (runtime/orchestrator)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+  - Composition/checkpoint surface changed; confirm pipeline.yaml and pipeline-composition.yaml generation.
+  - Follow-up coverage is tracked by #25.
+- `A` `framework/runtime/src/main/java/org/pipelineframework/checkpoint/kafka/KafkaCheckpointPublisher.java` (runtime/orchestrator)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+  - Composition/checkpoint surface changed; confirm pipeline.yaml and pipeline-composition.yaml generation.
+  - Follow-up coverage is tracked by #25.
+- `A` `framework/runtime/src/main/java/org/pipelineframework/checkpoint/kafka/ReactiveMessagingKafkaCheckpointPublisher.java` (runtime/orchestrator)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+  - Composition/checkpoint surface changed; confirm pipeline.yaml and pipeline-composition.yaml generation.
+  - Follow-up coverage is tracked by #25.
+- `A` `framework/runtime/src/main/java/org/pipelineframework/config/boundary/PipelineObjectFilterConfig.java` (runtime/orchestrator)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `framework/runtime/src/main/java/org/pipelineframework/config/boundary/PipelineObjectIdentityConfig.java` (runtime/orchestrator)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `framework/runtime/src/main/java/org/pipelineframework/config/boundary/PipelineObjectInputConfig.java` (runtime/orchestrator)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `framework/runtime/src/main/java/org/pipelineframework/config/boundary/PipelineObjectPayloadConfig.java` (runtime/orchestrator)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `framework/runtime/src/main/java/org/pipelineframework/config/boundary/PipelineObjectPollConfig.java` (runtime/orchestrator)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+- `A` `framework/runtime/src/main/java/org/pipelineframework/config/boundary/PipelineObjectSourceConfig.java` (runtime/orchestrator)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+  - Object ingest/source surface touched; decide whether scaffold support is product scope or docs-only.
+  - Object-ingest connector scaffold scope is tracked by #30.
+- `A` `framework/runtime/src/main/java/org/pipelineframework/config/pipeline/PipelineYamlJpaQuery.java` (runtime/orchestrator)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+  - Query connector/surface touched; decide whether MCP should model it or defer product scope.
+  - Query connector scaffold scope is tracked by #31.
+- `A` `framework/runtime/src/main/java/org/pipelineframework/config/pipeline/PipelineYamlQuery.java` (runtime/orchestrator)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+  - Query connector/surface touched; decide whether MCP should model it or defer product scope.
+  - Query connector scaffold scope is tracked by #31.
+- `A` `framework/runtime/src/main/java/org/pipelineframework/config/pipeline/PipelineYamlQueryCapture.java` (runtime/orchestrator)
+  - Added release files need a second-pass review; new runtime concepts often enter through new packages/examples.
+  - Query connector/surface touched; decide whether MCP should model it or defer product scope.
+  - Query connector scaffold scope is tracked by #31.
+
+## No Scaffold Impact
+
+- `M` `.github/workflows/build.yml` (docs/non-runtime)
+- `M` `.github/workflows/e2e-csv-monolith.yml` (docs/non-runtime)
+- `M` `.github/workflows/e2e-csv-pipeline-runtime.yml` (docs/non-runtime)
+- `M` `.github/workflows/e2e-csv-provider-reject.yml` (docs/non-runtime)
+- `M` `.github/workflows/e2e-csv-tempo-verification.yml` (docs/non-runtime)
+- `M` `.github/workflows/e2e-search-resource-it.yml` (docs/non-runtime)
+- `M` `.github/workflows/full-tests.yml` (docs/non-runtime)
+- `M` `.github/workflows/native-builds-main.yml` (docs/non-runtime)
+- `M` `.github/workflows/publish.yml` (docs/non-runtime)
+- `M` `.github/workflows/self-host-ha-restaurant.yml` (docs/non-runtime)
+- `M` `ai-sdk/pom.xml` (docs/non-runtime)
+- `M` `docs/.vitepress/config.js` (docs/non-runtime)
+- `A` `docs/.vitepress/theme/components/SidebarAccordion.vue` (docs/non-runtime)
+- `M` `docs/.vitepress/theme/index.js` (docs/non-runtime)
+- `A` `docs/deploy/aws-lambda.md` (docs/non-runtime)
+- `A` `docs/deploy/azure-functions.md` (docs/non-runtime)
+- `A` `docs/deploy/concurrency-and-backpressure.md` (docs/non-runtime)
+- `A` `docs/deploy/csv-payments-pom-lifecycle.md` (docs/non-runtime)
+- `A` `docs/deploy/dependency-management.md` (docs/non-runtime)
+- `A` `docs/deploy/function-providers.md` (docs/non-runtime)
+- `A` `docs/deploy/google-cloud-run-functions.md` (docs/non-runtime)
+- `A` `docs/deploy/index.md` (docs/non-runtime)
+- `A` `docs/deploy/pipeline-parent-pom-lifecycle.md` (docs/non-runtime)
+- `A` `docs/deploy/search-azure-functions.md` (docs/non-runtime)
+- `A` `docs/deploy/search-lambda.md` (docs/non-runtime)
+- ... 368 additional low-signal files omitted.

@@ -137,7 +137,7 @@ steps:
     expect(commonPom).not.toContain('com/google/protobuf');
   });
 
-  test('generateFromConfig emits generated poms against TPF framework 26.6.1', async () => {
+  test('generateFromConfig emits generated poms against TPF framework 26.6.2', async () => {
     const generator = new PipelineGenerator();
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
     const configPath = path.join(tempDir, 'version-config.yaml');
@@ -176,7 +176,7 @@ steps:
 
     for (const pomPath of pomPaths) {
       const pom = fs.readFileSync(pomPath, 'utf8');
-      expect(pom).toContain('<version>26.6.1</version>');
+      expect(pom).toContain('<version>26.6.2</version>');
       expect(pom).not.toContain('<version>26.5.2</version>');
       expect(pom).not.toContain('<version>26.2.2</version>');
     }
