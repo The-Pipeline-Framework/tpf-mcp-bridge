@@ -58,3 +58,6 @@ jobs:
 
       - name: Compile generated Kafka await scaffold
         run: npm run smoke:kafka-await -- --framework-dir "${GITHUB_WORKSPACE}/pipelineframework-v26.6.1"
+
+      - name: Compile generated SQS await scaffold
+        run: npm run smoke:sqs-await -- --framework-dir "${GITHUB_WORKSPACE}/pipelineframework-v26.6.1"

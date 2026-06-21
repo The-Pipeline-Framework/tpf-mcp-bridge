@@ -51,6 +51,7 @@
     "audit:release-parity": "node scripts/audit-release-parity.mjs",
     "smoke:rest-await-union": "node scripts/smoke-rest-await-union-compile.mjs",
     "smoke:kafka-await": "node scripts/smoke-kafka-await-compile.mjs",
+    "smoke:sqs-await": "node scripts/smoke-sqs-await-compile.mjs",
     "check:pipeline-schema": "node scripts/check-pipeline-schema.mjs",
     "test": "npm run build && node --test dist/test/*.test.js"
   },
