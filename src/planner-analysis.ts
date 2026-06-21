@@ -10,6 +10,9 @@ import type {
   MessageCatalogEntry,
   MessageDefinition,
   MessageField,
+  PipelineCompositionManifest,
+  PipelineInputBoundary,
+  PipelineOutputBoundary,
   PlannerDraft,
   PipelineStep,
   Question,
@@ -42,6 +45,9 @@ export function analyzePlannerDraft(
   const businessSteps = normalizeBusinessSteps(draft.businessSteps, messages);
   const stepContracts = normalizeStepContracts(draft.stepContracts, businessSteps, messages);
   const inferredSteps = normalizePipelineSteps(draft.pipelineSteps);
+  const inputBoundary = normalizeInputBoundary(draft.inputBoundary);
+  const outputBoundary = normalizeOutputBoundary(draft.outputBoundary);
+  const compositionManifest = normalizeCompositionManifest(draft.compositionManifest);
   const explicitQuestions = normalizeQuestions(draft.questions || []);
   const contractQuestions = normalizeContractQuestions(draft.contractQuestions);
   const questions = [...explicitQuestions];
@@ -63,12 +69,14 @@ export function analyzePlannerDraft(
     transport,
     platform,
     runtimeLayout: runtimeLayoutToConfig(runtimeLayout),
+    ...(inputBoundary ? { input: inputBoundary } : {}),
+    ...(outputBoundary ? { output: outputBoundary } : {}),
     messages,
     steps: inferredSteps.map(({ id, ...step }) => step),
     ...(Object.keys(resolvedAspects).length > 0 ? { aspects: resolvedAspects } : {})
   };
 
-  assertPlannerSemantics(businessSteps, stepContracts, inferredSteps, resolvedAspects, platform);
+  assertPlannerSemantics(businessSteps, stepContracts, inferredSteps, resolvedAspects, platform, inputBoundary, outputBoundary, compositionManifest);
 
   const couplingFindings = draft.couplingFindings?.length ? draft.couplingFindings : deriveCouplingFindings(businessSteps);
   const status = questions.length > 0 || contractQuestions.length > 0 ? "needs_input" : "ready";
@@ -102,7 +110,8 @@ export function analyzePlannerDraft(
     inferredSteps,
     aspects: resolvedAspects,
     derivedConfig,
-    derivedConfigYaml: YAML.dump(derivedConfig, { lineWidth: -1 })
+    derivedConfigYaml: YAML.dump(derivedConfig, { lineWidth: -1 }),
+    ...(compositionManifest ? { compositionManifest } : {})
   };
 }
 
@@ -190,6 +199,61 @@ function normalizePipelineSteps(steps: AnalyzeResult["inferredSteps"]): AnalyzeR
   });
 }
 
+function normalizeInputBoundary(boundary: PipelineInputBoundary | undefined): PipelineInputBoundary | undefined {
+  if (!boundary?.subscription?.publication?.trim()) {
+    return undefined;
+  }
+  return {
+    subscription: {
+      publication: boundary.subscription.publication.trim(),
+      ...(boundary.subscription.mapper?.trim() ? { mapper: boundary.subscription.mapper.trim() } : {})
+    }
+  };
+}
+
+function normalizeOutputBoundary(boundary: PipelineOutputBoundary | undefined): PipelineOutputBoundary | undefined {
+  if (!boundary?.checkpoint?.publication?.trim()) {
+    return undefined;
+  }
+  return {
+    checkpoint: {
+      publication: boundary.checkpoint.publication.trim(),
+      ...(boundary.checkpoint.idempotencyKeyFields?.length
+        ? { idempotencyKeyFields: normalizeIdempotencyKeyFields(boundary.checkpoint.idempotencyKeyFields) }
+        : {})
+    }
+  };
+}
+
+function normalizeCompositionManifest(manifest: PipelineCompositionManifest | undefined): PipelineCompositionManifest | undefined {
+  if (!manifest) {
+    return undefined;
+  }
+  const name = manifest.name?.trim();
+  if (!name) {
+    throw new Error("Planner draft compositionManifest must include a non-empty name.");
+  }
+  if (!Array.isArray(manifest.pipelines) || manifest.pipelines.length === 0) {
+    throw new Error("Planner draft compositionManifest must include at least one pipeline.");
+  }
+  const pipelines = manifest.pipelines.map((pipeline, index) => {
+    const id = pipeline.id?.trim();
+    const path = pipeline.path?.trim();
+    if (!id) {
+      throw new Error(`Planner draft compositionManifest pipeline at index ${index} must include a non-empty id.`);
+    }
+    if (!path) {
+      throw new Error(`Planner draft compositionManifest pipeline '${id}' must include a non-empty path.`);
+    }
+    return { id, path };
+  });
+  return {
+    version: 1,
+    name,
+    pipelines
+  };
+}
+
 function normalizeQuestions(questions: Question[]): Question[] {
   return questions.map((question) => ({ ...question }));
 }
@@ -210,7 +274,10 @@ function assertPlannerSemantics(
   stepContracts: StepContract[],
   pipelineSteps: PipelineStep[],
   aspects: Record<string, AspectConfig>,
-  platform: "COMPUTE" | "FUNCTION"
+  platform: "COMPUTE" | "FUNCTION",
+  inputBoundary?: PipelineInputBoundary,
+  outputBoundary?: PipelineOutputBoundary,
+  compositionManifest?: PipelineCompositionManifest
 ): void {
   const contractById = new Map(stepContracts.map((contract) => [contract.stepId, contract]));
   const pipelineById = new Map(pipelineSteps.map((step) => [step.id || stepId(step.name), step]));
@@ -297,6 +364,8 @@ function assertPlannerSemantics(
       );
     }
   }
+
+  assertBoundarySemantics(inputBoundary, outputBoundary, compositionManifest, businessSteps);
 }
 
 function assertCoherentStepViews(
@@ -387,11 +456,14 @@ function normalizeAwaitConfig(
     correlation: { strategy: value.correlation.strategy },
     transport: {
       type: value.transport.type,
+      ...(value.transport.config ? { config: value.transport.config } : {}),
       ...(value.transport.request ? { request: value.transport.request } : {}),
       ...(value.transport.callback ? { callback: value.transport.callback } : {}),
       ...(value.transport.response ? { response: value.transport.response } : {}),
       ...(value.transport.consumer ? { consumer: value.transport.consumer } : {}),
-      ...(value.transport.headers ? { headers: value.transport.headers } : {})
+      ...(value.transport.headers ? { headers: value.transport.headers } : {}),
+      ...(value.transport.dispatch ? { dispatch: value.transport.dispatch } : {}),
+      ...(value.transport.url ? { url: value.transport.url } : {})
     }
   };
 }
@@ -440,6 +512,31 @@ function assertAwaitSemantics(
   if (businessStep.await.transport.type !== contract.await.transport.type
     || businessStep.await.transport.type !== pipelineStep.await.transport.type) {
     throw new Error(`Planner draft defines inconsistent await transport type for '${stepName}'.`);
+  }
+}
+
+function assertBoundarySemantics(
+  inputBoundary: PipelineInputBoundary | undefined,
+  outputBoundary: PipelineOutputBoundary | undefined,
+  compositionManifest: PipelineCompositionManifest | undefined,
+  businessSteps: BusinessStep[]
+): void {
+  if (compositionManifest && !inputBoundary?.subscription && !outputBoundary?.checkpoint) {
+    throw new Error("Planner draft defines a compositionManifest without an input subscription or output checkpoint boundary.");
+  }
+  const publication = outputBoundary?.checkpoint;
+  if (publication?.idempotencyKeyFields?.length) {
+    const terminalForwardStep = [...businessSteps]
+      .reverse()
+      .find((step) => inferFlowRole(step.flowRole, step.name, step.inputTypeName, step.outputTypeName) === "forward");
+    const terminalFieldNames = new Set(terminalForwardStep?.outputFields.map((field) => field.name) || []);
+    for (const field of publication.idempotencyKeyFields) {
+      if (!terminalFieldNames.has(field)) {
+        throw new Error(
+          `Planner draft output checkpoint '${publication.publication}' references unknown terminal output idempotency field '${field}'.`
+        );
+      }
+    }
   }
 }
 

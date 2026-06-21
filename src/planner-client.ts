@@ -122,17 +122,22 @@ const messageFieldSchema = z.object({
   number: z.number().int(),
   name: z.string(),
   type: z.string(),
+  keyType: z.string().optional(),
+  valueType: z.string().optional(),
   repeated: z.boolean().optional(),
   optional: z.boolean().optional()
 });
 
 const awaitTransportSchema = z.object({
-  type: z.enum(["interaction-api", "webhook", "kafka"]),
+  type: z.enum(["interaction-api", "webhook", "kafka", "sqs"]),
+  config: z.record(z.string(), z.unknown()).optional(),
   request: z.record(z.string(), z.unknown()).optional(),
   callback: z.record(z.string(), z.unknown()).optional(),
   response: z.record(z.string(), z.unknown()).optional(),
   consumer: z.record(z.string(), z.unknown()).optional(),
-  headers: z.record(z.string(), z.string()).optional()
+  headers: z.record(z.string(), z.string()).optional(),
+  dispatch: z.record(z.string(), z.unknown()).optional(),
+  url: z.string().optional()
 });
 
 const awaitConfigSchema = z.object({
@@ -154,6 +159,33 @@ const stepDraftCommonSchema = z.object({
   timeout: z.string().optional(),
   idempotencyKeyFields: z.array(z.string()).optional(),
   await: awaitConfigSchema.optional()
+});
+
+const checkpointPublicationSchema = z.object({
+  publication: z.string().trim().min(1),
+  idempotencyKeyFields: z.array(z.string().trim().min(1)).optional()
+});
+
+const checkpointSubscriptionSchema = z.object({
+  publication: z.string().trim().min(1),
+  mapper: z.string().trim().min(1).optional()
+});
+
+const pipelineInputBoundarySchema = z.object({
+  subscription: checkpointSubscriptionSchema.optional()
+});
+
+const pipelineOutputBoundarySchema = z.object({
+  checkpoint: checkpointPublicationSchema.optional()
+});
+
+const compositionManifestSchema = z.object({
+  version: z.literal(1),
+  name: z.string().trim().min(1),
+  pipelines: z.array(z.object({
+    id: z.string().trim().min(1).max(80).regex(/^[a-zA-Z][a-zA-Z0-9._-]*$/),
+    path: z.string().trim().min(1).max(240)
+  })).min(1)
 });
 
 const plannerDraftSchema = z.object({
@@ -201,6 +233,9 @@ const plannerDraftSchema = z.object({
   transport: z.enum(["GRPC", "REST", "LOCAL"]).optional(),
   platform: z.enum(["COMPUTE", "FUNCTION"]).optional(),
   runtimeLayout: z.enum(["MODULAR", "PIPELINE_RUNTIME", "MONOLITH"]).optional(),
+  inputBoundary: pipelineInputBoundarySchema.optional(),
+  outputBoundary: pipelineOutputBoundarySchema.optional(),
+  compositionManifest: compositionManifestSchema.optional(),
   aspects: z.record(z.string(), z.object({
     enabled: z.boolean().optional(),
     scope: z.enum(["GLOBAL", "STEPS"]).optional(),
@@ -675,7 +710,8 @@ function buildPlanPrompt(input: SessionStartInput, profile: PlannerProfile): Pla
           "Never create explicit save, persist, store, or commit business steps for persistence. Persistence belongs to aspects/plugins, not business flow steps.",
           "Model resume or re-entry as a separate query/resumption surface, not a normal forward pipeline step.",
           "Use await steps only when the brief implies a real suspend/resume external boundary. Distinguish await steps from checkpoint hand-off and from ordinary forward steps.",
-          "For await steps, use kind \"await\" and provide timeout, idempotencyKeyFields, and await.transport / await.correlation details.",
+          "For await steps, use kind \"await\" and provide timeout, idempotencyKeyFields, and await.transport / await.correlation details. Supported await transports are interaction-api, webhook, kafka, and sqs.",
+          "Checkpoint handoff is not await: model it with outputBoundary.checkpoint and, for downstream pipeline ownership, inputBoundary.subscription or compositionManifest.",
           "Use caching as an aspect or optimization recommendation, not a default business step.",
           "Treat replayability, idempotency, and checkpoint hand-offs as technical concerns or optional follow-up questions when the brief implies them.",
           "Use TPF defaults only as recommendations: transport REST, platform COMPUTE, runtimeLayout MONOLITH unless the brief strongly suggests otherwise.",
@@ -716,7 +752,8 @@ function buildRevisionPrompt(
           "Apply the provided contract answers and keep the rest of the draft coherent.",
           "Preserve TPF semantics: no explicit persistence steps, resume stays separate from the main forward pipeline, and forward steps chain by adjacent output-to-input type unless a non-linear boundary is explicitly classified.",
           "If the brief implies caching, replayability, idempotency, or checkpoint hand-offs, express those as aspects, technical concerns, or focused operational questions rather than as generic business steps.",
-          "If the brief implies a human approval, third-party callback, or brokered external decision before the pipeline can continue, model that boundary as kind \"await\" instead of a checkpoint note or fake save step.",
+          "If the brief implies a human approval, third-party callback, or brokered external decision before the pipeline can continue, model that boundary as kind \"await\" instead of a checkpoint note or fake save step. Use sqs for SQS-brokered await behavior.",
+          "If ownership transfers to another pipeline after this one completes, model checkpoint handoff with outputBoundary.checkpoint and optional compositionManifest instead of await.",
           "If ambiguity remains, keep only the unresolved contractQuestions.",
           "",
           "Brief:",

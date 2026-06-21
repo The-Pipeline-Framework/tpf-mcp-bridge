@@ -36,6 +36,22 @@ if (!buildRuntimeMappingCore && typeof require === 'function') {
     }
 }
 
+function extractTypeTokens(typeName) {
+    if (typeof typeName !== 'string') return [];
+    return typeName.match(/[A-Za-z_$][A-Za-z0-9_$]*/g) || [];
+}
+
+function hasFieldType(fields, types) {
+    if (!Array.isArray(fields)) return false;
+    const expected = new Set(types.map(normalizeExpectedType));
+    return fields.some(field => extractTypeTokens(field && field.type).some(token => expected.has(token)));
+}
+
+function normalizeExpectedType(typeName) {
+    const tokens = extractTypeTokens(typeName);
+    return tokens.length > 0 && /[<[\],]/.test(typeName) ? tokens[0] : typeName;
+}
+
 // Register helper for replacing characters in strings
 Handlebars.registerHelper('replace', function(str, find, repl) {
   if (typeof str !== 'string') return str;
@@ -107,45 +123,35 @@ Handlebars.registerHelper('isMapType', function(type) {
 
 // Register helper for checking various import flags
 Handlebars.registerHelper('hasDateFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => 
-        ['LocalDate', 'LocalDateTime', 'OffsetDateTime', 'ZonedDateTime', 'Instant', 'Duration', 'Period'].includes(field.type)
-    );
+    return hasFieldType(fields, ['LocalDate', 'LocalDateTime', 'OffsetDateTime', 'ZonedDateTime', 'Instant', 'Duration', 'Period']);
 });
 
 Handlebars.registerHelper('hasBigIntegerFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => field.type === 'BigInteger');
+    return hasFieldType(fields, ['BigInteger']);
 });
 
 Handlebars.registerHelper('hasBigDecimalFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => field.type === 'BigDecimal');
+    return hasFieldType(fields, ['BigDecimal']);
 });
 
 Handlebars.registerHelper('hasCurrencyFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => field.type === 'Currency');
+    return hasFieldType(fields, ['Currency']);
 });
 
 Handlebars.registerHelper('hasPathFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => field.type === 'Path');
+    return hasFieldType(fields, ['Path']);
 });
 
 Handlebars.registerHelper('hasNetFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => ['URI', 'URL'].includes(field.type));
+    return hasFieldType(fields, ['URI', 'URL']);
 });
 
 Handlebars.registerHelper('hasIoFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => field.type === 'File');
+    return hasFieldType(fields, ['File']);
 });
 
 Handlebars.registerHelper('hasAtomicFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => ['AtomicInteger', 'AtomicLong'].includes(field.type));
+    return hasFieldType(fields, ['AtomicInteger', 'AtomicLong']);
 });
 
 Handlebars.registerHelper('hasUtilFields', function(fields) {
@@ -349,6 +355,8 @@ class BrowserTemplateEngine {
         const appNameValue = normalizedOptions.appName;
         const basePackageValue = normalizedOptions.basePackage;
         const stepsValue = normalizedOptions.steps;
+        const serviceSteps = stepsValue.filter(step => step.generatesServiceModule !== false && step.kind !== 'await');
+        const kafkaAwait = this.createKafkaAwaitContext(stepsValue, appNameValue);
         const normalizedRuntimeLayout = normalizedOptions.runtimeLayout;
         const transportMode = normalizedOptions.transport;
         const aspectConfig = normalizedOptions.aspects;
@@ -372,7 +380,7 @@ class BrowserTemplateEngine {
         await this.generateParentPom(
             appNameValue,
             basePackageValue,
-            stepsValue,
+            serviceSteps,
             includePersistenceModule,
             includeCacheInvalidationModule,
             transportMode,
@@ -384,12 +392,12 @@ class BrowserTemplateEngine {
         await this.generateCommonModule(appNameValue, basePackageValue, stepsValue, transportMode, normalizedOptions.unionDefinitions, normalizedOptions.fileCallback);
 
         // Generate each step service
-        for (let i = 0; i < stepsValue.length; i++) {
-            await this.generateStepService(appNameValue, basePackageValue, stepsValue[i], i, stepsValue, transportMode, normalizedOptions.fileCallback);
+        for (let i = 0; i < serviceSteps.length; i++) {
+            await this.generateStepService(appNameValue, basePackageValue, serviceSteps[i], i, serviceSteps, transportMode, normalizedOptions.fileCallback);
         }
 
         if (includePersistenceModule) {
-            await this.generatePersistenceModule(appNameValue, basePackageValue, stepsValue, normalizedOptions.fileCallback);
+            await this.generatePersistenceModule(appNameValue, basePackageValue, serviceSteps, normalizedOptions.fileCallback);
         }
 
         if (includeCacheInvalidationModule) {
@@ -411,22 +419,24 @@ class BrowserTemplateEngine {
             await this.generatePipelineRuntimeModule(
                 appNameValue,
                 basePackageValue,
-                stepsValue,
+                serviceSteps,
+                kafkaAwait,
                 normalizedOptions.fileCallback
             );
         } else if (normalizedRuntimeLayout === 'monolith') {
             await this.generateMonolithModule(
                 appNameValue,
                 basePackageValue,
-                stepsValue,
+                serviceSteps,
                 includePersistenceModule,
                 includeCacheInvalidationModule,
+                kafkaAwait,
                 normalizedOptions.fileCallback
             );
         }
 
         await this.generateRuntimeMappingFiles(
-            stepsValue,
+            serviceSteps,
             includePersistenceModule,
             includeCacheInvalidationModule,
             normalizedRuntimeLayout,
@@ -442,7 +452,7 @@ class BrowserTemplateEngine {
         // Generate other files
         await this.generateOtherFiles(
             appNameValue,
-            stepsValue,
+            serviceSteps,
             includePersistenceModule,
             includeCacheInvalidationModule,
             normalizedOptions.fileCallback);
@@ -501,11 +511,63 @@ class BrowserTemplateEngine {
         await this.generateCommonConverters(basePackage, fileCallback);
     }
 
-    async generatePipelineRuntimeModule(appName, basePackage, steps, fileCallback) {
+    createKafkaAwaitContext(steps, appName) {
+        const kafkaSteps = (steps || [])
+            .filter(step => step && step.kind === 'await')
+            .filter(step => {
+                const type = step.await && step.await.transport && step.await.transport.type;
+                return typeof type === 'string' && type.toLowerCase() === 'kafka';
+            });
+        if (kafkaSteps.length === 0) {
+            return null;
+        }
+        const rootProjectName = appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
+        const requestTopics = this.uniqueNonBlank(kafkaSteps.map(step => this.awaitTransportString(step, 'request', 'topic')
+            || this.awaitTransportString(step, 'config', 'topic')));
+        const responseTopics = this.uniqueNonBlank(kafkaSteps.map(step => this.awaitTransportString(step, 'response', 'topic')));
+        if (requestTopics.length === 0) {
+            throw new Error('Kafka await scaffold requires await.transport.request.topic.');
+        }
+        if (responseTopics.length === 0) {
+            throw new Error('Kafka await scaffold requires await.transport.response.topic.');
+        }
+        if (requestTopics.length > 1) {
+            throw new Error('Kafka await scaffold currently supports one request topic per generated runtime module.');
+        }
+        if (responseTopics.length > 1) {
+            throw new Error('Kafka await scaffold currently supports one response topic per generated runtime module.');
+        }
+        const consumerGroups = this.uniqueNonBlank(kafkaSteps.map(step => this.awaitTransportString(step, 'consumer', 'group')));
+        if (consumerGroups.length > 1) {
+            throw new Error('Kafka await scaffold currently supports one consumer group per generated runtime module.');
+        }
+        const explicitGroup = consumerGroups[0];
+        const consumerGroup = explicitGroup || `${rootProjectName}-orchestrator`;
+        return {
+            requestTopic: requestTopics[0],
+            responseTopic: responseTopics[0],
+            consumerGroup,
+            consumerGroupProperty: '${TPF_AWAIT_KAFKA_RESPONSES_GROUP_ID:' + consumerGroup + '}'
+        };
+    }
+
+    awaitTransportString(step, section, key) {
+        const value = step && step.await && step.await.transport && step.await.transport[section]
+            ? step.await.transport[section][key]
+            : undefined;
+        return typeof value === 'string' && value.trim() ? value.trim() : null;
+    }
+
+    uniqueNonBlank(values) {
+        return Array.from(new Set((values || []).filter(value => typeof value === 'string' && value.trim())));
+    }
+
+    async generatePipelineRuntimeModule(appName, basePackage, steps, kafkaAwait, fileCallback) {
         const rootProjectName = appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
         const context = {
             basePackage,
             rootProjectName,
+            kafkaAwait,
             sourceDirs: (steps || []).map((step, index) => {
                 const key = `s${index}`;
                 return {
@@ -521,7 +583,8 @@ class BrowserTemplateEngine {
         const appPropsContent = this.render('application-properties', {
             serviceName: 'pipeline-runtime-svc',
             rootProjectName,
-            portOffset: 1
+            portOffset: 1,
+            kafkaAwait
         });
         await fileCallback('pipeline-runtime-svc/src/main/resources/application.properties', appPropsContent);
         const appDevProps = this.render('module-application-dev-properties', {});
@@ -536,6 +599,7 @@ class BrowserTemplateEngine {
         steps,
         includePersistenceModule,
         includeCacheInvalidationModule,
+        kafkaAwait,
         fileCallback
     ) {
         const rootProjectName = appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
@@ -572,6 +636,7 @@ class BrowserTemplateEngine {
             rootProjectName,
             includePersistenceModule,
             includeCacheInvalidationModule,
+            kafkaAwait,
             sourceDirs
         };
         const pomContent = this.render('monolith-svc-pom', context);
@@ -580,7 +645,8 @@ class BrowserTemplateEngine {
         const appPropsContent = this.render('application-properties', {
             serviceName: 'monolith-svc',
             rootProjectName,
-            portOffset: 0
+            portOffset: 0,
+            kafkaAwait
         });
         await fileCallback('monolith-svc/src/main/resources/application.properties', appPropsContent);
         const appDevProps = this.render('module-application-dev-properties', {});
@@ -926,6 +992,7 @@ class BrowserTemplateEngine {
             includePersistenceModule,
             includeCacheInvalidationModule,
             transport,
+            steps,
             fileCallback);
 
         await this.generateOrchestratorApplicationProperties(
@@ -955,14 +1022,26 @@ class BrowserTemplateEngine {
         includePersistenceModule,
         includeCacheInvalidationModule,
         transport,
+        steps,
         fileCallback) {
         const transportMode = this.normalizeTransport(transport);
+        const awaitTransports = new Set((steps || [])
+            .filter(step => step.kind === 'await')
+            .map(step => step.await && step.await.transport && step.await.transport.type)
+            .map(type => typeof type === 'string' ? type.toLowerCase() : type)
+            .filter(Boolean));
         const context = {
             basePackage,
             artifactId: 'orchestrator-svc',
             rootProjectName: appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-'),
             includePersistenceModule,
             includeCacheInvalidationModule,
+            kafkaAwait: this.createKafkaAwaitContext(steps, appName),
+            hasAwaitSteps: awaitTransports.size > 0,
+            hasKafkaAwait: awaitTransports.has('kafka'),
+            hasSqsAwait: awaitTransports.has('sqs'),
+            hasWebhookAwait: awaitTransports.has('webhook'),
+            hasInteractionApiAwait: awaitTransports.has('interaction-api'),
             isRestTransport: transportMode === 'REST',
             isGrpcTransport: transportMode === 'GRPC'
         };
@@ -982,6 +1061,12 @@ class BrowserTemplateEngine {
         fileCallback) {
         const transportMode = this.normalizeTransport(transport);
         const aspects = this.normalizeAspectDefinitions(aspectDefinitions);
+        const serviceSteps = (steps || []).filter(step => step.generatesServiceModule !== false && step.kind !== 'await');
+        const awaitTransports = new Set((steps || [])
+            .filter(step => step.kind === 'await')
+            .map(step => step.await && step.await.transport && step.await.transport.type)
+            .map(type => typeof type === 'string' ? type.toLowerCase() : type)
+            .filter(Boolean));
         const context = {
             appName,
             basePackage,
@@ -993,12 +1078,18 @@ class BrowserTemplateEngine {
             rootProjectName: appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-'),
             includePersistenceModule,
             includeCacheInvalidationModule,
+            kafkaAwait: this.createKafkaAwaitContext(steps, appName),
+            hasAwaitSteps: awaitTransports.size > 0,
+            hasKafkaAwait: awaitTransports.has('kafka'),
+            hasSqsAwait: awaitTransports.has('sqs'),
+            hasWebhookAwait: awaitTransports.has('webhook'),
+            hasInteractionApiAwait: awaitTransports.has('interaction-api'),
             hasCacheAspect: aspects.some(aspect => aspect.name === 'cache')
         };
         if (includePersistenceModule) {
-            context.persistencePortOffset = steps.length + 1;
+            context.persistencePortOffset = serviceSteps.length + 1;
             const outputTypes = new Set();
-            steps.forEach(step => {
+            serviceSteps.forEach(step => {
                 if (step.outputTypeName) {
                     outputTypes.add(step.outputTypeName);
                 }
@@ -1013,11 +1104,11 @@ class BrowserTemplateEngine {
                 .map(aspect => aspect.name);
         }
         if (includeCacheInvalidationModule) {
-            const baseOffset = steps.length + (includePersistenceModule ? 2 : 1);
+            const baseOffset = serviceSteps.length + (includePersistenceModule ? 2 : 1);
             context.cacheInvalidationPortOffset = baseOffset;
             const inputTypes = new Set();
             const outputTypes = new Set();
-            steps.forEach(step => {
+            serviceSteps.forEach(step => {
                 if (step.inputTypeName) {
                     inputTypes.add(step.inputTypeName);
                 }
@@ -1042,7 +1133,7 @@ class BrowserTemplateEngine {
                 })
                 .map(aspect => aspect.name);
         }
-        context.steps = steps.map((step, index) => ({
+        context.steps = serviceSteps.map((step, index) => ({
             ...step,
             portOffset: index + 1,
             serviceNameForPackage: step.serviceName.replace('-svc', '').replace(/-/g, '_'),
@@ -1276,8 +1367,7 @@ wrapperUrl=https://repo.maven.apache.org/maven2/org/apache/maven/wrapper/maven-w
     }
 
     hasImportFlag(fields, types) {
-        if (!Array.isArray(fields)) return false;
-        return fields.some(field => types.includes(field.type));
+        return hasFieldType(fields, types);
     }
 
     mapperFieldsForClass(className, step) {

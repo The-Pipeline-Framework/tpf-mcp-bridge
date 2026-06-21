@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { promises as fs } from "node:fs";
 import YAML from "js-yaml";
 import JSZip from "jszip";
@@ -558,7 +559,10 @@ test("answer_contract_questions resolves onboarding contract ambiguity and enabl
 test("await-step planner drafts survive normalization and scaffold ZIP generation", async () => {
   const planner = {
     async planInitialBrief(): Promise<PlannerDraft> {
-      return buildAwaitPlannerDraft();
+      return {
+        ...buildAwaitPlannerDraft(),
+        runtimeLayout: "MODULAR"
+      };
     },
     async revisePlanWithAnswers(): Promise<PlannerDraft> {
       return buildAwaitPlannerDraft();
@@ -585,6 +589,234 @@ test("await-step planner drafts survive normalization and scaffold ZIP generatio
   assert.equal(awaitStep?.timeout, "PT10M");
   assert.deepEqual(awaitStep?.idempotencyKeyFields, ["transferId"]);
   assert.equal(awaitStep?.await?.transport.type, "webhook");
+  const fileNames = Object.keys(zip.files);
+  assert.ok(fileNames.some((name) => name.startsWith("validate-transfer-request-svc/")));
+  assert.ok(fileNames.some((name) => name.startsWith("finalize-transfer-state-svc/")));
+  assert.ok(!fileNames.some((name) => name.startsWith("await-fraud-decision-svc/")));
+});
+
+test("sqs await drafts generate queue-async scaffold guidance without a fake await module", async () => {
+  const planner = {
+    async planInitialBrief(): Promise<PlannerDraft> {
+      return buildSqsAwaitPlannerDraft();
+    },
+    async revisePlanWithAnswers(): Promise<PlannerDraft> {
+      return buildSqsAwaitPlannerDraft();
+    }
+  };
+
+  const service = new BriefSessionService(new InMemorySessionStore(), new LocalFileArtifactStore(), planner);
+  const session = await service.startSession({
+    briefText: "Submit a provider request over SQS, await the provider response, then finalize.",
+    platform: "COMPUTE"
+  });
+  assert.equal(session.status, "ready");
+  assert.equal(session.inferredSteps[1]?.await?.transport.type, "sqs");
+
+  const generated = await service.generateScaffold({ sessionId: session.sessionId });
+  const zipBytes = await fs.readFile(generated.artifact!.localPath!);
+  const zip = await JSZip.loadAsync(zipBytes);
+  const pipelineYaml = await zip.file("config/pipeline.yaml")!.async("string");
+  const pipelineConfig = YAML.load(pipelineYaml) as DerivedConfig;
+  assert.equal(pipelineConfig.steps[1].await?.transport.type, "sqs");
+  assert.equal(pipelineConfig.steps[1].await?.transport.request?.queueUrl, "https://sqs.example/request");
+  assert.equal(pipelineConfig.steps[1].await?.transport.response?.queueUrl, "https://sqs.example/response");
+  const fileNames = Object.keys(zip.files);
+  assert.ok(!fileNames.some((name) => name.startsWith("await-fraud-decision-svc/")));
+  const orchestratorPom = await zip.file("orchestrator-svc/pom.xml")!.async("string");
+  assert.match(orchestratorPom, /quarkus-amazon-sqs/);
+  const applicationProperties = await zip.file("orchestrator-svc/src/main/resources/application.properties")!.async("string");
+  assert.match(applicationProperties, /^tpf\.await\.sqs\.poller\.enabled=true$/m);
+  assert.match(applicationProperties, /^tpf\.await\.sqs\.request-queue-url=\$\{TPF_AWAIT_SQS_REQUEST_QUEUE_URL\}$/m);
+  assert.match(applicationProperties, /^tpf\.await\.sqs\.response-queue-url=\$\{TPF_AWAIT_SQS_RESPONSE_QUEUE_URL\}$/m);
+  assert.match(applicationProperties, /^quarkus\.sqs\.aws\.region=\$\{AWS_REGION:us-east-1\}$/m);
+});
+
+test("kafka await drafts generate reactive messaging scaffold wiring without a fake await module", async () => {
+  const planner = {
+    async planInitialBrief(): Promise<PlannerDraft> {
+      return buildKafkaAwaitPlannerDraft();
+    },
+    async revisePlanWithAnswers(): Promise<PlannerDraft> {
+      return buildKafkaAwaitPlannerDraft();
+    }
+  };
+
+  const service = new BriefSessionService(new InMemorySessionStore(), new LocalFileArtifactStore(), planner);
+  const session = await service.startSession({
+    briefText: "Submit a payment request over Kafka, await the provider response, then finalize.",
+    platform: "COMPUTE"
+  });
+  assert.equal(session.status, "ready");
+  assert.equal(session.inferredSteps[1]?.await?.transport.type, "kafka");
+
+  const generated = await service.generateScaffold({ sessionId: session.sessionId });
+  const zipBytes = await fs.readFile(generated.artifact!.localPath!);
+  const zip = await JSZip.loadAsync(zipBytes);
+  const pipelineYaml = await zip.file("config/pipeline.yaml")!.async("string");
+  const pipelineConfig = YAML.load(pipelineYaml) as DerivedConfig;
+  assert.equal(pipelineConfig.steps[1].await?.transport.type, "kafka");
+  assert.equal(pipelineConfig.steps[1].await?.transport.request?.topic, "payment.requests");
+  assert.equal(pipelineConfig.steps[1].await?.transport.response?.topic, "payment.results");
+  const fileNames = Object.keys(zip.files);
+  assert.ok(!fileNames.some((name) => name.startsWith("await-fraud-decision-svc/")));
+  const orchestratorPom = await zip.file("orchestrator-svc/pom.xml")!.async("string");
+  assert.match(orchestratorPom, /quarkus-messaging-kafka/);
+  const applicationProperties = await zip.file("orchestrator-svc/src/main/resources/application.properties")!.async("string");
+  assert.match(applicationProperties, /tpf\.await\.kafka\.reactive-messaging\.enabled=true/);
+  assert.match(applicationProperties, /mp\.messaging\.outgoing\.tpf-await-kafka-requests\.topic=payment\.requests/);
+  assert.match(applicationProperties, /mp\.messaging\.incoming\.tpf-await-kafka-responses\.topic=payment\.results/);
+  assert.ok(applicationProperties.includes("mp.messaging.incoming.tpf-await-kafka-responses.group.id=${TPF_AWAIT_KAFKA_RESPONSES_GROUP_ID:payment-await-orchestrator}"));
+});
+
+test("kafka await scaffold includes kafka messaging dependency in pipeline-runtime-svc pom", async () => {
+  const draft = buildKafkaAwaitPlannerDraft();
+  draft.runtimeLayout = "PIPELINE_RUNTIME";
+  const planner = {
+    async planInitialBrief(): Promise<PlannerDraft> {
+      return draft;
+    },
+    async revisePlanWithAnswers(): Promise<PlannerDraft> {
+      return draft;
+    }
+  };
+
+  const service = new BriefSessionService(new InMemorySessionStore(), new LocalFileArtifactStore(), planner);
+  const session = await service.startSession({
+    briefText: "Submit a payment request over Kafka, await the provider response, then finalize.",
+    platform: "COMPUTE"
+  });
+
+  const generated = await service.generateScaffold({ sessionId: session.sessionId });
+  const zipBytes = await fs.readFile(generated.artifact!.localPath!);
+  const zip = await JSZip.loadAsync(zipBytes);
+  const runtimePom = await zip.file("pipeline-runtime-svc/pom.xml")?.async("string");
+  assert.notEqual(runtimePom, undefined, "expected pipeline-runtime-svc/pom.xml to be generated");
+  assert.match(runtimePom!, /quarkus-messaging-kafka/);
+  // Confirm the await service module is not generated as a standalone service
+  const fileNames = Object.keys(zip.files);
+  assert.ok(!fileNames.some((name) => name.startsWith("await-fraud-decision-svc/")));
+});
+
+test("kafka await scaffold with no explicit consumer group defaults group id from app name", async () => {
+  const draft = buildKafkaAwaitPlannerDraft();
+  // Remove consumer group to force default derivation
+  for (const step of [...draft.businessSteps, ...draft.pipelineSteps, ...draft.stepContracts]) {
+    if (step.kind === "await" && step.await?.transport) {
+      delete step.await.transport.consumer;
+    }
+  }
+
+  const planner = {
+    async planInitialBrief(): Promise<PlannerDraft> { return draft; },
+    async revisePlanWithAnswers(): Promise<PlannerDraft> { return draft; }
+  };
+
+  const service = new BriefSessionService(new InMemorySessionStore(), new LocalFileArtifactStore(), planner);
+  const session = await service.startSession({
+    briefText: "Submit a payment request over Kafka, await the provider response, then finalize.",
+    platform: "COMPUTE"
+  });
+
+  const generated = await service.generateScaffold({ sessionId: session.sessionId });
+  const zipBytes = await fs.readFile(generated.artifact!.localPath!);
+  const zip = await JSZip.loadAsync(zipBytes);
+  const applicationProperties = await zip.file("orchestrator-svc/src/main/resources/application.properties")!.async("string");
+  // group.id should contain the app-name-derived default wrapped in property expression
+  assert.match(applicationProperties, /mp\.messaging\.incoming\.tpf-await-kafka-responses\.group\.id=\$\{TPF_AWAIT_KAFKA_RESPONSES_GROUP_ID:/);
+});
+
+test("generateScaffoldZip with kafka await DerivedConfig emits kafka wiring without await service module", async () => {
+  const config: DerivedConfig = {
+    version: 2,
+    appName: "KafkaAwaitDirect",
+    basePackage: "com.example.kafkaawaitdirect",
+    transport: "REST",
+    platform: "COMPUTE",
+    runtimeLayout: "MODULAR",
+    messages: {
+      PaymentRequest: {
+        fields: [
+          { number: 1, name: "paymentId", type: "uuid" },
+          { number: 2, name: "amount", type: "decimal" }
+        ]
+      },
+      PaymentResult: {
+        fields: [
+          { number: 1, name: "paymentId", type: "uuid" },
+          { number: 2, name: "status", type: "string" }
+        ]
+      }
+    },
+    steps: [
+      {
+        name: "Await Payment Provider",
+        kind: "await",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "PaymentRequest",
+        outputTypeName: "PaymentResult",
+        timeout: "PT5M",
+        idempotencyKeyFields: ["paymentId"],
+        await: {
+          correlation: { strategy: "interactionId" },
+          transport: {
+            type: "kafka",
+            request: { topic: "direct.payment.requests" },
+            response: { topic: "direct.payment.results" },
+            consumer: { group: "direct-payment-group" }
+          }
+        }
+      }
+    ]
+  };
+
+  const zipBuffer = await generateScaffoldZip(config);
+  const zip = await JSZip.loadAsync(zipBuffer);
+  const fileNames = Object.keys(zip.files);
+
+  // No standalone await service module
+  assert.ok(!fileNames.some((name) => name.startsWith("await-payment-provider-svc/")));
+
+  // orchestrator-svc should have kafka dependency
+  const orchestratorPom = await zip.file("orchestrator-svc/pom.xml")!.async("string");
+  assert.match(orchestratorPom, /quarkus-messaging-kafka/);
+
+  // orchestrator-svc application.properties should have kafka wiring
+  const applicationProperties = await zip.file("orchestrator-svc/src/main/resources/application.properties")!.async("string");
+  assert.match(applicationProperties, /tpf\.await\.kafka\.reactive-messaging\.enabled=true/);
+  assert.match(applicationProperties, /mp\.messaging\.outgoing\.tpf-await-kafka-requests\.topic=direct\.payment\.requests/);
+  assert.match(applicationProperties, /mp\.messaging\.incoming\.tpf-await-kafka-responses\.topic=direct\.payment\.results/);
+  assert.ok(applicationProperties.includes("mp.messaging.incoming.tpf-await-kafka-responses.group.id=${TPF_AWAIT_KAFKA_RESPONSES_GROUP_ID:direct-payment-group}"));
+});
+
+test("checkpoint handoff drafts emit pipeline boundaries and composition sidecar", async () => {
+  const planner = {
+    async planInitialBrief(): Promise<PlannerDraft> {
+      return buildCheckpointPlannerDraft();
+    },
+    async revisePlanWithAnswers(): Promise<PlannerDraft> {
+      return buildCheckpointPlannerDraft();
+    }
+  };
+
+  const service = new BriefSessionService(new InMemorySessionStore(), new LocalFileArtifactStore(), planner);
+  const session = await service.startSession({
+    briefText: "Finalize a transfer and publish a checkpoint to a downstream settlement pipeline."
+  });
+  assert.equal(session.status, "ready");
+  assert.equal(session.derivedConfig.output?.checkpoint?.publication, "transfer.finalized");
+  assert.equal(session.compositionManifest?.name, "transfer-settlement-composition");
+
+  const generated = await service.generateScaffold({ sessionId: session.sessionId });
+  const zipBytes = await fs.readFile(generated.artifact!.localPath!);
+  const zip = await JSZip.loadAsync(zipBytes);
+  const pipelineYaml = await zip.file("config/pipeline.yaml")!.async("string");
+  const pipelineConfig = YAML.load(pipelineYaml) as DerivedConfig;
+  assert.equal(pipelineConfig.output?.checkpoint?.publication, "transfer.finalized");
+  const compositionYaml = await zip.file("config/pipeline-composition.yaml")!.async("string");
+  const composition = YAML.load(compositionYaml) as { version: number; name: string; pipelines: Array<{ id: string; path: string }> };
+  assert.equal(composition.version, 1);
+  assert.equal(composition.pipelines[0].id, "wire-transfer");
 });
 
 test("get_brief_session returns persisted session state after answers are merged", async () => {
@@ -767,15 +999,19 @@ test("shared scaffold ZIP includes REST await union DTO and mapper helpers", asy
 
   const mapper = await zip.file(`${commonRoot}/mapper/RestaurantDecisionMapper.java`)!.async("string");
   const serializer = await zip.file(`${commonRoot}/dto/RestaurantDecisionDtoJsonSerializer.java`)!.async("string");
-  const service = await zip.file(
-    "await-restaurant-decision-svc/src/main/java/com/example/restaurantapproval/await_restaurant_decision/service/ProcessAwaitRestaurantDecisionService.java"
-  )!.async("string");
+  const acceptedDomain = await zip.file(`${commonRoot}/domain/RestaurantOrderAccepted.java`)!.async("string");
+  const pipelineConfig = YAML.load(await zip.file("config/pipeline.yaml")!.async("string")) as DerivedConfig;
 
   assert.match(mapper, /implements Mapper<RestaurantDecision, RestaurantDecisionDto>/);
   assert.match(mapper, /external instanceof RestaurantOrderAcceptedDto source/);
   assert.match(mapper, /domain instanceof RestaurantOrderDeclined source/);
   assert.match(serializer, /gen\.writeStringField\("type", "accepted"\)/);
-  assert.match(service, /RestaurantDecision output = null;/);
+  assert.match(acceptedDomain, /import java\.math\.BigDecimal;/);
+  assert.match(acceptedDomain, /import java\.time\.LocalDate;/);
+  assert.match(acceptedDomain, /import java\.util\.List;/);
+  assert.match(acceptedDomain, /import java\.util\.Map;/);
+  assert.equal(pipelineConfig.steps[0].kind, "await");
+  assert.ok(!fileNames.some((name) => name.startsWith("await-restaurant-decision-svc/")));
 });
 
 test("planner drafts that materialize persistence as business steps are rejected", async () => {
@@ -1457,6 +1693,51 @@ test("standalone readme documents host installs, provider modes, and schema sync
   assert.match(developerGuide, /npm run start:worker/);
 });
 
+test("release parity audit classifies scaffold-relevant release deltas", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "tpf-release-audit-"));
+  try {
+    const diffFile = path.join(tempDir, "name-status.txt");
+    await fs.writeFile(diffFile, [
+      "M\tframework/deployment/src/main/resources/META-INF/pipeline/pipeline-template-schema.json",
+      "M\tframework/runtime/src/main/java/org/pipelineframework/awaitable/kafka/KafkaAwaitCompletionConsumer.java",
+      "A\tframework/runtime/src/main/java/org/pipelineframework/awaitable/SqsAwaitTransportAdapter.java",
+      "A\tframework/runtime/src/main/resources/META-INF/pipeline/pipeline-composition-schema.json",
+      "M\texamples/csv-payments/config/pipeline.yaml",
+      "A\texamples/restaurant-approval/self-host/start-worker.sh",
+      "A\tframework/runtime-spring/src/main/java/org/pipelineframework/runtime/spring/SpringPipelineRunner.java",
+      "A\tdocs/guide/getting-started/index.md",
+    ].join("\n"), "utf8");
+
+    const report = execFileSync("node", [
+      "scripts/audit-release-parity.mjs",
+      "--diff-file",
+      diffFile,
+      "--framework-dir",
+      tempDir,
+    ], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+
+    assert.match(report, /Baseline: `v26\.5\.2\.\.v26\.6\.1`/);
+    assert.match(report, /## Known Gap/);
+    assert.match(report, /Kafka await productization is represented in draft PR #20/i);
+    assert.match(report, /## Covered By Current Bridge/);
+    assert.match(report, /check:pipeline-schema/);
+    assert.match(report, /## Added File Follow-Up/);
+    assert.match(report, /SQS surface changed/i);
+    assert.match(report, /Composition\/checkpoint surface changed/i);
+    assert.match(report, /Self-host\/coordinator\/worker surface touched/i);
+    assert.match(report, /Spring adapter surface touched/i);
+    assert.match(report, /## Needs Human Review/);
+    assert.match(report, /examples\/csv-payments\/config\/pipeline\.yaml/);
+    assert.match(report, /## Probably No Scaffold Impact/);
+    assert.match(report, /docs\/guide\/getting-started\/index\.md/);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 class MemoryStorage {
   private readonly values = new Map<string, unknown>();
 
@@ -1683,6 +1964,68 @@ function buildAwaitPlannerDraft(): PlannerDraft {
       }
     ]
   };
+}
+
+function buildSqsAwaitPlannerDraft(): PlannerDraft {
+  const draft = JSON.parse(JSON.stringify(buildAwaitPlannerDraft())) as PlannerDraft;
+  draft.runtimeLayout = "MODULAR";
+  for (const step of [...draft.businessSteps, ...draft.pipelineSteps, ...draft.stepContracts]) {
+    if (step.kind !== "await" || !step.await) {
+      continue;
+    }
+    step.await.transport = {
+      type: "sqs",
+      request: { queueUrl: "https://sqs.example/request" },
+      response: { queueUrl: "https://sqs.example/response" }
+    };
+  }
+  draft.assumptions = ["QUEUE_ASYNC orchestrator mode is available for SQS await execution."];
+  return draft;
+}
+
+function buildKafkaAwaitPlannerDraft(): PlannerDraft {
+  const draft = JSON.parse(JSON.stringify(buildAwaitPlannerDraft())) as PlannerDraft;
+  draft.runtimeLayout = "MODULAR";
+  for (const step of [...draft.businessSteps, ...draft.pipelineSteps, ...draft.stepContracts]) {
+    if (step.kind !== "await" || !step.await) {
+      continue;
+    }
+    step.await.transport = {
+      type: "kafka",
+      request: { topic: "payment.requests" },
+      response: { topic: "payment.results" },
+      consumer: { group: "payment-await-orchestrator" }
+    };
+  }
+  draft.assumptions = ["QUEUE_ASYNC orchestrator mode is available for Kafka await execution."];
+  return draft;
+}
+
+function buildCheckpointPlannerDraft(): PlannerDraft {
+  const draft = JSON.parse(JSON.stringify(buildAwaitPlannerDraft())) as PlannerDraft;
+  draft.outputBoundary = {
+    checkpoint: {
+      publication: "transfer.finalized",
+      idempotencyKeyFields: ["transferId"]
+    }
+  };
+  draft.compositionManifest = {
+    version: 1,
+    name: "transfer-settlement-composition",
+    pipelines: [
+      { id: "wire-transfer", path: "config/pipeline.yaml" },
+      { id: "settlement", path: "../settlement/config/pipeline.yaml" }
+    ]
+  };
+  draft.technicalConcerns = [
+    ...(draft.technicalConcerns || []),
+    {
+      concern: "checkpoint-handoff",
+      appliesToSteps: ["finalize-transfer-state"],
+      details: "The finalized transfer checkpoint is published for downstream settlement ownership."
+    }
+  ];
+  return draft;
 }
 
 async function buildPlannedSessionStates(briefText: string): Promise<{ initialSession: SessionState; readySession: SessionState }> {
@@ -2106,7 +2449,9 @@ function buildRestaurantApprovalUnionConfig(): DerivedConfig {
         fields: [
           { number: 1, name: "orderId", type: "uuid" },
           { number: 2, name: "decidedAt", type: "timestamp" },
-          { number: 3, name: "note", type: "string" }
+          { number: 3, name: "note", type: "string" },
+          { number: 4, name: "adjustments", type: "decimal", repeated: true },
+          { number: 5, name: "serviceDates", type: "map", keyType: "string", valueType: "date" }
         ]
       },
       RestaurantOrderDeclined: {

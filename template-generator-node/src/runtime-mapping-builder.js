@@ -5,6 +5,9 @@
 function buildModularModules(steps, includePersistenceModule, includeCacheInvalidationModule, stepId) {
     const modules = {};
     for (const step of steps) {
+        if (step.kind === 'await' || step.generatesServiceModule === false) {
+            continue;
+        }
         const moduleName = step.serviceName;
         const resolvedStepId = stepId(step);
         if (!moduleName || !resolvedStepId) {
@@ -42,6 +45,9 @@ function buildPipelineModules(steps, includePersistenceModule, includeCacheInval
         }
     };
     for (const step of steps) {
+        if (step.kind === 'await' || step.generatesServiceModule === false) {
+            continue;
+        }
         const resolvedStepId = stepId(step);
         if (!resolvedStepId) {
             continue;
@@ -74,6 +80,9 @@ function buildMonolithModules(steps, includePersistenceModule, includeCacheInval
         }
     };
     for (const step of steps) {
+        if (step.kind === 'await' || step.generatesServiceModule === false) {
+            continue;
+        }
         const resolvedStepId = stepId(step);
         if (!resolvedStepId) {
             continue;

@@ -137,7 +137,7 @@ steps:
     expect(commonPom).not.toContain('com/google/protobuf');
   });
 
-  test('generateFromConfig emits generated poms against TPF framework 26.5.2', async () => {
+  test('generateFromConfig emits generated poms against TPF framework 26.6.1', async () => {
     const generator = new PipelineGenerator();
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
     const configPath = path.join(tempDir, 'version-config.yaml');
@@ -176,7 +176,8 @@ steps:
 
     for (const pomPath of pomPaths) {
       const pom = fs.readFileSync(pomPath, 'utf8');
-      expect(pom).toContain('<version>26.5.2</version>');
+      expect(pom).toContain('<version>26.6.1</version>');
+      expect(pom).not.toContain('<version>26.5.2</version>');
       expect(pom).not.toContain('<version>26.2.2</version>');
     }
   });
@@ -492,10 +493,6 @@ steps:
     const serializer = fs.readFileSync(path.join(javaRoot, 'dto', 'RestaurantDecisionDtoJsonSerializer.java'), 'utf8');
     const deserializer = fs.readFileSync(path.join(javaRoot, 'dto', 'RestaurantDecisionDtoJsonDeserializer.java'), 'utf8');
     const mapper = fs.readFileSync(path.join(javaRoot, 'mapper', 'RestaurantDecisionMapper.java'), 'utf8');
-    const service = fs.readFileSync(
-      path.join(outputDir, 'await-restaurant-decision-svc', 'src', 'main', 'java', 'com', 'example', 'restaurantapproval', 'await_restaurant_decision', 'service', 'ProcessAwaitRestaurantDecisionService.java'),
-      'utf8'
-    );
 
     expect(decisionDto).toContain('public sealed interface RestaurantDecisionDto');
     expect(decisionDto).toContain('permits RestaurantOrderAcceptedDto, RestaurantOrderDeclinedDto');
@@ -506,9 +503,142 @@ steps:
     expect(mapper).toContain('implements Mapper<RestaurantDecision, RestaurantDecisionDto>');
     expect(mapper).toContain('external instanceof RestaurantOrderAcceptedDto source');
     expect(mapper).toContain('domain instanceof RestaurantOrderDeclined source');
-    expect(service).toContain('RestaurantDecision output = null;');
+    expect(fs.existsSync(path.join(outputDir, 'await-restaurant-decision-svc'))).toBe(false);
     expect(fs.existsSync(path.join(javaRoot, 'domain', 'RestaurantDecision.java'))).toBe(true);
     expect(fs.existsSync(path.join(javaRoot, 'domain', 'RestaurantOrderAccepted.java'))).toBe(true);
+  });
+
+  test('generateFromConfig scaffolds Quarkus Kafka await runtime wiring', async () => {
+    const generator = new PipelineGenerator();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
+    const configPath = path.join(tempDir, 'kafka-await.yaml');
+    const outputDir = path.join(tempDir, 'generated-app');
+    fs.writeFileSync(configPath, `version: 2
+appName: KafkaAwaitApp
+basePackage: com.example.kafkaawait
+transport: REST
+platform: COMPUTE
+runtimeLayout: MODULAR
+messages:
+  PaymentRequest:
+    fields:
+      - number: 1
+        name: paymentId
+        type: uuid
+  PaymentResult:
+    fields:
+      - number: 1
+        name: paymentId
+        type: uuid
+      - number: 2
+        name: status
+        type: string
+steps:
+  - name: Await Payment Provider
+    kind: await
+    cardinality: ONE_TO_ONE
+    inputTypeName: PaymentRequest
+    outputTypeName: PaymentResult
+    timeout: PT2M
+    idempotencyKeyFields:
+      - paymentId
+    await:
+      correlation:
+        strategy: interactionId
+      transport:
+        type: Kafka
+        request:
+          topic: payment.requests
+        response:
+          topic: payment.results
+        consumer:
+          group: payment-await-orchestrator
+`);
+
+    await generator.generateFromConfig(configPath, outputDir);
+
+    const pom = fs.readFileSync(path.join(outputDir, 'orchestrator-svc', 'pom.xml'), 'utf8');
+    const applicationProperties = fs.readFileSync(
+      path.join(outputDir, 'orchestrator-svc', 'src', 'main', 'resources', 'application.properties'),
+      'utf8'
+    );
+
+    expect(pom).toContain('<artifactId>quarkus-messaging-kafka</artifactId>');
+    expect(applicationProperties).toContain('pipeline.orchestrator.mode=QUEUE_ASYNC');
+    expect(applicationProperties).toContain('pipeline.orchestrator.resume-token-secret=${TPF_RESUME_TOKEN_SECRET}');
+    expect(applicationProperties).toContain('tpf.await.kafka.reactive-messaging.enabled=true');
+    expect(applicationProperties).toContain('mp.messaging.outgoing.tpf-await-kafka-requests.topic=payment.requests');
+    expect(applicationProperties).toContain('mp.messaging.incoming.tpf-await-kafka-responses.topic=payment.results');
+    expect(applicationProperties).toContain('mp.messaging.incoming.tpf-await-kafka-responses.group.id=${TPF_AWAIT_KAFKA_RESPONSES_GROUP_ID:payment-await-orchestrator}');
+  });
+
+  test('generateFromConfig rejects Kafka await scaffolds with multiple topics per runtime module', async () => {
+    const generator = new PipelineGenerator();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
+    const configPath = path.join(tempDir, 'multi-kafka-await.yaml');
+    const outputDir = path.join(tempDir, 'generated-app');
+    fs.writeFileSync(configPath, `version: 2
+appName: KafkaAwaitApp
+basePackage: com.example.kafkaawait
+transport: REST
+platform: COMPUTE
+runtimeLayout: MODULAR
+messages:
+  PaymentRequest:
+    fields:
+      - number: 1
+        name: paymentId
+        type: uuid
+  PaymentResult:
+    fields:
+      - number: 1
+        name: paymentId
+        type: uuid
+  SettlementResult:
+    fields:
+      - number: 1
+        name: paymentId
+        type: uuid
+steps:
+  - name: Await Payment Provider
+    kind: await
+    cardinality: ONE_TO_ONE
+    inputTypeName: PaymentRequest
+    outputTypeName: PaymentResult
+    timeout: PT2M
+    idempotencyKeyFields:
+      - paymentId
+    await:
+      correlation:
+        strategy: interactionId
+      transport:
+        type: kafka
+        request:
+          topic: payment.requests
+        response:
+          topic: payment.results
+  - name: Await Settlement Provider
+    kind: await
+    cardinality: ONE_TO_ONE
+    inputTypeName: PaymentResult
+    outputTypeName: SettlementResult
+    timeout: PT2M
+    idempotencyKeyFields:
+      - paymentId
+    await:
+      correlation:
+        strategy: interactionId
+      transport:
+        type: kafka
+        request:
+          topic: settlement.requests
+        response:
+          topic: settlement.results
+`);
+
+    await expect(generator.generateFromConfig(configPath, outputDir))
+      .rejects
+      .toThrow('one request topic per generated runtime module');
   });
 
   test('loadConfig rejects await config missing required structural fields', () => {

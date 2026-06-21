@@ -1,15 +1,16 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateScaffold } from "../dist/src/template-bridge.js";
 
-const DEFAULT_SMOKE_NAME = "restaurant-approval-union-smoke";
+const DEFAULT_SMOKE_NAME = "kafka-await-smoke";
 
 const args = parseArgs(process.argv.slice(2));
 const frameworkDirArg = args.frameworkDir || process.env.TPF_FRAMEWORK_DIR;
 const smokeName = args.smokeName || process.env.TPF_SMOKE_NAME || DEFAULT_SMOKE_NAME;
+validateSmokeName(smokeName);
 
 if (!frameworkDirArg) {
   usage("Missing --framework-dir or TPF_FRAMEWORK_DIR.");
@@ -23,16 +24,25 @@ if (!existsSync(path.join(frameworkDir, "pom.xml"))) {
 
 const outputDir = path.join(frameworkDir, "examples", smokeName);
 await rm(outputDir, { recursive: true, force: true });
-await generateScaffold(buildRestaurantApprovalUnionConfig(), outputDir);
+await generateScaffold(buildKafkaAwaitConfig(), outputDir);
 
-const legacyConfigPath = path.join(outputDir, "pipeline-config.yaml");
-if (existsSync(legacyConfigPath)) {
-  throw new Error(`Generated scaffold contains legacy duplicate pipeline config: ${legacyConfigPath}`);
-}
-
-const awaitServiceModulePath = path.join(outputDir, "await-restaurant-decision-svc");
+const awaitServiceModulePath = path.join(outputDir, "await-payment-provider-svc");
 if (existsSync(awaitServiceModulePath)) {
   throw new Error(`Generated scaffold contains a service module for the await boundary: ${awaitServiceModulePath}`);
+}
+
+const applicationProperties = readFileSync(
+  path.join(outputDir, "orchestrator-svc", "src", "main", "resources", "application.properties"),
+  "utf8"
+);
+for (const expected of [
+  "tpf.await.kafka.reactive-messaging.enabled=true",
+  "mp.messaging.outgoing.tpf-await-kafka-requests.topic=payment.requests",
+  "mp.messaging.incoming.tpf-await-kafka-responses.topic=payment.results",
+]) {
+  if (!applicationProperties.includes(expected)) {
+    throw new Error(`Generated Kafka await application.properties is missing '${expected}'.`);
+  }
 }
 
 await run(
@@ -63,6 +73,12 @@ function usage(message) {
   process.exit(2);
 }
 
+function validateSmokeName(value) {
+  if (!value || value.includes("..") || value.includes("/") || value.includes("\\")) {
+    usage(`Invalid smoke name: ${value}. Use a simple directory name without path traversal or separators.`);
+  }
+}
+
 function run(command, args, cwd) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, stdio: "inherit" });
@@ -77,70 +93,70 @@ function run(command, args, cwd) {
   });
 }
 
-function buildRestaurantApprovalUnionConfig() {
+function buildKafkaAwaitConfig() {
   return {
     version: 2,
-    appName: "RestaurantApproval",
-    basePackage: "com.example.restaurantapproval",
+    appName: "KafkaAwait",
+    basePackage: "com.example.kafkaawait",
     transport: "REST",
     platform: "COMPUTE",
-    runtimeLayout: "MONOLITH",
+    runtimeLayout: "MODULAR",
     messages: {
-      PendingRestaurantApproval: {
+      PaymentRequest: {
         fields: [
-          { number: 1, name: "orderId", type: "uuid" },
-          { number: 2, name: "restaurantName", type: "string" }
+          { number: 1, name: "paymentId", type: "uuid" },
+          { number: 2, name: "amount", type: "decimal" }
         ]
       },
-      RestaurantOrderAccepted: {
+      PaymentValidated: {
         fields: [
-          { number: 1, name: "orderId", type: "uuid" },
-          { number: 2, name: "decidedAt", type: "timestamp" },
-          { number: 3, name: "note", type: "string" }
+          { number: 1, name: "paymentId", type: "uuid" },
+          { number: 2, name: "amount", type: "decimal" }
         ]
       },
-      RestaurantOrderDeclined: {
+      PaymentProviderResult: {
         fields: [
-          { number: 1, name: "orderId", type: "uuid" },
-          { number: 2, name: "decidedAt", type: "timestamp" },
-          { number: 3, name: "note", type: "string" },
-          { number: 4, name: "declineReason", type: "string" }
+          { number: 1, name: "paymentId", type: "uuid" },
+          { number: 2, name: "status", type: "string" }
         ]
       },
-      TerminalOrderState: {
+      PaymentFinalized: {
         fields: [
-          { number: 1, name: "orderId", type: "uuid" },
-          { number: 2, name: "outcome", type: "string" }
+          { number: 1, name: "paymentId", type: "uuid" },
+          { number: 2, name: "status", type: "string" }
         ]
-      }
-    },
-    unions: {
-      RestaurantDecision: {
-        variants: {
-          accepted: { number: 1, type: "RestaurantOrderAccepted" },
-          declined: { number: 2, type: "RestaurantOrderDeclined" }
-        }
       }
     },
     steps: [
       {
-        name: "Await Restaurant Decision",
+        name: "Validate Payment Request",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "PaymentRequest",
+        outputTypeName: "PaymentValidated"
+      },
+      {
+        name: "Await Payment Provider",
         kind: "await",
         cardinality: "ONE_TO_ONE",
-        inputTypeName: "PendingRestaurantApproval",
-        outputTypeName: "RestaurantDecision",
-        timeout: "PT30M",
-        idempotencyKeyFields: ["orderId"],
+        inputTypeName: "PaymentValidated",
+        outputTypeName: "PaymentProviderResult",
+        timeout: "PT5M",
+        idempotencyKeyFields: ["paymentId"],
         await: {
           correlation: { strategy: "interactionId" },
-          transport: { type: "interaction-api" }
+          transport: {
+            type: "kafka",
+            request: { topic: "payment.requests" },
+            response: { topic: "payment.results" },
+            consumer: { group: "payment-await-orchestrator" }
+          }
         }
       },
       {
-        name: "Finalize Restaurant Decision",
+        name: "Finalize Payment",
         cardinality: "ONE_TO_ONE",
-        inputTypeName: "RestaurantDecision",
-        outputTypeName: "TerminalOrderState"
+        inputTypeName: "PaymentProviderResult",
+        outputTypeName: "PaymentFinalized"
       }
     ]
   };

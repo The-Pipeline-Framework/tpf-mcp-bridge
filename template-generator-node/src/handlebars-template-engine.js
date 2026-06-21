@@ -26,6 +26,22 @@ try {
     distTemplates = null;
 }
 
+function extractTypeTokens(typeName) {
+    if (typeof typeName !== 'string') return [];
+    return typeName.match(/[A-Za-z_$][A-Za-z0-9_$]*/g) || [];
+}
+
+function hasFieldType(fields, types) {
+    if (!Array.isArray(fields)) return false;
+    const expected = new Set(types.map(normalizeExpectedType));
+    return fields.some(field => extractTypeTokens(field && field.type).some(token => expected.has(token)));
+}
+
+function normalizeExpectedType(typeName) {
+    const tokens = extractTypeTokens(typeName);
+    return tokens.length > 0 && /[<[\],]/.test(typeName) ? tokens[0] : typeName;
+}
+
 // Register helper for replacing characters in strings
 Handlebars.registerHelper('replace', function(str, find, repl) {
     if (typeof str !== 'string' || typeof find !== 'string') return str;
@@ -256,45 +272,35 @@ Handlebars.registerHelper('mapValueType', function(type) {
 
 // Register helper for adding import flags
 Handlebars.registerHelper('hasDateFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => 
-        ['LocalDate', 'LocalDateTime', 'OffsetDateTime', 'ZonedDateTime', 'Instant', 'Duration', 'Period'].includes(field.type)
-    );
+    return hasFieldType(fields, ['LocalDate', 'LocalDateTime', 'OffsetDateTime', 'ZonedDateTime', 'Instant', 'Duration', 'Period']);
 });
 
 Handlebars.registerHelper('hasBigIntegerFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => field.type === 'BigInteger');
+    return hasFieldType(fields, ['BigInteger']);
 });
 
 Handlebars.registerHelper('hasBigDecimalFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => field.type === 'BigDecimal');
+    return hasFieldType(fields, ['BigDecimal']);
 });
 
 Handlebars.registerHelper('hasCurrencyFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => field.type === 'Currency');
+    return hasFieldType(fields, ['Currency']);
 });
 
 Handlebars.registerHelper('hasPathFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => field.type === 'Path');
+    return hasFieldType(fields, ['Path']);
 });
 
 Handlebars.registerHelper('hasNetFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => ['URI', 'URL'].includes(field.type));
+    return hasFieldType(fields, ['URI', 'URL']);
 });
 
 Handlebars.registerHelper('hasIoFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => field.type === 'File');
+    return hasFieldType(fields, ['File']);
 });
 
 Handlebars.registerHelper('hasAtomicFields', function(fields) {
-    if (!Array.isArray(fields)) return false;
-    return fields.some(field => ['AtomicInteger', 'AtomicLong'].includes(field.type));
+    return hasFieldType(fields, ['AtomicInteger', 'AtomicLong']);
 });
 
 Handlebars.registerHelper('hasUtilFields', function(fields) {
@@ -433,6 +439,8 @@ class HandlebarsTemplateEngine {
         const resolvedBasePackage = options.basePackage;
         const resolvedSteps = options.steps;
         const unionDefinitions = Array.isArray(options.unionDefinitions) ? options.unionDefinitions : [];
+        const serviceSteps = resolvedSteps.filter(step => step.generatesServiceModule !== false && step.kind !== 'await');
+        const kafkaAwait = this.createKafkaAwaitContext(resolvedSteps, resolvedAppName);
         const aspectConfig = options.aspects || {};
         const normalizedRuntimeLayout = this.normalizeRuntimeLayout(options.runtimeLayout);
         const transportMode = this.normalizeTransport(options.transport, normalizedRuntimeLayout);
@@ -461,7 +469,7 @@ class HandlebarsTemplateEngine {
         await this.generateParentPom(
             resolvedAppName,
             resolvedBasePackage,
-            resolvedSteps,
+            serviceSteps,
             includePersistenceModule,
             includeCacheInvalidationModule,
             transportMode,
@@ -481,27 +489,27 @@ class HandlebarsTemplateEngine {
         );
 
         // Generate each step service
-        for (let i = 0; i < resolvedSteps.length; i++) {
+        for (let i = 0; i < serviceSteps.length; i++) {
             await this.generateStepService(
                 resolvedAppName,
                 resolvedBasePackage,
-                resolvedSteps[i],
+                serviceSteps[i],
                 options.outputPath,
                 i,
-                resolvedSteps,
+                serviceSteps,
                 transportMode
             );
         }
 
         if (includePersistenceModule) {
-            await this.generatePersistenceModule(resolvedAppName, resolvedBasePackage, resolvedSteps, options.outputPath);
+            await this.generatePersistenceModule(resolvedAppName, resolvedBasePackage, serviceSteps, options.outputPath);
         }
 
         if (includeCacheInvalidationModule) {
             await this.generateCacheInvalidationModule(
                 resolvedAppName,
                 resolvedBasePackage,
-                resolvedSteps,
+                serviceSteps,
                 includePersistenceModule,
                 options.outputPath
             );
@@ -522,20 +530,22 @@ class HandlebarsTemplateEngine {
             await this.generatePipelineRuntimeModule(
                 resolvedAppName,
                 resolvedBasePackage,
-                resolvedSteps,
+                serviceSteps,
+                kafkaAwait,
                 options.outputPath);
         } else if (normalizedRuntimeLayout === 'monolith') {
             await this.generateMonolithModule(
                 resolvedAppName,
                 resolvedBasePackage,
-                resolvedSteps,
+                serviceSteps,
                 includePersistenceModule,
                 includeCacheInvalidationModule,
+                kafkaAwait,
                 options.outputPath);
         }
 
         await this.generateRuntimeMappingFiles(
-            resolvedSteps,
+            serviceSteps,
             includePersistenceModule,
             includeCacheInvalidationModule,
             normalizedRuntimeLayout,
@@ -555,7 +565,7 @@ class HandlebarsTemplateEngine {
         await this.generateOtherFiles(
             resolvedAppName,
             resolvedBasePackage,
-            resolvedSteps,
+            serviceSteps,
             includePersistenceModule,
             includeCacheInvalidationModule,
             options.outputPath);
@@ -730,13 +740,65 @@ class HandlebarsTemplateEngine {
         await this.generateCommonApplicationProperties(commonPath, transportMode);
     }
 
-    async generatePipelineRuntimeModule(appName, basePackage, steps, outputPath) {
+    createKafkaAwaitContext(steps, appName) {
+        const kafkaSteps = (steps || [])
+            .filter(step => step && step.kind === 'await')
+            .filter(step => {
+                const type = step.await && step.await.transport && step.await.transport.type;
+                return typeof type === 'string' && type.toLowerCase() === 'kafka';
+            });
+        if (kafkaSteps.length === 0) {
+            return null;
+        }
+        const rootProjectName = appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
+        const requestTopics = this.uniqueNonBlank(kafkaSteps.map(step => this.awaitTransportString(step, 'request', 'topic')
+            || this.awaitTransportString(step, 'config', 'topic')));
+        const responseTopics = this.uniqueNonBlank(kafkaSteps.map(step => this.awaitTransportString(step, 'response', 'topic')));
+        if (requestTopics.length === 0) {
+            throw new Error('Kafka await scaffold requires await.transport.request.topic.');
+        }
+        if (responseTopics.length === 0) {
+            throw new Error('Kafka await scaffold requires await.transport.response.topic.');
+        }
+        if (requestTopics.length > 1) {
+            throw new Error('Kafka await scaffold currently supports one request topic per generated runtime module.');
+        }
+        if (responseTopics.length > 1) {
+            throw new Error('Kafka await scaffold currently supports one response topic per generated runtime module.');
+        }
+        const consumerGroups = this.uniqueNonBlank(kafkaSteps.map(step => this.awaitTransportString(step, 'consumer', 'group')));
+        if (consumerGroups.length > 1) {
+            throw new Error('Kafka await scaffold currently supports one consumer group per generated runtime module.');
+        }
+        const explicitGroup = consumerGroups[0];
+        const consumerGroup = explicitGroup || `${rootProjectName}-orchestrator`;
+        return {
+            requestTopic: requestTopics[0],
+            responseTopic: responseTopics[0],
+            consumerGroup,
+            consumerGroupProperty: '${TPF_AWAIT_KAFKA_RESPONSES_GROUP_ID:' + consumerGroup + '}'
+        };
+    }
+
+    awaitTransportString(step, section, key) {
+        const value = step && step.await && step.await.transport && step.await.transport[section]
+            ? step.await.transport[section][key]
+            : undefined;
+        return typeof value === 'string' && value.trim() ? value.trim() : null;
+    }
+
+    uniqueNonBlank(values) {
+        return Array.from(new Set((values || []).filter(value => typeof value === 'string' && value.trim())));
+    }
+
+    async generatePipelineRuntimeModule(appName, basePackage, steps, kafkaAwait, outputPath) {
         const modulePath = path.join(outputPath, 'pipeline-runtime-svc');
         await fs.ensureDir(path.join(modulePath, 'src/main/resources', 'META-INF'));
 
         const context = {
             basePackage,
             rootProjectName: appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-'),
+            kafkaAwait,
             sourceDirs: (steps || []).map((step, index) => {
                 const key = `s${index}`;
                 return {
@@ -754,7 +816,8 @@ class HandlebarsTemplateEngine {
         const appProps = this.render('application-properties', {
             serviceName: 'pipeline-runtime-svc',
             rootProjectName: context.rootProjectName,
-            portOffset: 1
+            portOffset: 1,
+            kafkaAwait
         });
         await fs.writeFile(path.join(modulePath, 'src/main/resources', 'application.properties'), appProps);
         await this.generateModuleDevProperties(modulePath);
@@ -768,6 +831,7 @@ class HandlebarsTemplateEngine {
         steps,
         includePersistenceModule,
         includeCacheInvalidationModule,
+        kafkaAwait,
         outputPath
     ) {
         const modulePath = path.join(outputPath, 'monolith-svc');
@@ -806,6 +870,7 @@ class HandlebarsTemplateEngine {
             rootProjectName: appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-'),
             includePersistenceModule,
             includeCacheInvalidationModule,
+            kafkaAwait,
             sourceDirs
         };
 
@@ -815,7 +880,8 @@ class HandlebarsTemplateEngine {
         const appProps = this.render('application-properties', {
             serviceName: 'monolith-svc',
             rootProjectName: context.rootProjectName,
-            portOffset: 0
+            portOffset: 0,
+            kafkaAwait
         });
         await fs.writeFile(path.join(modulePath, 'src/main/resources', 'application.properties'), appProps);
         await this.generateModuleDevProperties(modulePath);
@@ -1233,7 +1299,13 @@ class HandlebarsTemplateEngine {
         transport,
         orchPath) {
         // Create context for orchestrator properties
-        const context = { appName, basePackage, steps, transport };
+        const serviceSteps = steps.filter(step => step.generatesServiceModule !== false && step.kind !== 'await');
+        const awaitTransports = new Set((steps || [])
+            .filter(step => step.kind === 'await')
+            .map(step => step.await && step.await.transport && step.await.transport.type)
+            .map(type => typeof type === 'string' ? type.toLowerCase() : type)
+            .filter(Boolean));
+        const context = { appName, basePackage, steps: serviceSteps, transport };
         const transportMode = typeof transport === 'string' && transport.trim()
             ? transport.trim().toUpperCase()
             : 'GRPC';
@@ -1246,11 +1318,17 @@ class HandlebarsTemplateEngine {
         context.rootProjectName = appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
         context.includePersistenceModule = includePersistenceModule;
         context.includeCacheInvalidationModule = includeCacheInvalidationModule;
+        context.kafkaAwait = this.createKafkaAwaitContext(steps, appName);
+        context.hasAwaitSteps = awaitTransports.size > 0;
+        context.hasKafkaAwait = awaitTransports.has('kafka');
+        context.hasSqsAwait = awaitTransports.has('sqs');
+        context.hasWebhookAwait = awaitTransports.has('webhook');
+        context.hasInteractionApiAwait = awaitTransports.has('interaction-api');
         context.hasCacheAspect = (aspectDefinitions || []).some(aspect => aspect.name === 'cache');
         if (includePersistenceModule) {
-            context.persistencePortOffset = steps.length + 1;
+            context.persistencePortOffset = serviceSteps.length + 1;
             const outputTypes = new Set();
-            steps.forEach(step => {
+            serviceSteps.forEach(step => {
                 if (step.outputTypeName) {
                     outputTypes.add(step.outputTypeName);
                 }
@@ -1265,10 +1343,10 @@ class HandlebarsTemplateEngine {
                 .map(aspect => aspect.name);
         }
         if (includeCacheInvalidationModule) {
-            const baseOffset = steps.length + (includePersistenceModule ? 2 : 1);
+            const baseOffset = serviceSteps.length + (includePersistenceModule ? 2 : 1);
             context.cacheInvalidationPortOffset = baseOffset;
             const inputTypes = new Set();
-            steps.forEach(step => {
+            serviceSteps.forEach(step => {
                 if (step.inputTypeName) {
                     inputTypes.add(step.inputTypeName);
                 }
@@ -1282,7 +1360,7 @@ class HandlebarsTemplateEngine {
                 })
                 .map(aspect => aspect.name);
             const outputTypes = new Set();
-            steps.forEach(step => {
+            serviceSteps.forEach(step => {
                 if (step.outputTypeName) {
                     outputTypes.add(step.outputTypeName);
                 }
@@ -1297,7 +1375,7 @@ class HandlebarsTemplateEngine {
                 .map(aspect => aspect.name);
         }
         // Process steps to add additional properties for template
-        context.steps = steps.map((step, index) => ({
+        context.steps = serviceSteps.map((step, index) => ({
             ...step,
             portOffset: index + 1,
             serviceNameForPackage: step.serviceName.replace('-svc', '').replace(/-/g, '_'),
@@ -1487,6 +1565,7 @@ class HandlebarsTemplateEngine {
             includePersistenceModule,
             includeCacheInvalidationModule,
             transport,
+            steps,
             orchPath);
 
         // Generate orchestrator application.properties
@@ -1515,14 +1594,26 @@ class HandlebarsTemplateEngine {
         includePersistenceModule,
         includeCacheInvalidationModule,
         transport,
+        steps,
         orchPath) {
         const transportMode = this.normalizeTransport(transport);
+        const awaitTransports = new Set((steps || [])
+            .filter(step => step.kind === 'await')
+            .map(step => step.await && step.await.transport && step.await.transport.type)
+            .map(type => typeof type === 'string' ? type.toLowerCase() : type)
+            .filter(Boolean));
         const context = {
             basePackage,
             artifactId: 'orchestrator-svc',
             rootProjectName: appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-'),
             includePersistenceModule,
             includeCacheInvalidationModule,
+            kafkaAwait: this.createKafkaAwaitContext(steps, appName),
+            hasAwaitSteps: awaitTransports.size > 0,
+            hasKafkaAwait: awaitTransports.has('kafka'),
+            hasSqsAwait: awaitTransports.has('sqs'),
+            hasWebhookAwait: awaitTransports.has('webhook'),
+            hasInteractionApiAwait: awaitTransports.has('interaction-api'),
             isRestTransport: transportMode === 'REST',
             isGrpcTransport: transportMode === 'GRPC'
         };
@@ -1647,8 +1738,7 @@ wrapperUrl=https://repo.maven.apache.org/maven2/org/apache/maven/wrapper/maven-w
     }
 
     hasImportFlag(fields, types) {
-        if (!Array.isArray(fields)) return false;
-        return fields.some(field => types.includes(field.type));
+        return hasFieldType(fields, types);
     }
 
     hasMapType(fields) {
