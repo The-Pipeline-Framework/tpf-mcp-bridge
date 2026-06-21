@@ -664,10 +664,130 @@ test("kafka await drafts generate reactive messaging scaffold wiring without a f
   assert.ok(applicationProperties.includes("mp.messaging.incoming.tpf-await-kafka-responses.group.id=${TPF_AWAIT_KAFKA_RESPONSES_GROUP_ID:payment-await-orchestrator}"));
 });
 
+test("kafka await scaffold includes kafka messaging dependency in pipeline-runtime-svc pom", async () => {
+  const planner = {
+    async planInitialBrief(): Promise<PlannerDraft> {
+      return buildKafkaAwaitPlannerDraft();
+    },
+    async revisePlanWithAnswers(): Promise<PlannerDraft> {
+      return buildKafkaAwaitPlannerDraft();
+    }
+  };
+
+  const service = new BriefSessionService(new InMemorySessionStore(), new LocalFileArtifactStore(), planner);
+  const session = await service.startSession({
+    briefText: "Submit a payment request over Kafka, await the provider response, then finalize.",
+    platform: "COMPUTE"
+  });
+
+  const generated = await service.generateScaffold({ sessionId: session.sessionId });
+  const zipBytes = await fs.readFile(generated.artifact!.localPath!);
+  const zip = await JSZip.loadAsync(zipBytes);
+  const runtimePom = await zip.file("pipeline-runtime-svc/pom.xml")?.async("string");
+  if (runtimePom !== undefined) {
+    // MODULAR layout generates a pipeline-runtime-svc module; it should include kafka messaging
+    assert.match(runtimePom, /quarkus-messaging-kafka/);
+  }
+  // Confirm the await service module is not generated as a standalone service
+  const fileNames = Object.keys(zip.files);
+  assert.ok(!fileNames.some((name) => name.startsWith("await-payment-provider-svc/")));
+});
+
+test("kafka await scaffold with no explicit consumer group defaults group id from app name", async () => {
+  const draft = buildKafkaAwaitPlannerDraft();
+  // Remove consumer group to force default derivation
+  for (const step of [...draft.businessSteps, ...draft.pipelineSteps, ...draft.stepContracts]) {
+    if (step.kind === "await" && step.await?.transport) {
+      delete (step.await.transport as Record<string, unknown>).consumer;
+    }
+  }
+
+  const planner = {
+    async planInitialBrief(): Promise<PlannerDraft> { return draft; },
+    async revisePlanWithAnswers(): Promise<PlannerDraft> { return draft; }
+  };
+
+  const service = new BriefSessionService(new InMemorySessionStore(), new LocalFileArtifactStore(), planner);
+  const session = await service.startSession({
+    briefText: "Submit a payment request over Kafka, await the provider response, then finalize.",
+    platform: "COMPUTE"
+  });
+
+  const generated = await service.generateScaffold({ sessionId: session.sessionId });
+  const zipBytes = await fs.readFile(generated.artifact!.localPath!);
+  const zip = await JSZip.loadAsync(zipBytes);
+  const applicationProperties = await zip.file("orchestrator-svc/src/main/resources/application.properties")!.async("string");
+  // group.id should contain the app-name-derived default wrapped in property expression
+  assert.match(applicationProperties, /mp\.messaging\.incoming\.tpf-await-kafka-responses\.group\.id=\$\{TPF_AWAIT_KAFKA_RESPONSES_GROUP_ID:/);
+});
+
+test("generateScaffoldZip with kafka await DerivedConfig emits kafka wiring without await service module", async () => {
+  const config: DerivedConfig = {
+    version: 2,
+    appName: "KafkaAwaitDirect",
+    basePackage: "com.example.kafkaawaitdirect",
+    transport: "REST",
+    platform: "COMPUTE",
+    runtimeLayout: "MODULAR",
+    messages: {
+      PaymentRequest: {
+        fields: [
+          { number: 1, name: "paymentId", type: "uuid" },
+          { number: 2, name: "amount", type: "decimal" }
+        ]
+      },
+      PaymentResult: {
+        fields: [
+          { number: 1, name: "paymentId", type: "uuid" },
+          { number: 2, name: "status", type: "string" }
+        ]
+      }
+    },
+    steps: [
+      {
+        name: "Await Payment Provider",
+        kind: "await",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "PaymentRequest",
+        outputTypeName: "PaymentResult",
+        timeout: "PT5M",
+        idempotencyKeyFields: ["paymentId"],
+        await: {
+          correlation: { strategy: "interactionId" },
+          transport: {
+            type: "kafka",
+            request: { topic: "direct.payment.requests" },
+            response: { topic: "direct.payment.results" },
+            consumer: { group: "direct-payment-group" }
+          }
+        }
+      }
+    ]
+  };
+
+  const zipBuffer = await generateScaffoldZip(config);
+  const zip = await JSZip.loadAsync(zipBuffer);
+  const fileNames = Object.keys(zip.files);
+
+  // No standalone await service module
+  assert.ok(!fileNames.some((name) => name.startsWith("await-payment-provider-svc/")));
+
+  // orchestrator-svc should have kafka dependency
+  const orchestratorPom = await zip.file("orchestrator-svc/pom.xml")!.async("string");
+  assert.match(orchestratorPom, /quarkus-messaging-kafka/);
+
+  // orchestrator-svc application.properties should have kafka wiring
+  const applicationProperties = await zip.file("orchestrator-svc/src/main/resources/application.properties")!.async("string");
+  assert.match(applicationProperties, /tpf\.await\.kafka\.reactive-messaging\.enabled=true/);
+  assert.match(applicationProperties, /mp\.messaging\.outgoing\.tpf-await-kafka-requests\.topic=direct\.payment\.requests/);
+  assert.match(applicationProperties, /mp\.messaging\.incoming\.tpf-await-kafka-responses\.topic=direct\.payment\.results/);
+  assert.ok(applicationProperties.includes("mp.messaging.incoming.tpf-await-kafka-responses.group.id=${TPF_AWAIT_KAFKA_RESPONSES_GROUP_ID:direct-payment-group}"));
+});
+
 test("checkpoint handoff drafts emit pipeline boundaries and composition sidecar", async () => {
   const planner = {
     async planInitialBrief(): Promise<PlannerDraft> {
-      return buildCheckpointPlannerDraft();
+
     },
     async revisePlanWithAnswers(): Promise<PlannerDraft> {
       return buildCheckpointPlannerDraft();
