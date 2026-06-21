@@ -205,7 +205,7 @@ class PipelineGenerator {
             ? messageDefinition.fields
             : null;
         if (typeName && !topLevel) {
-            if (messageDefinition === undefined) {
+            if (messageDefinition == null) {
                 throw new Error(`Missing message definition for '${typeName}'`);
             }
             throw new Error(`Invalid message definition for '${typeName}': 'fields' must be an array`);

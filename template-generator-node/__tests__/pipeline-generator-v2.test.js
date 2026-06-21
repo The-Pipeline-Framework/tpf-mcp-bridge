@@ -46,6 +46,26 @@ describe('PipelineGenerator v2', () => {
     expect(config.steps[0].outputTypeName).toBe('CustomerOutput');
   });
 
+  test('digestive fixture preserves existing field numbers', () => {
+    const configPath = path.join(__dirname, '..', 'digestive-config.yaml');
+    const config = YAML.load(fs.readFileSync(configPath, 'utf8'));
+    const expectedFieldNumbers = {
+      FoodItem: { id: 1, name: 2, massGrams: 3, composition: 4 },
+      Bolus: { id: 1, contents: 2, chewedMass: 3, salivaEnzymes: 4 },
+      Chyme: { id: 1, nutrientMix: 2, acidLevel: 3, liquidity: 4 },
+      Nutrients: { id: 1, name: 2, amountMg: 3, absorptionRate: 4 },
+      Residue: { id: 1, dryMatter: 2, remainingFiber: 3 },
+      WasteProduct: { id: 1, massGrams: 2, emoji: 3 }
+    };
+
+    for (const [messageName, expected] of Object.entries(expectedFieldNumbers)) {
+      const actual = Object.fromEntries(
+        config.messages[messageName].fields.map((field) => [field.name, field.number])
+      );
+      expect(actual).toEqual(expected);
+    }
+  });
+
   test('loadConfig normalizes FUNCTION platform aliases', () => {
     const generator = new PipelineGenerator();
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
@@ -696,6 +716,23 @@ steps: []
     );
   });
 
+  test('loadConfig rejects negative version values', () => {
+    const generator = new PipelineGenerator();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
+    const configPath = path.join(tempDir, 'negative-version.yaml');
+    fs.writeFileSync(configPath, `version: -1
+appName: TestApp
+basePackage: com.example.test
+transport: GRPC
+runtimeLayout: MODULAR
+steps: []
+`);
+
+    expect(() => generator.loadConfig(configPath)).toThrow(
+      'Configuration version must be a positive integer'
+    );
+  });
+
   test('toScaffoldConfig rejects missing top-level message definitions', () => {
     const generator = new PipelineGenerator();
     const config = {
@@ -705,6 +742,30 @@ steps: []
       transport: 'GRPC',
       runtimeLayout: 'MODULAR',
       messages: {},
+      steps: [
+        {
+          name: 'Charge Card',
+          cardinality: 'ONE_TO_ONE',
+          inputTypeName: 'ChargeRequest',
+          outputTypeName: 'ChargeResult'
+        }
+      ]
+    };
+
+    expect(() => generator.toScaffoldConfig(config)).toThrow("Missing message definition for 'ChargeRequest'");
+  });
+
+  test('toScaffoldConfig treats null message definitions as missing', () => {
+    const generator = new PipelineGenerator();
+    const config = {
+      version: 2,
+      appName: 'TestApp',
+      basePackage: 'com.example.test',
+      transport: 'GRPC',
+      runtimeLayout: 'MODULAR',
+      messages: {
+        ChargeRequest: null
+      },
       steps: [
         {
           name: 'Charge Card',
