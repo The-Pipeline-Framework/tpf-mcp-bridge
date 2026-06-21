@@ -665,12 +665,14 @@ test("kafka await drafts generate reactive messaging scaffold wiring without a f
 });
 
 test("kafka await scaffold includes kafka messaging dependency in pipeline-runtime-svc pom", async () => {
+  const draft = buildKafkaAwaitPlannerDraft();
+  draft.runtimeLayout = "PIPELINE_RUNTIME";
   const planner = {
     async planInitialBrief(): Promise<PlannerDraft> {
-      return buildKafkaAwaitPlannerDraft();
+      return draft;
     },
     async revisePlanWithAnswers(): Promise<PlannerDraft> {
-      return buildKafkaAwaitPlannerDraft();
+      return draft;
     }
   };
 
@@ -684,13 +686,11 @@ test("kafka await scaffold includes kafka messaging dependency in pipeline-runti
   const zipBytes = await fs.readFile(generated.artifact!.localPath!);
   const zip = await JSZip.loadAsync(zipBytes);
   const runtimePom = await zip.file("pipeline-runtime-svc/pom.xml")?.async("string");
-  if (runtimePom !== undefined) {
-    // MODULAR layout generates a pipeline-runtime-svc module; it should include kafka messaging
-    assert.match(runtimePom, /quarkus-messaging-kafka/);
-  }
+  assert.notEqual(runtimePom, undefined, "expected pipeline-runtime-svc/pom.xml to be generated");
+  assert.match(runtimePom!, /quarkus-messaging-kafka/);
   // Confirm the await service module is not generated as a standalone service
   const fileNames = Object.keys(zip.files);
-  assert.ok(!fileNames.some((name) => name.startsWith("await-payment-provider-svc/")));
+  assert.ok(!fileNames.some((name) => name.startsWith("await-fraud-decision-svc/")));
 });
 
 test("kafka await scaffold with no explicit consumer group defaults group id from app name", async () => {

@@ -766,7 +766,11 @@ class HandlebarsTemplateEngine {
         if (responseTopics.length > 1) {
             throw new Error('Kafka await scaffold currently supports one response topic per generated runtime module.');
         }
-        const explicitGroup = this.uniqueNonBlank(kafkaSteps.map(step => this.awaitTransportString(step, 'consumer', 'group')))[0];
+        const consumerGroups = this.uniqueNonBlank(kafkaSteps.map(step => this.awaitTransportString(step, 'consumer', 'group')));
+        if (consumerGroups.length > 1) {
+            throw new Error('Kafka await scaffold currently supports one consumer group per generated runtime module.');
+        }
+        const explicitGroup = consumerGroups[0];
         const consumerGroup = explicitGroup || `${rootProjectName}-orchestrator`;
         return {
             requestTopic: requestTopics[0],

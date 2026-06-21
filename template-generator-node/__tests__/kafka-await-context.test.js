@@ -175,6 +175,15 @@ describe('createKafkaAwaitContext – HandlebarsTemplateEngine', () => {
       .toThrow('one response topic per generated runtime module');
   });
 
+  test('throws when multiple distinct consumer groups are present', () => {
+    const steps = [
+      makeKafkaAwaitStep('payment.requests', 'payment.results', 'payment-group'),
+      makeKafkaAwaitStep('payment.requests', 'payment.results', 'settlement-group')
+    ];
+    expect(() => engine.createKafkaAwaitContext(steps, 'MyApp'))
+      .toThrow('one consumer group per generated runtime module');
+  });
+
   test('deduplicates identical request topics from multiple kafka steps', () => {
     const steps = [
       makeKafkaAwaitStep('payment.requests', 'payment.results', 'my-group'),
@@ -407,6 +416,15 @@ describe('createKafkaAwaitContext – BrowserTemplateEngine', () => {
     ];
     expect(() => engine.createKafkaAwaitContext(steps, 'MyApp'))
       .toThrow('one response topic per generated runtime module');
+  });
+
+  test('throws when multiple distinct consumer groups are present', () => {
+    const steps = [
+      makeKafkaAwaitStep('payment.requests', 'payment.results', 'payment-group'),
+      makeKafkaAwaitStep('payment.requests', 'payment.results', 'settlement-group')
+    ];
+    expect(() => engine.createKafkaAwaitContext(steps, 'MyApp'))
+      .toThrow('one consumer group per generated runtime module');
   });
 });
 
