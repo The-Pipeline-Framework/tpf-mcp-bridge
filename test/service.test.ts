@@ -698,7 +698,7 @@ test("kafka await scaffold with no explicit consumer group defaults group id fro
   // Remove consumer group to force default derivation
   for (const step of [...draft.businessSteps, ...draft.pipelineSteps, ...draft.stepContracts]) {
     if (step.kind === "await" && step.await?.transport) {
-      delete (step.await.transport as Record<string, unknown>).consumer;
+      delete step.await.transport.consumer;
     }
   }
 
@@ -787,7 +787,7 @@ test("generateScaffoldZip with kafka await DerivedConfig emits kafka wiring with
 test("checkpoint handoff drafts emit pipeline boundaries and composition sidecar", async () => {
   const planner = {
     async planInitialBrief(): Promise<PlannerDraft> {
-
+      return buildCheckpointPlannerDraft();
     },
     async revisePlanWithAnswers(): Promise<PlannerDraft> {
       return buildCheckpointPlannerDraft();
