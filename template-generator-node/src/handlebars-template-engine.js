@@ -490,6 +490,7 @@ class HandlebarsTemplateEngine {
             transportMode,
             unionDefinitions,
             options.input,
+            options.sources,
             options.outputPath
         );
 
@@ -734,7 +735,7 @@ class HandlebarsTemplateEngine {
         await fs.writeFile(pomPath, rendered);
     }
 
-    async generateCommonModule(appName, basePackage, steps, aspectDefinitions, transport, unionDefinitions, input, outputPath) {
+    async generateCommonModule(appName, basePackage, steps, aspectDefinitions, transport, unionDefinitions, input, sources, outputPath) {
         const commonPath = path.join(outputPath, 'common');
         await fs.ensureDir(path.join(commonPath, 'src/main/java', this.toPath(basePackage + '.common.domain')));
         await fs.ensureDir(path.join(commonPath, 'src/main/java', this.toPath(basePackage + '.common.dto')));
@@ -760,7 +761,7 @@ class HandlebarsTemplateEngine {
 
         await this.generateUnionClasses(unionDefinitions, basePackage, commonPath);
 
-        await this.generateObjectSnapshotMapper(input, basePackage, commonPath);
+        await this.generateObjectSnapshotMapper(input, sources, basePackage, commonPath);
 
         // Generate base entity
         await this.generateBaseEntity(basePackage, commonPath);
@@ -1199,9 +1200,9 @@ class HandlebarsTemplateEngine {
         }
     }
 
-    async generateObjectSnapshotMapper(input, basePackage, commonPath) {
+    async generateObjectSnapshotMapper(input, sources, basePackage, commonPath) {
         const objectInput = this.objectInputBoundary(input);
-        if (!objectInput) {
+        if (!this.hasObjectIngest(input, sources)) {
             return;
         }
         if (!objectInput.emits || !objectInput.emits.mapper || (!objectInput.emits.typeName && !objectInput.emits.type)) {

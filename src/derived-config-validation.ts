@@ -1,4 +1,5 @@
 import type { DerivedConfig, PipelineCompositionManifest } from "./types.js";
+import { legacyObjectInputBoundary, simpleTypeName, typeNamesMatch } from "./type-name-utils.js";
 
 const MAX_BASE_PACKAGE_LENGTH = 80;
 const MAX_PACKAGE_SEGMENTS = 8;
@@ -324,21 +325,8 @@ function validateVirtualThreadStep(step: DerivedConfig["steps"][number]): void {
   }
 }
 
-// TPF scaffold messages are keyed by unique simple names today. If fully-qualified
-// message keys are introduced, update these helpers to detect simple-name collisions.
 function hasKnownType(knownMessages: Set<string>, value: string): boolean {
   return knownMessages.has(value) || knownMessages.has(simpleTypeName(value));
-}
-
-function typeNamesMatch(left: string | undefined, right: string | undefined): boolean {
-  if (!left || !right) {
-    return false;
-  }
-  return left === right || simpleTypeName(left) === simpleTypeName(right);
-}
-
-function simpleTypeName(value: string): string {
-  return value.replace(/.*\./, "");
 }
 
 function validateObjectSources(config: DerivedConfig): void {
@@ -423,11 +411,6 @@ function validateBoundaries(config: DerivedConfig, knownBoundaryTypes: Set<strin
       }
     }
   }
-}
-
-function legacyObjectInputBoundary(input: DerivedConfig["input"]): NonNullable<DerivedConfig["input"]>["object"] | undefined {
-  const legacy = input as unknown as { from?: string; emits?: NonNullable<NonNullable<DerivedConfig["input"]>["object"]>["emits"] } | undefined;
-  return legacy?.from && legacy.emits ? { source: legacy.from, emits: legacy.emits } : undefined;
 }
 
 function validateBoundaryName(value: string, label: string): void {

@@ -821,7 +821,7 @@ test("generateScaffoldZip with query connector emits query config without query 
   assert.match(orchestratorPom, /query-jpa-connector/);
   const applicationProperties = await zip.file("orchestrator-svc/src/main/resources/application.properties")!.async("string");
   assert.match(applicationProperties, /quarkus\.datasource\.db-kind=\$\{TPF_QUERY_JPA_DB_KIND:postgresql\}/);
-  assert.match(applicationProperties, /quarkus\.hibernate-orm\.packages=com\.example\.queryconnector\.common\.domain/);
+  assert.match(applicationProperties, /#\s*quarkus\.hibernate-orm\.packages=com\.example\.queryconnector\.common\.domain/);
 });
 
 test("object ingest DerivedConfig validates source and first step continuity", async () => {

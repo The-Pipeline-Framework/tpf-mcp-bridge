@@ -25,6 +25,7 @@ import type {
   StepKind,
   StepContract
 } from "./types.js";
+import { legacyObjectInputBoundary, simpleTypeName, typeNamesMatch } from "./type-name-utils.js";
 
 export function analyzePlannerDraft(
   input: BriefInput | SessionStartInput,
@@ -244,11 +245,6 @@ function normalizeObjectInputBoundary(boundary: PipelineInputBoundary["object"] 
       mapper: emits.mapper.trim()
     }
   };
-}
-
-function legacyObjectInputBoundary(boundary: PipelineInputBoundary | undefined): PipelineInputBoundary["object"] | undefined {
-  const legacy = boundary as unknown as { from?: string; emits?: NonNullable<PipelineInputBoundary["object"]>["emits"] } | undefined;
-  return legacy?.from && legacy.emits ? { from: legacy.from, emits: legacy.emits } : undefined;
 }
 
 function normalizeOutputBoundary(boundary: PipelineOutputBoundary | undefined): PipelineOutputBoundary | undefined {
@@ -652,17 +648,6 @@ function assertQuerySemantics(
 function isForwardChainStep(step: BusinessStep): boolean {
   const role = inferFlowRole(step.flowRole, step.name, step.inputTypeName, step.outputTypeName);
   return role === "forward" || normalizeStepKind(step.kind) === "query";
-}
-
-function typeNamesMatch(left: string | undefined, right: string | undefined): boolean {
-  if (!left || !right) {
-    return false;
-  }
-  return left === right || left.replace(/.*\./, "") === right.replace(/.*\./, "");
-}
-
-function simpleTypeName(value: string): string {
-  return value.replace(/.*\./, "");
 }
 
 function normalizeAwaitConfig(

@@ -397,7 +397,7 @@ class BrowserTemplateEngine {
             normalizedOptions.fileCallback);
 
         // Generate common module
-        await this.generateCommonModule(appNameValue, basePackageValue, stepsValue, transportMode, normalizedOptions.unionDefinitions, normalizedOptions.input, normalizedOptions.fileCallback);
+        await this.generateCommonModule(appNameValue, basePackageValue, stepsValue, transportMode, normalizedOptions.unionDefinitions, normalizedOptions.input, normalizedOptions.sources, normalizedOptions.fileCallback);
 
         // Generate each step service
         for (let i = 0; i < serviceSteps.length; i++) {
@@ -510,7 +510,7 @@ class BrowserTemplateEngine {
         await fileCallback('pom.xml', rendered);
     }
 
-    async generateCommonModule(appName, basePackage, steps, transport, unionDefinitions, input, fileCallback) {
+    async generateCommonModule(appName, basePackage, steps, transport, unionDefinitions, input, sources, fileCallback) {
         // Generate common POM
         await this.generateCommonPom(appName, basePackage, transport, fileCallback);
 
@@ -524,7 +524,7 @@ class BrowserTemplateEngine {
 
         await this.generateUnionClasses(unionDefinitions, basePackage, fileCallback);
 
-        await this.generateObjectSnapshotMapper(input, basePackage, fileCallback);
+        await this.generateObjectSnapshotMapper(input, sources, basePackage, fileCallback);
 
         // Generate base entity
         await this.generateBaseEntity(basePackage, fileCallback);
@@ -921,9 +921,9 @@ class BrowserTemplateEngine {
         }
     }
 
-    async generateObjectSnapshotMapper(input, basePackage, fileCallback) {
+    async generateObjectSnapshotMapper(input, sources, basePackage, fileCallback) {
         const objectInput = this.objectInputBoundary(input);
-        if (!objectInput) {
+        if (!this.hasObjectIngest(input, sources)) {
             return;
         }
         if (!objectInput.emits || !objectInput.emits.mapper || (!objectInput.emits.typeName && !objectInput.emits.type)) {
