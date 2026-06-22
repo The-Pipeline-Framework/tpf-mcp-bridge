@@ -31,6 +31,8 @@ interface PipelineGeneratorInstance {
     runtimeLayout?: string;
     input?: unknown;
     output?: unknown;
+    queries?: unknown;
+    sources?: unknown;
   };
 }
 
@@ -46,6 +48,8 @@ interface BrowserTemplateEngineInstance {
     runtimeLayout?: string;
     input?: unknown;
     output?: unknown;
+    queries?: unknown;
+    sources?: unknown;
     fileCallback: FileCallback;
   }): Promise<void>;
 }
@@ -117,6 +121,8 @@ export async function generateScaffoldFiles(
       runtimeLayout: scaffoldConfig.runtimeLayout,
       input: scaffoldConfig.input,
       output: scaffoldConfig.output,
+      queries: scaffoldConfig.queries,
+      sources: scaffoldConfig.sources,
       fileCallback
     });
     await fileCallback("config/pipeline.yaml", YAML.dump(loaded, { lineWidth: -1 }));

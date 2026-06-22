@@ -439,9 +439,12 @@ class HandlebarsTemplateEngine {
         const resolvedBasePackage = options.basePackage;
         const resolvedSteps = options.steps;
         const unionDefinitions = Array.isArray(options.unionDefinitions) ? options.unionDefinitions : [];
-        const serviceSteps = resolvedSteps.filter(step => step.generatesServiceModule !== false && step.kind !== 'await');
+        const serviceSteps = resolvedSteps.filter(step => this.isServiceStep(step));
         const kafkaAwait = this.createKafkaAwaitContext(resolvedSteps, resolvedAppName);
+        const hasJpaQuery = this.hasJpaQueries(options.queries);
+        const hasObjectIngest = this.hasObjectIngest(options.input, options.sources);
         const hasCheckpointBoundaries = this.hasCheckpointBoundaries(options.input, options.output);
+        const requiresQueueAsyncRuntime = hasCheckpointBoundaries || hasObjectIngest || this.hasAwaitSteps(resolvedSteps);
         const aspectConfig = options.aspects || {};
         const normalizedRuntimeLayout = this.normalizeRuntimeLayout(options.runtimeLayout);
         const transportMode = this.normalizeTransport(options.transport, normalizedRuntimeLayout);
@@ -486,6 +489,8 @@ class HandlebarsTemplateEngine {
             aspectDefinitions,
             transportMode,
             unionDefinitions,
+            options.input,
+            options.sources,
             options.outputPath
         );
 
@@ -498,7 +503,8 @@ class HandlebarsTemplateEngine {
                 options.outputPath,
                 i,
                 serviceSteps,
-                transportMode
+                transportMode,
+                requiresQueueAsyncRuntime
             );
         }
 
@@ -525,7 +531,10 @@ class HandlebarsTemplateEngine {
             includeCacheInvalidationModule,
             aspectDefinitions,
             transportMode,
+            hasJpaQuery,
+            hasObjectIngest,
             hasCheckpointBoundaries,
+            requiresQueueAsyncRuntime,
             options.outputPath);
 
         if (normalizedRuntimeLayout === 'pipeline-runtime') {
@@ -534,7 +543,10 @@ class HandlebarsTemplateEngine {
                 resolvedBasePackage,
                 serviceSteps,
                 kafkaAwait,
+                hasJpaQuery,
+                hasObjectIngest,
                 hasCheckpointBoundaries,
+                requiresQueueAsyncRuntime,
                 options.outputPath);
         } else if (normalizedRuntimeLayout === 'monolith') {
             await this.generateMonolithModule(
@@ -544,7 +556,10 @@ class HandlebarsTemplateEngine {
                 includePersistenceModule,
                 includeCacheInvalidationModule,
                 kafkaAwait,
+                hasJpaQuery,
+                hasObjectIngest,
                 hasCheckpointBoundaries,
+                requiresQueueAsyncRuntime,
                 options.outputPath);
         }
 
@@ -600,6 +615,8 @@ class HandlebarsTemplateEngine {
                 runtimeLayout: normalizedLayout,
                 input: options.input && typeof options.input === 'object' ? options.input : undefined,
                 output: options.output && typeof options.output === 'object' ? options.output : undefined,
+                queries: options.queries && typeof options.queries === 'object' ? options.queries : {},
+                sources: options.sources && typeof options.sources === 'object' ? options.sources : {},
                 outputPath: options.outputPath
             };
         }
@@ -655,6 +672,8 @@ class HandlebarsTemplateEngine {
                 runtimeLayout: normalizedLayout,
                 input: options.input && typeof options.input === 'object' ? options.input : undefined,
                 output: options.output && typeof options.output === 'object' ? options.output : undefined,
+                queries: options.queries && typeof options.queries === 'object' ? options.queries : {},
+                sources: options.sources && typeof options.sources === 'object' ? options.sources : {},
                 outputPath: options.outputPath
             };
         }
@@ -680,6 +699,8 @@ class HandlebarsTemplateEngine {
             runtimeLayout: this.normalizeRuntimeLayout(resolvedRuntimeLayout),
             input: undefined,
             output: undefined,
+            queries: {},
+            sources: {},
             outputPath: resolvedOutputPath
         };
     }
@@ -714,7 +735,7 @@ class HandlebarsTemplateEngine {
         await fs.writeFile(pomPath, rendered);
     }
 
-    async generateCommonModule(appName, basePackage, steps, aspectDefinitions, transport, unionDefinitions, outputPath) {
+    async generateCommonModule(appName, basePackage, steps, aspectDefinitions, transport, unionDefinitions, input, sources, outputPath) {
         const commonPath = path.join(outputPath, 'common');
         await fs.ensureDir(path.join(commonPath, 'src/main/java', this.toPath(basePackage + '.common.domain')));
         await fs.ensureDir(path.join(commonPath, 'src/main/java', this.toPath(basePackage + '.common.dto')));
@@ -739,6 +760,8 @@ class HandlebarsTemplateEngine {
         }
 
         await this.generateUnionClasses(unionDefinitions, basePackage, commonPath);
+
+        await this.generateObjectSnapshotMapper(input, sources, basePackage, commonPath);
 
         // Generate base entity
         await this.generateBaseEntity(basePackage, commonPath);
@@ -805,11 +828,37 @@ class HandlebarsTemplateEngine {
         return Boolean((input && input.subscription) || (output && output.checkpoint));
     }
 
+    hasObjectIngest(input, sources) {
+        return Boolean(this.objectInputBoundary(input) && sources && Object.keys(sources).length > 0);
+    }
+
+    objectInputBoundary(input) {
+        if (!input || typeof input !== 'object') {
+            return null;
+        }
+        if (input.object && input.object.emits) {
+            const source = input.object.source || input.object.from;
+            return source ? { ...input.object, source } : null;
+        }
+        if (input.from && input.emits) {
+            return { source: input.from, emits: input.emits };
+        }
+        return null;
+    }
+
     hasAwaitSteps(steps) {
         return (steps || []).some(step => step && step.kind === 'await');
     }
 
-    async generatePipelineRuntimeModule(appName, basePackage, steps, kafkaAwait, hasCheckpointBoundaries, outputPath) {
+    isServiceStep(step) {
+        return step && step.generatesServiceModule !== false && step.kind !== 'await' && step.kind !== 'query';
+    }
+
+    hasJpaQueries(queries) {
+        return Object.values(queries || {}).some(query => query && query.connector === 'jpa');
+    }
+
+    async generatePipelineRuntimeModule(appName, basePackage, steps, kafkaAwait, hasJpaQuery, hasObjectIngest, hasCheckpointBoundaries, requiresQueueAsyncRuntime, outputPath) {
         const modulePath = path.join(outputPath, 'pipeline-runtime-svc');
         await fs.ensureDir(path.join(modulePath, 'src/main/resources', 'META-INF'));
 
@@ -817,6 +866,8 @@ class HandlebarsTemplateEngine {
             basePackage,
             rootProjectName: appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-'),
             kafkaAwait,
+            hasJpaQuery,
+            hasObjectIngest,
             sourceDirs: (steps || []).map((step, index) => {
                 const key = `s${index}`;
                 return {
@@ -833,11 +884,14 @@ class HandlebarsTemplateEngine {
 
         const appProps = this.render('application-properties', {
             serviceName: 'pipeline-runtime-svc',
+            basePackage,
             rootProjectName: context.rootProjectName,
             portOffset: 1,
             kafkaAwait,
+            hasJpaQuery,
+            hasObjectIngest,
             hasCheckpointBoundaries,
-            hasQueueAsyncRuntime: hasCheckpointBoundaries || this.hasAwaitSteps(steps)
+            hasQueueAsyncRuntime: requiresQueueAsyncRuntime
         });
         await fs.writeFile(path.join(modulePath, 'src/main/resources', 'application.properties'), appProps);
         await this.generateModuleDevProperties(modulePath);
@@ -852,7 +906,10 @@ class HandlebarsTemplateEngine {
         includePersistenceModule,
         includeCacheInvalidationModule,
         kafkaAwait,
+        hasJpaQuery,
+        hasObjectIngest,
         hasCheckpointBoundaries,
+        requiresQueueAsyncRuntime,
         outputPath
     ) {
         const modulePath = path.join(outputPath, 'monolith-svc');
@@ -892,6 +949,8 @@ class HandlebarsTemplateEngine {
             includePersistenceModule,
             includeCacheInvalidationModule,
             kafkaAwait,
+            hasJpaQuery,
+            hasObjectIngest,
             sourceDirs
         };
 
@@ -900,11 +959,14 @@ class HandlebarsTemplateEngine {
 
         const appProps = this.render('application-properties', {
             serviceName: 'monolith-svc',
+            basePackage,
             rootProjectName: context.rootProjectName,
             portOffset: 0,
             kafkaAwait,
+            hasJpaQuery,
+            hasObjectIngest,
             hasCheckpointBoundaries,
-            hasQueueAsyncRuntime: hasCheckpointBoundaries || this.hasAwaitSteps(steps)
+            hasQueueAsyncRuntime: requiresQueueAsyncRuntime
         });
         await fs.writeFile(path.join(modulePath, 'src/main/resources', 'application.properties'), appProps);
         await this.generateModuleDevProperties(modulePath);
@@ -1138,6 +1200,26 @@ class HandlebarsTemplateEngine {
         }
     }
 
+    async generateObjectSnapshotMapper(input, sources, basePackage, commonPath) {
+        const objectInput = this.objectInputBoundary(input);
+        if (!this.hasObjectIngest(input, sources)) {
+            return;
+        }
+        if (!objectInput.emits || !objectInput.emits.mapper || (!objectInput.emits.typeName && !objectInput.emits.type)) {
+            throw new Error('Object ingest scaffold requires input.object.emits.mapper and input.object.emits.type or typeName.');
+        }
+        const mapperType = objectInput.emits.mapper;
+        const mapperClassName = mapperType.split('.').pop();
+        const outputTypeName = objectInput.emits.typeName || objectInput.emits.type.split('.').pop();
+        const context = {
+            basePackage,
+            className: mapperClassName,
+            outputTypeName
+        };
+        const mapperPath = path.join(commonPath, 'src/main/java', this.toPath(basePackage + '.common.mapper'), mapperClassName + '.java');
+        await fs.writeFile(mapperPath, this.render('object-snapshot-mapper', context));
+    }
+
     async generateMapperClass(className, step, basePackage, commonPath) {
         const mapperFields = this.mapperFieldsForClass(className, step)
             .map(field => ({
@@ -1203,7 +1285,7 @@ class HandlebarsTemplateEngine {
         }
     }
 
-    async generateStepService(appName, basePackage, step, outputPath, stepIndex, allSteps, transport) {
+    async generateStepService(appName, basePackage, step, outputPath, stepIndex, allSteps, transport, requiresQueueAsyncRuntime) {
         const safeServiceName = String(step.serviceName || '')
           .toLowerCase()
           .replace(/[^a-z0-9\-_]/g, '');
@@ -1227,7 +1309,7 @@ class HandlebarsTemplateEngine {
         step.portOffset = stepIndex + 1;
 
         // Generate application.properties
-        await this.generateApplicationProperties(step, basePackage, stepPath);
+        await this.generateApplicationProperties(step, basePackage, stepPath, requiresQueueAsyncRuntime);
 
         // Generate application-dev.properties
         await this.generateApplicationDevProperties(step, basePackage, stepPath);
@@ -1320,10 +1402,13 @@ class HandlebarsTemplateEngine {
         includeCacheInvalidationModule,
         aspectDefinitions,
         transport,
+        hasJpaQuery,
+        hasObjectIngest,
         hasCheckpointBoundaries,
+        requiresQueueAsyncRuntime,
         orchPath) {
         // Create context for orchestrator properties
-        const serviceSteps = steps.filter(step => step.generatesServiceModule !== false && step.kind !== 'await');
+        const serviceSteps = steps.filter(step => this.isServiceStep(step));
         const awaitTransports = new Set((steps || [])
             .filter(step => step.kind === 'await')
             .map(step => step.await && step.await.transport && step.await.transport.type)
@@ -1344,12 +1429,14 @@ class HandlebarsTemplateEngine {
         context.includeCacheInvalidationModule = includeCacheInvalidationModule;
         context.kafkaAwait = this.createKafkaAwaitContext(steps, appName);
         context.hasCheckpointBoundaries = hasCheckpointBoundaries;
-        context.hasQueueAsyncRuntime = hasCheckpointBoundaries || awaitTransports.size > 0;
+        context.hasQueueAsyncRuntime = requiresQueueAsyncRuntime;
         context.hasAwaitSteps = awaitTransports.size > 0;
         context.hasKafkaAwait = awaitTransports.has('kafka');
         context.hasSqsAwait = awaitTransports.has('sqs');
         context.hasWebhookAwait = awaitTransports.has('webhook');
         context.hasInteractionApiAwait = awaitTransports.has('interaction-api');
+        context.hasJpaQuery = hasJpaQuery;
+        context.hasObjectIngest = hasObjectIngest;
         context.hasCacheAspect = (aspectDefinitions || []).some(aspect => aspect.name === 'cache');
         if (includePersistenceModule) {
             context.persistencePortOffset = serviceSteps.length + 1;
@@ -1420,8 +1507,8 @@ class HandlebarsTemplateEngine {
         await fs.writeFile(appDevPropsPath, rendered);
     }
 
-    async generateApplicationProperties(step, basePackage, stepPath) {
-        const context = { ...step, basePackage };
+    async generateApplicationProperties(step, basePackage, stepPath, requiresQueueAsyncRuntime) {
+        const context = { ...step, basePackage, hasQueueAsyncRuntime: requiresQueueAsyncRuntime };
         const rendered = this.render('application-properties', context);
         const appPropsPath = path.join(stepPath, 'src/main/resources', 'application.properties');
         await fs.writeFile(appPropsPath, rendered);
@@ -1575,7 +1662,10 @@ class HandlebarsTemplateEngine {
         includeCacheInvalidationModule,
         aspectDefinitions,
         transport,
+        hasJpaQuery,
+        hasObjectIngest,
         hasCheckpointBoundaries,
+        requiresQueueAsyncRuntime,
         outputPath) {
         const orchPath = path.join(outputPath, 'orchestrator-svc');
         const classPath = path.join(orchPath, 'src/main/java', this.toPath(basePackage + '.orchestrator.service'));
@@ -1593,6 +1683,8 @@ class HandlebarsTemplateEngine {
             includeCacheInvalidationModule,
             transport,
             steps,
+            hasJpaQuery,
+            hasObjectIngest,
             orchPath);
 
         // Generate orchestrator application.properties
@@ -1604,7 +1696,10 @@ class HandlebarsTemplateEngine {
             includeCacheInvalidationModule,
             aspectDefinitions,
             transport,
+            hasJpaQuery,
+            hasObjectIngest,
             hasCheckpointBoundaries,
+            requiresQueueAsyncRuntime,
             orchPath);
 
         // Generate orchestrator application-dev.properties
@@ -1623,6 +1718,8 @@ class HandlebarsTemplateEngine {
         includeCacheInvalidationModule,
         transport,
         steps,
+        hasJpaQuery,
+        hasObjectIngest,
         orchPath) {
         const transportMode = this.normalizeTransport(transport);
         const awaitTransports = new Set((steps || [])
@@ -1642,6 +1739,8 @@ class HandlebarsTemplateEngine {
             hasSqsAwait: awaitTransports.has('sqs'),
             hasWebhookAwait: awaitTransports.has('webhook'),
             hasInteractionApiAwait: awaitTransports.has('interaction-api'),
+            hasJpaQuery,
+            hasObjectIngest,
             isRestTransport: transportMode === 'REST',
             isGrpcTransport: transportMode === 'GRPC'
         };

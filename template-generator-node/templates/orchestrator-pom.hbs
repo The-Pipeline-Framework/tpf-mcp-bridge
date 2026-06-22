@@ -74,6 +74,22 @@
             <artifactId>quarkus-amazon-sqs</artifactId>
         </dependency>
         {{/if}}
+        {{#if hasJpaQuery}}
+        <!-- Query-step JPA connector starter -->
+        <dependency>
+            <groupId>org.pipelineframework</groupId>
+            <artifactId>query-jpa-connector</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        {{/if}}
+        {{#if hasObjectIngest}}
+        <!-- Object ingest connector starter -->
+        <dependency>
+            <groupId>org.pipelineframework</groupId>
+            <artifactId>object-ingest-connector</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        {{/if}}
         <!-- Tests -->
         <dependency>
             <groupId>io.quarkus</groupId>

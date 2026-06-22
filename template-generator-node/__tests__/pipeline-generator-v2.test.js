@@ -337,6 +337,143 @@ steps:
     expect(step.outputFields[1].protoType).toBe('string');
   });
 
+  test('loadConfig and toScaffoldConfig preserve JPA query connector semantics', () => {
+    const generator = new PipelineGenerator();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
+    const configPath = path.join(tempDir, 'query-connector.yaml');
+    fs.writeFileSync(configPath, `version: 2
+appName: QueryConnectorApp
+basePackage: com.example.queryconnector
+transport: REST
+runtimeLayout: MODULAR
+messages:
+  CustomerLookup:
+    fields:
+      - number: 1
+        name: customerId
+        type: string
+  CustomerRisk:
+    fields:
+      - number: 1
+        name: customerId
+        type: string
+      - number: 2
+        name: riskScore
+        type: int32
+  CustomerDecision:
+    fields:
+      - number: 1
+        name: customerId
+        type: string
+      - number: 2
+        name: status
+        type: string
+queries:
+  customer-risk-by-id:
+    connector: jpa
+    inputType: CustomerLookup
+    outputType: CustomerRisk
+    jpa:
+      entity: com.example.queryconnector.common.domain.CustomerRiskEntity
+      where:
+        customerId: customerId
+      projection:
+        customerId: customerId
+        riskScore: riskScore
+      result: single
+steps:
+  - name: Load Customer Risk
+    kind: query
+    cardinality: ONE_TO_ONE
+    inputTypeName: CustomerLookup
+    outputTypeName: CustomerRisk
+    query: customer-risk-by-id
+    capture:
+      keyFields:
+        - customerId
+  - name: Classify Customer
+    kind: internal
+    cardinality: ONE_TO_ONE
+    inputTypeName: CustomerRisk
+    outputTypeName: CustomerDecision
+`);
+
+    const config = generator.loadConfig(configPath);
+    expect(config.queries['customer-risk-by-id'].connector).toBe('jpa');
+    expect(config.steps[0].kind).toBe('query');
+    expect(config.steps[0].capture.keyFields).toEqual(['customerId']);
+
+    const scaffold = generator.toScaffoldConfig(config);
+    expect(scaffold.queries['customer-risk-by-id'].jpa.entity).toBe('com.example.queryconnector.common.domain.CustomerRiskEntity');
+    expect(scaffold.steps[0].kind).toBe('query');
+    expect(scaffold.steps[0].query).toBe('customer-risk-by-id');
+    expect(scaffold.steps[0].inputFields.map((field) => field.name)).toEqual(['customerId']);
+    expect(scaffold.steps[1].inputFields.map((field) => field.name)).toEqual(['customerId', 'riskScore']);
+  });
+
+  test('loadConfig and toScaffoldConfig preserve object-ingest boundary semantics', () => {
+    const generator = new PipelineGenerator();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
+    const configPath = path.join(tempDir, 'object-ingest.yaml');
+    fs.writeFileSync(configPath, `version: 2
+appName: ObjectIngestApp
+basePackage: com.example.objectingest
+transport: REST
+runtimeLayout: MODULAR
+sources:
+  documents:
+    kind: object
+    provider: filesystem
+    location:
+      root: /var/tpf/inbox
+    poll:
+      enabled: true
+      interval: PT30S
+      batchSize: 10
+input:
+  object:
+    source: documents
+    emits:
+      type: com.example.objectingest.common.domain.RawDocument
+      typeName: RawDocument
+      mapper: com.example.objectingest.common.mapper.RawDocumentObjectSnapshotMapper
+messages:
+  RawDocument:
+    fields:
+      - number: 1
+        name: documentId
+        type: string
+      - number: 2
+        name: objectUri
+        type: string
+  ParsedDocument:
+    fields:
+      - number: 1
+        name: documentId
+        type: string
+      - number: 2
+        name: status
+        type: string
+steps:
+  - name: Parse Document
+    kind: internal
+    cardinality: ONE_TO_ONE
+    inputTypeName: RawDocument
+    outputTypeName: ParsedDocument
+`);
+
+    const config = generator.loadConfig(configPath);
+    expect(config.sources.documents.provider).toBe('filesystem');
+    expect(config.input.object.source).toBe('documents');
+    expect(config.input.object.emits.mapper).toBe('com.example.objectingest.common.mapper.RawDocumentObjectSnapshotMapper');
+
+    const scaffold = generator.toScaffoldConfig(config);
+    expect(scaffold.sources.documents.location.root).toBe('/var/tpf/inbox');
+    expect(scaffold.input.object.emits.typeName).toBe('RawDocument');
+    expect(scaffold.steps[0].inputTypeName).toBe('RawDocument');
+    expect(scaffold.steps[0].inputFields.map((field) => field.name)).toEqual(['documentId', 'objectUri']);
+  });
+
   test('loadConfig accepts remote execution metadata for v2 steps', () => {
     const generator = new PipelineGenerator();
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));

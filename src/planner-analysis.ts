@@ -10,9 +10,11 @@ import type {
   MessageCatalogEntry,
   MessageDefinition,
   MessageField,
+  PipelineObjectSourceDefinition,
   PipelineCompositionManifest,
   PipelineInputBoundary,
   PipelineOutputBoundary,
+  PipelineQueryDefinition,
   PlannerDraft,
   PipelineStep,
   Question,
@@ -23,6 +25,7 @@ import type {
   StepKind,
   StepContract
 } from "./types.js";
+import { legacyObjectInputBoundary, simpleTypeName, typeNamesMatch } from "./type-name-utils.js";
 
 export function analyzePlannerDraft(
   input: BriefInput | SessionStartInput,
@@ -48,6 +51,8 @@ export function analyzePlannerDraft(
   const inputBoundary = normalizeInputBoundary(draft.inputBoundary);
   const outputBoundary = normalizeOutputBoundary(draft.outputBoundary);
   const compositionManifest = normalizeCompositionManifest(draft.compositionManifest);
+  const queries = normalizeQueries(draft.queries);
+  const sources = normalizeObjectSources(draft.sources);
   const explicitQuestions = normalizeQuestions(draft.questions || []);
   const contractQuestions = normalizeContractQuestions(draft.contractQuestions);
   const questions = [...explicitQuestions];
@@ -72,11 +77,13 @@ export function analyzePlannerDraft(
     ...(inputBoundary ? { input: inputBoundary } : {}),
     ...(outputBoundary ? { output: outputBoundary } : {}),
     messages,
+    ...(Object.keys(queries).length > 0 ? { queries } : {}),
+    ...(Object.keys(sources).length > 0 ? { sources } : {}),
     steps: inferredSteps.map(({ id, ...step }) => step),
     ...(Object.keys(resolvedAspects).length > 0 ? { aspects: resolvedAspects } : {})
   };
 
-  assertPlannerSemantics(businessSteps, stepContracts, inferredSteps, resolvedAspects, platform, inputBoundary, outputBoundary, compositionManifest);
+  assertPlannerSemantics(businessSteps, stepContracts, inferredSteps, queries, sources, resolvedAspects, platform, inputBoundary, outputBoundary, compositionManifest);
 
   const couplingFindings = draft.couplingFindings?.length ? draft.couplingFindings : deriveCouplingFindings(businessSteps);
   const status = questions.length > 0 || contractQuestions.length > 0 ? "needs_input" : "ready";
@@ -147,6 +154,8 @@ function normalizeBusinessSteps(
       ...step,
       id,
       kind: normalizeStepKind(step.kind),
+      ...(normalizeQueryId(step.query) ? { query: normalizeQueryId(step.query) } : {}),
+      ...(normalizeQueryCapture(step.capture) ? { capture: normalizeQueryCapture(step.capture) } : {}),
       timeout: step.timeout?.trim() || undefined,
       idempotencyKeyFields: normalizeIdempotencyKeyFields(step.idempotencyKeyFields),
       await: normalizeAwaitConfig(step.await),
@@ -170,6 +179,8 @@ function normalizeStepContracts(
     return {
       ...contract,
       kind: normalizeStepKind(contract.kind),
+      ...(normalizeQueryId(contract.query) ? { query: normalizeQueryId(contract.query) } : {}),
+      ...(normalizeQueryCapture(contract.capture) ? { capture: normalizeQueryCapture(contract.capture) } : {}),
       timeout: contract.timeout?.trim() || undefined,
       idempotencyKeyFields: normalizeIdempotencyKeyFields(contract.idempotencyKeyFields),
       await: normalizeAwaitConfig(contract.await),
@@ -192,6 +203,8 @@ function normalizePipelineSteps(steps: AnalyzeResult["inferredSteps"]): AnalyzeR
       ...step,
       id,
       kind: normalizeStepKind(step.kind),
+      ...(normalizeQueryId(step.query) ? { query: normalizeQueryId(step.query) } : {}),
+      ...(normalizeQueryCapture(step.capture) ? { capture: normalizeQueryCapture(step.capture) } : {}),
       timeout: step.timeout?.trim() || undefined,
       idempotencyKeyFields: normalizeIdempotencyKeyFields(step.idempotencyKeyFields),
       await: normalizeAwaitConfig(step.await)
@@ -200,13 +213,36 @@ function normalizePipelineSteps(steps: AnalyzeResult["inferredSteps"]): AnalyzeR
 }
 
 function normalizeInputBoundary(boundary: PipelineInputBoundary | undefined): PipelineInputBoundary | undefined {
-  if (!boundary?.subscription?.publication?.trim()) {
+  const subscriptionPublication = boundary?.subscription?.publication?.trim();
+  const objectBoundary = normalizeObjectInputBoundary(boundary?.object || legacyObjectInputBoundary(boundary));
+  if (!subscriptionPublication && !objectBoundary) {
     return undefined;
   }
   return {
-    subscription: {
-      publication: boundary.subscription.publication.trim(),
-      ...(boundary.subscription.mapper?.trim() ? { mapper: boundary.subscription.mapper.trim() } : {})
+    ...(subscriptionPublication
+      ? {
+          subscription: {
+            publication: subscriptionPublication,
+            ...(boundary?.subscription?.mapper?.trim() ? { mapper: boundary.subscription.mapper.trim() } : {})
+          }
+        }
+      : {}),
+    ...(objectBoundary ? { object: objectBoundary } : {})
+  };
+}
+
+function normalizeObjectInputBoundary(boundary: PipelineInputBoundary["object"] | undefined): PipelineInputBoundary["object"] | undefined {
+  const source = boundary?.source?.trim() || boundary?.from?.trim();
+  const emits = boundary?.emits;
+  if (!source || !emits?.type?.trim() || !emits?.mapper?.trim()) {
+    return undefined;
+  }
+  return {
+    source,
+    emits: {
+      type: emits.type.trim(),
+      ...(emits.typeName?.trim() ? { typeName: emits.typeName.trim() } : {}),
+      mapper: emits.mapper.trim()
     }
   };
 }
@@ -254,6 +290,104 @@ function normalizeCompositionManifest(manifest: PipelineCompositionManifest | un
   };
 }
 
+function normalizeQueries(
+  queries: Record<string, PipelineQueryDefinition> | undefined
+): Record<string, PipelineQueryDefinition> {
+  if (!queries || typeof queries !== "object") {
+    return {};
+  }
+  return Object.fromEntries(Object.entries(queries).map(([id, query]) => {
+    const normalizedId = id.trim();
+    if (!normalizedId) {
+      throw new Error("Planner draft defines a query with an empty id.");
+    }
+    const inputType = query.inputType?.trim();
+    const input = query.input?.trim();
+    const outputType = query.outputType?.trim();
+    const output = query.output?.trim();
+    if (!query.jpa) {
+      throw new Error(`Planner draft query '${normalizedId}' must include jpa configuration.`);
+    }
+    const entity = query.jpa.entity?.trim();
+    if (!entity) {
+      throw new Error(`Planner draft query '${normalizedId}' must include jpa.entity.`);
+    }
+    return [
+      normalizedId,
+      {
+        connector: "jpa",
+        ...(inputType ? { inputType } : input ? { input } : {}),
+        ...(outputType ? { outputType } : output ? { output } : {}),
+        ...(query.version?.trim() ? { version: query.version.trim() } : { version: "v1" }),
+        jpa: {
+          entity,
+          where: normalizeStringMap(query.jpa.where),
+          ...(query.jpa.projection ? { projection: normalizeStringMap(query.jpa.projection) } : {}),
+          ...(query.jpa.result ? { result: query.jpa.result } : {})
+        }
+      } satisfies PipelineQueryDefinition
+    ];
+  }));
+}
+
+function normalizeObjectSources(
+  sources: Record<string, PipelineObjectSourceDefinition> | undefined
+): Record<string, PipelineObjectSourceDefinition> {
+  if (!sources || typeof sources !== "object") {
+    return {};
+  }
+  return Object.fromEntries(Object.entries(sources).map(([id, source]) => {
+    const normalizedId = id.trim();
+    if (!normalizedId) {
+      throw new Error("Planner draft defines an object source with an empty id.");
+    }
+    return [
+      normalizedId,
+      {
+        kind: "object",
+        provider: source.provider,
+        ...(source.location ? { location: source.location } : {}),
+        ...(source.filter ? { filter: normalizeObjectSourceFilter(source.filter) } : {}),
+        ...(source.poll ? { poll: normalizeObjectSourcePoll(source.poll) } : {}),
+        ...(source.identity?.fields?.length
+          ? { identity: { fields: [...new Set(source.identity.fields.map((field) => field.trim()).filter(Boolean))] } }
+          : {}),
+        ...(source.payload ? { payload: normalizeObjectSourcePayload(source.payload) } : {})
+      } satisfies PipelineObjectSourceDefinition
+    ];
+  }));
+}
+
+function normalizeObjectSourceFilter(filter: PipelineObjectSourceDefinition["filter"]): PipelineObjectSourceDefinition["filter"] {
+  return {
+    ...(filter?.include?.length ? { include: filter.include.map((value) => value.trim()).filter(Boolean) } : {}),
+    ...(filter?.exclude?.length ? { exclude: filter.exclude.map((value) => value.trim()).filter(Boolean) } : {})
+  };
+}
+
+function normalizeObjectSourcePoll(poll: PipelineObjectSourceDefinition["poll"]): PipelineObjectSourceDefinition["poll"] {
+  return {
+    ...(typeof poll?.enabled === "boolean" ? { enabled: poll.enabled } : {}),
+    ...(poll?.interval?.trim() ? { interval: poll.interval.trim() } : {}),
+    ...(typeof poll?.batchSize === "number" ? { batchSize: poll.batchSize } : {})
+  };
+}
+
+function normalizeObjectSourcePayload(payload: PipelineObjectSourceDefinition["payload"]): PipelineObjectSourceDefinition["payload"] {
+  return {
+    ...(payload?.mode ? { mode: payload.mode } : {}),
+    ...(payload?.refField?.trim() ? { refField: payload.refField.trim() } : {}),
+    ...(typeof payload?.maxBytes === "number" ? { maxBytes: payload.maxBytes } : {}),
+    ...(payload?.charset?.trim() ? { charset: payload.charset.trim() } : {})
+  };
+}
+
+function normalizeStringMap(value: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(value || {})
+    .map(([key, item]) => [key.trim(), item.trim()])
+    .filter(([key, item]) => Boolean(key && item)));
+}
+
 function normalizeQuestions(questions: Question[]): Question[] {
   return questions.map((question) => ({ ...question }));
 }
@@ -273,6 +407,8 @@ function assertPlannerSemantics(
   businessSteps: BusinessStep[],
   stepContracts: StepContract[],
   pipelineSteps: PipelineStep[],
+  queries: Record<string, PipelineQueryDefinition>,
+  sources: Record<string, PipelineObjectSourceDefinition>,
   aspects: Record<string, AspectConfig>,
   platform: "COMPUTE" | "FUNCTION",
   inputBoundary?: PipelineInputBoundary,
@@ -295,7 +431,7 @@ function assertPlannerSemantics(
       );
     }
 
-    if (role === "resume" || role === "query") {
+    if (role === "resume" || (role === "query" && kind !== "query")) {
       if (pipelineById.has(businessStep.id)) {
         throw new Error(
           `Planner draft violates TPF semantics: '${businessStep.name}' is a ${role} surface and must not appear in the main pipeline step sequence.`
@@ -318,6 +454,7 @@ function assertPlannerSemantics(
 
     assertCoherentStepViews(businessStep, contract, pipelineStep);
     assertAwaitSemantics(businessStep.name, kind, businessStep, contract, pipelineStep);
+    assertQuerySemantics(businessStep.name, kind, businessStep, contract, pipelineStep, queries);
     if (kind === "await" && platform === "FUNCTION") {
       throw new Error(
         `Planner draft violates TPF semantics: await step '${businessStep.name}' is not supported for FUNCTION pipelines.`
@@ -338,7 +475,7 @@ function assertPlannerSemantics(
   for (const pipelineStep of pipelineSteps) {
     const role = inferFlowRole(pipelineStep.flowRole, pipelineStep.name, pipelineStep.inputTypeName, pipelineStep.outputTypeName, pipelineStep.cardinality);
     const kind = normalizeStepKind(pipelineStep.kind);
-    if (role === "resume" || role === "query") {
+    if (role === "resume" || (role === "query" && kind !== "query")) {
       throw new Error(
         `Planner draft violates TPF semantics: '${pipelineStep.name}' is marked as ${role} but still appears in the main pipeline step sequence.`
       );
@@ -351,9 +488,15 @@ function assertPlannerSemantics(
     if (kind === "await" && !pipelineStep.await) {
       throw new Error(`Planner draft defines await step '${pipelineStep.name}' without await configuration.`);
     }
+    if (kind === "query") {
+      const queryId = normalizeQueryId(pipelineStep.query);
+      if (!queryId || !queries[queryId]) {
+        throw new Error(`Planner draft defines query step '${pipelineStep.name}' without a matching top-level queries entry.`);
+      }
+    }
   }
 
-  const forwardSteps = businessSteps.filter((step) => inferFlowRole(step.flowRole, step.name, step.inputTypeName, step.outputTypeName) === "forward");
+  const forwardSteps = businessSteps.filter((step) => isForwardChainStep(step));
   for (let index = 1; index < forwardSteps.length; index += 1) {
     const previous = forwardSteps[index - 1];
     const current = forwardSteps[index];
@@ -365,7 +508,7 @@ function assertPlannerSemantics(
     }
   }
 
-  assertBoundarySemantics(inputBoundary, outputBoundary, compositionManifest, businessSteps);
+  assertBoundarySemantics(inputBoundary, outputBoundary, compositionManifest, businessSteps, sources);
 }
 
 function assertCoherentStepViews(
@@ -438,12 +581,73 @@ function normalizeStepKind(kind: StepKind | undefined): StepKind {
   return kind || "internal";
 }
 
+function normalizeQueryId(query: string | undefined): string | undefined {
+  const normalized = query?.trim();
+  return normalized || undefined;
+}
+
+function normalizeQueryCapture(capture: PipelineStep["capture"] | BusinessStep["capture"] | StepContract["capture"] | undefined): PipelineStep["capture"] | undefined {
+  if (!capture?.keyFields?.length) {
+    return undefined;
+  }
+  const keyFields = [...new Set(capture.keyFields.map((field) => field.trim()).filter(Boolean))];
+  return keyFields.length > 0 ? { keyFields } : undefined;
+}
+
 function normalizeIdempotencyKeyFields(fields: string[] | undefined): string[] | undefined {
   if (!fields || fields.length === 0) {
     return undefined;
   }
   const normalized = fields.map((field) => field.trim()).filter(Boolean);
   return normalized.length > 0 ? [...new Set(normalized)] : undefined;
+}
+
+function assertQuerySemantics(
+  stepName: string,
+  kind: StepKind,
+  businessStep: BusinessStep,
+  contract: StepContract,
+  pipelineStep: PipelineStep,
+  queries: Record<string, PipelineQueryDefinition>
+): void {
+  const declaredQueryIds = [businessStep.query, contract.query, pipelineStep.query]
+    .map(normalizeQueryId)
+    .filter((value): value is string => Boolean(value));
+  const queryDeclared = declaredQueryIds.length > 0
+    || Boolean(businessStep.capture || contract.capture || pipelineStep.capture);
+
+  if (kind !== "query" && queryDeclared) {
+    throw new Error(`Planner draft violates TPF semantics: '${stepName}' declares query connector fields without kind 'query'.`);
+  }
+  if (kind !== "query") {
+    return;
+  }
+  if (pipelineStep.cardinality !== "ONE_TO_ONE") {
+    throw new Error(`Planner draft violates TPF semantics: query step '${stepName}' must use ONE_TO_ONE cardinality.`);
+  }
+  if (declaredQueryIds.length === 0) {
+    throw new Error(`Planner draft query step '${stepName}' must declare a query id.`);
+  }
+  if (declaredQueryIds.length !== 3 || declaredQueryIds.some((queryId) => queryId !== declaredQueryIds[0])) {
+    throw new Error(`Planner draft defines inconsistent query ids for '${stepName}'.`);
+  }
+  const query = queries[declaredQueryIds[0]];
+  if (!query) {
+    throw new Error(`Planner draft query step '${stepName}' references unknown query '${declaredQueryIds[0]}'.`);
+  }
+  const queryInput = query.inputType || query.input;
+  const queryOutput = query.outputType || query.output;
+  if (!typeNamesMatch(queryInput, businessStep.inputTypeName)) {
+    throw new Error(`Planner draft query '${declaredQueryIds[0]}' input '${queryInput}' does not match step '${stepName}' input '${businessStep.inputTypeName}'.`);
+  }
+  if (!typeNamesMatch(queryOutput, businessStep.outputTypeName)) {
+    throw new Error(`Planner draft query '${declaredQueryIds[0]}' output '${queryOutput}' does not match step '${stepName}' output '${businessStep.outputTypeName}'.`);
+  }
+}
+
+function isForwardChainStep(step: BusinessStep): boolean {
+  const role = inferFlowRole(step.flowRole, step.name, step.inputTypeName, step.outputTypeName);
+  return role === "forward" || normalizeStepKind(step.kind) === "query";
 }
 
 function normalizeAwaitConfig(
@@ -544,10 +748,25 @@ function assertBoundarySemantics(
   inputBoundary: PipelineInputBoundary | undefined,
   outputBoundary: PipelineOutputBoundary | undefined,
   compositionManifest: PipelineCompositionManifest | undefined,
-  businessSteps: BusinessStep[]
+  businessSteps: BusinessStep[],
+  sources: Record<string, PipelineObjectSourceDefinition>
 ): void {
   if (compositionManifest && !inputBoundary?.subscription && !outputBoundary?.checkpoint) {
     throw new Error("Planner draft defines a compositionManifest without an input subscription or output checkpoint boundary.");
+  }
+  const objectInput = inputBoundary?.object;
+  if (objectInput) {
+    const sourceName = objectInput.source || objectInput.from;
+    if (!sourceName || !sources[sourceName]) {
+      throw new Error(`Planner draft input object boundary references unknown source '${sourceName || ""}'.`);
+    }
+    const emittedType = objectInput.emits.typeName || simpleTypeName(objectInput.emits.type);
+    const firstForwardStep = businessSteps.find((step) => inferFlowRole(step.flowRole, step.name, step.inputTypeName, step.outputTypeName) === "forward");
+    if (firstForwardStep && !typeNamesMatch(firstForwardStep.inputTypeName, emittedType)) {
+      throw new Error(
+        `Planner draft object input emits '${emittedType}' but first forward step '${firstForwardStep.name}' consumes '${firstForwardStep.inputTypeName}'.`
+      );
+    }
   }
   const publication = outputBoundary?.checkpoint;
   if (publication?.idempotencyKeyFields?.length) {

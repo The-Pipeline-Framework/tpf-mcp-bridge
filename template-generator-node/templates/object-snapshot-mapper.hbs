@@ -1,0 +1,14 @@
+package {{basePackage}}.common.mapper;
+
+import {{basePackage}}.common.domain.{{outputTypeName}};
+import org.pipelineframework.objectingest.ObjectSnapshot;
+import org.pipelineframework.objectingest.ObjectSnapshotMapper;
+
+public final class {{className}} implements ObjectSnapshotMapper<{{outputTypeName}}> {
+
+    @Override
+    public {{outputTypeName}} map(ObjectSnapshot snapshot) {
+        throw new UnsupportedOperationException(
+            "{{className}}#map must map ObjectSnapshot to {{outputTypeName}} before enabling object ingest.");
+    }
+}

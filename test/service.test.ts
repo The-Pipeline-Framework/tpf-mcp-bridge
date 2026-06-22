@@ -789,6 +789,85 @@ test("generateScaffoldZip with kafka await DerivedConfig emits kafka wiring with
   assert.ok(applicationProperties.includes("mp.messaging.incoming.tpf-await-kafka-responses.group.id=${TPF_AWAIT_KAFKA_RESPONSES_GROUP_ID:direct-payment-group}"));
 });
 
+test("query connector DerivedConfig validates query references and rejects mismatched contracts", async () => {
+  const config = buildQueryConnectorConfig();
+  config.queries!["customer-risk-by-id"].outputType = "CustomerDecision";
+
+  await assert.rejects(
+    () => validateDerivedConfig(config),
+    /does not match query 'customer-risk-by-id' output 'CustomerDecision'/
+  );
+});
+
+test("generateScaffoldZip with query connector emits query config without query service module", async () => {
+  const config = buildQueryConnectorConfig();
+
+  const zipBuffer = await generateScaffoldZip(config);
+  const zip = await JSZip.loadAsync(zipBuffer);
+  const fileNames = Object.keys(zip.files);
+
+  assert.ok(!fileNames.some((name) => name.startsWith("load-customer-risk-svc/")));
+  assert.ok(fileNames.some((name) => name.startsWith("classify-customer-svc/")));
+
+  const pipelineYaml = await zip.file("config/pipeline.yaml")!.async("string");
+  const pipelineConfig = YAML.load(pipelineYaml) as DerivedConfig;
+  assert.equal(pipelineConfig.steps[0].kind, "query");
+  assert.equal(pipelineConfig.steps[0].query, "customer-risk-by-id");
+  assert.deepEqual(pipelineConfig.steps[0].capture?.keyFields, ["customerId"]);
+  assert.equal(pipelineConfig.queries?.["customer-risk-by-id"].connector, "jpa");
+  assert.equal(pipelineConfig.queries?.["customer-risk-by-id"].jpa.entity, "com.example.queryconnector.common.domain.CustomerRiskEntity");
+
+  const orchestratorPom = await zip.file("orchestrator-svc/pom.xml")!.async("string");
+  assert.match(orchestratorPom, /query-jpa-connector/);
+  const applicationProperties = await zip.file("orchestrator-svc/src/main/resources/application.properties")!.async("string");
+  assert.match(applicationProperties, /quarkus\.datasource\.db-kind=\$\{TPF_QUERY_JPA_DB_KIND:postgresql\}/);
+  assert.match(applicationProperties, /#\s*quarkus\.hibernate-orm\.packages=com\.example\.queryconnector\.common\.domain/);
+});
+
+test("object ingest DerivedConfig validates source and first step continuity", async () => {
+  const config = buildObjectIngestConfig();
+  delete config.sources!.documents;
+
+  await assert.rejects(
+    () => validateDerivedConfig(config),
+    /Input object boundary references unknown source 'documents'/
+  );
+
+  const mismatch = buildObjectIngestConfig();
+  mismatch.steps[0].inputTypeName = "OtherInput";
+  await assert.rejects(
+    () => validateDerivedConfig(mismatch),
+    /Input object boundary emits 'RawDocument' but first pipeline step 'Parse Document' consumes 'OtherInput'/
+  );
+});
+
+test("generateScaffoldZip with object ingest emits source boundary, connector dependency, and snapshot mapper", async () => {
+  const config = buildObjectIngestConfig();
+
+  const zipBuffer = await generateScaffoldZip(config);
+  const zip = await JSZip.loadAsync(zipBuffer);
+  const fileNames = Object.keys(zip.files);
+
+  assert.ok(fileNames.some((name) => name.startsWith("parse-document-svc/")));
+
+  const pipelineYaml = await zip.file("config/pipeline.yaml")!.async("string");
+  const pipelineConfig = YAML.load(pipelineYaml) as DerivedConfig;
+  assert.equal(pipelineConfig.sources?.documents.provider, "filesystem");
+  assert.equal(pipelineConfig.input?.object?.source, "documents");
+  assert.equal(pipelineConfig.input?.object?.emits.typeName, "RawDocument");
+  assert.equal(pipelineConfig.input?.object?.emits.mapper, "com.example.objectingest.common.mapper.RawDocumentObjectSnapshotMapper");
+
+  const orchestratorPom = await zip.file("orchestrator-svc/pom.xml")!.async("string");
+  assert.match(orchestratorPom, /object-ingest-connector/);
+
+  const mapper = await zip.file("common/src/main/java/com/example/objectingest/common/mapper/RawDocumentObjectSnapshotMapper.java")!.async("string");
+  assert.match(mapper, /implements ObjectSnapshotMapper<RawDocument>/);
+  assert.match(mapper, /public RawDocument map\(ObjectSnapshot snapshot\)/);
+
+  const applicationProperties = await zip.file("orchestrator-svc/src/main/resources/application.properties")!.async("string");
+  assert.match(applicationProperties, /Object source provider\/location\/polling settings are declared in config\/pipeline\.yaml/);
+});
+
 test("checkpoint handoff drafts emit pipeline boundaries and composition sidecar", async () => {
   const planner = {
     async planInitialBrief(): Promise<PlannerDraft> {
@@ -2471,6 +2550,144 @@ function assertNoDuplicateMessageFields(config: DerivedConfig): void {
       seen.add(field.name);
     }
   }
+}
+
+function buildQueryConnectorConfig(): DerivedConfig {
+  return {
+    version: 2,
+    appName: "QueryConnector",
+    basePackage: "com.example.queryconnector",
+    transport: "REST",
+    platform: "COMPUTE",
+    runtimeLayout: "MODULAR",
+    messages: {
+      CustomerRiskLookup: {
+        fields: [
+          { number: 1, name: "customerId", type: "uuid" }
+        ]
+      },
+      CustomerRiskSnapshot: {
+        fields: [
+          { number: 1, name: "customerId", type: "uuid" },
+          { number: 2, name: "riskBand", type: "string" },
+          { number: 3, name: "score", type: "decimal" }
+        ]
+      },
+      CustomerDecision: {
+        fields: [
+          { number: 1, name: "customerId", type: "uuid" },
+          { number: 2, name: "approved", type: "bool" },
+          { number: 3, name: "riskBand", type: "string" }
+        ]
+      }
+    },
+    queries: {
+      "customer-risk-by-id": {
+        connector: "jpa",
+        inputType: "CustomerRiskLookup",
+        outputType: "CustomerRiskSnapshot",
+        version: "v1",
+        jpa: {
+          entity: "com.example.queryconnector.common.domain.CustomerRiskEntity",
+          where: {
+            customerId: "input.customerId"
+          },
+          projection: {
+            customerId: "customerId",
+            riskBand: "riskBand",
+            score: "score"
+          },
+          result: "single"
+        }
+      }
+    },
+    steps: [
+      {
+        name: "Load Customer Risk",
+        kind: "query",
+        cardinality: "ONE_TO_ONE",
+        query: "customer-risk-by-id",
+        inputTypeName: "CustomerRiskLookup",
+        outputTypeName: "CustomerRiskSnapshot",
+        capture: {
+          keyFields: ["customerId"]
+        }
+      },
+      {
+        name: "Classify Customer",
+        kind: "internal",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "CustomerRiskSnapshot",
+        outputTypeName: "CustomerDecision"
+      }
+    ]
+  };
+}
+
+function buildObjectIngestConfig(): DerivedConfig {
+  return {
+    version: 2,
+    appName: "ObjectIngest",
+    basePackage: "com.example.objectingest",
+    transport: "REST",
+    platform: "COMPUTE",
+    runtimeLayout: "MODULAR",
+    sources: {
+      documents: {
+        kind: "object",
+        provider: "filesystem",
+        location: {
+          root: "/tmp/tpf-object-ingest"
+        },
+        filter: {
+          include: ["**/*.txt", "**/*.md"]
+        },
+        poll: {
+          enabled: true,
+          interval: "PT30S",
+          batchSize: 25
+        },
+        payload: {
+          mode: "text",
+          maxBytes: 1048576,
+          charset: "UTF-8"
+        }
+      }
+    },
+    input: {
+      object: {
+        source: "documents",
+        emits: {
+          type: "com.example.objectingest.common.domain.RawDocument",
+          typeName: "RawDocument",
+          mapper: "com.example.objectingest.common.mapper.RawDocumentObjectSnapshotMapper"
+        }
+      }
+    },
+    messages: {
+      RawDocument: {
+        fields: [
+          { number: 1, name: "documentId", type: "uuid" },
+          { number: 2, name: "content", type: "string" }
+        ]
+      },
+      ParsedDocument: {
+        fields: [
+          { number: 1, name: "documentId", type: "uuid" },
+          { number: 2, name: "tokenCount", type: "int32" }
+        ]
+      }
+    },
+    steps: [
+      {
+        name: "Parse Document",
+        kind: "internal",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "RawDocument",
+        outputTypeName: "ParsedDocument"
+      }
+    ]
+  };
 }
 
 function buildRestaurantApprovalUnionConfig(): DerivedConfig {

@@ -15,6 +15,8 @@ type BrowserTemplateEngineCtor = new (templates?: Record<string, string>) => {
     runtimeLayout?: string;
     input?: unknown;
     output?: unknown;
+    queries?: unknown;
+    sources?: unknown;
     fileCallback: (filePath: string, content: string) => Promise<void> | void;
   }): Promise<void>;
 };
@@ -81,6 +83,8 @@ function toWorkerScaffoldConfig(config: DerivedConfig): {
   runtimeLayout?: string;
   input?: unknown;
   output?: unknown;
+  queries?: unknown;
+  sources?: unknown;
 } {
   const unions = config.unions || {};
   const materializedSteps = config.steps.map((step) => ({
@@ -101,7 +105,9 @@ function toWorkerScaffoldConfig(config: DerivedConfig): {
     platform: normalizePlatform(config.platform),
     runtimeLayout: normalizeRuntimeLayout(config.runtimeLayout),
     input: config.input,
-    output: config.output
+    output: config.output,
+    queries: config.queries,
+    sources: config.sources
   };
 }
 
@@ -217,7 +223,7 @@ function processSteps(steps: Array<Record<string, unknown>>): Array<Record<strin
   return steps.map((step, index) => {
     const processedStep = { ...step } as Record<string, unknown>;
     const name = String(step.name || "");
-    if (processedStep.kind === "await") {
+    if (processedStep.kind === "await" || processedStep.kind === "query") {
       processedStep.generatesServiceModule = false;
     }
 

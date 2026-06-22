@@ -339,6 +339,8 @@ class BrowserTemplateEngine {
             runtimeLayout: this.normalizeRuntimeLayout(options.runtimeLayout),
             input: options.input && typeof options.input === 'object' ? options.input : undefined,
             output: options.output && typeof options.output === 'object' ? options.output : undefined,
+            queries: options.queries && typeof options.queries === 'object' ? options.queries : {},
+            sources: options.sources && typeof options.sources === 'object' ? options.sources : {},
             fileCallback: options.fileCallback
         };
         normalizedOptions.transport = this.normalizeTransport(
@@ -357,9 +359,12 @@ class BrowserTemplateEngine {
         const appNameValue = normalizedOptions.appName;
         const basePackageValue = normalizedOptions.basePackage;
         const stepsValue = normalizedOptions.steps;
-        const serviceSteps = stepsValue.filter(step => step.generatesServiceModule !== false && step.kind !== 'await');
+        const serviceSteps = stepsValue.filter(step => this.isServiceStep(step));
         const kafkaAwait = this.createKafkaAwaitContext(stepsValue, appNameValue);
+        const hasJpaQuery = this.hasJpaQueries(normalizedOptions.queries);
+        const hasObjectIngest = this.hasObjectIngest(normalizedOptions.input, normalizedOptions.sources);
         const hasCheckpointBoundaries = this.hasCheckpointBoundaries(normalizedOptions.input, normalizedOptions.output);
+        const requiresQueueAsyncRuntime = hasCheckpointBoundaries || hasObjectIngest || this.hasAwaitSteps(stepsValue);
         const normalizedRuntimeLayout = normalizedOptions.runtimeLayout;
         const transportMode = normalizedOptions.transport;
         const aspectConfig = normalizedOptions.aspects;
@@ -392,11 +397,11 @@ class BrowserTemplateEngine {
             normalizedOptions.fileCallback);
 
         // Generate common module
-        await this.generateCommonModule(appNameValue, basePackageValue, stepsValue, transportMode, normalizedOptions.unionDefinitions, normalizedOptions.fileCallback);
+        await this.generateCommonModule(appNameValue, basePackageValue, stepsValue, transportMode, normalizedOptions.unionDefinitions, normalizedOptions.input, normalizedOptions.sources, normalizedOptions.fileCallback);
 
         // Generate each step service
         for (let i = 0; i < serviceSteps.length; i++) {
-            await this.generateStepService(appNameValue, basePackageValue, serviceSteps[i], i, serviceSteps, transportMode, normalizedOptions.fileCallback);
+            await this.generateStepService(appNameValue, basePackageValue, serviceSteps[i], i, serviceSteps, transportMode, requiresQueueAsyncRuntime, normalizedOptions.fileCallback);
         }
 
         if (includePersistenceModule) {
@@ -416,7 +421,10 @@ class BrowserTemplateEngine {
             includeCacheInvalidationModule,
             aspectConfig,
             transportMode,
+            hasJpaQuery,
+            hasObjectIngest,
             hasCheckpointBoundaries,
+            requiresQueueAsyncRuntime,
             normalizedOptions.fileCallback);
 
         if (normalizedRuntimeLayout === 'pipeline-runtime') {
@@ -425,7 +433,10 @@ class BrowserTemplateEngine {
                 basePackageValue,
                 serviceSteps,
                 kafkaAwait,
+                hasJpaQuery,
+                hasObjectIngest,
                 hasCheckpointBoundaries,
+                requiresQueueAsyncRuntime,
                 normalizedOptions.fileCallback
             );
         } else if (normalizedRuntimeLayout === 'monolith') {
@@ -436,7 +447,10 @@ class BrowserTemplateEngine {
                 includePersistenceModule,
                 includeCacheInvalidationModule,
                 kafkaAwait,
+                hasJpaQuery,
+                hasObjectIngest,
                 hasCheckpointBoundaries,
+                requiresQueueAsyncRuntime,
                 normalizedOptions.fileCallback
             );
         }
@@ -496,7 +510,7 @@ class BrowserTemplateEngine {
         await fileCallback('pom.xml', rendered);
     }
 
-    async generateCommonModule(appName, basePackage, steps, transport, unionDefinitions, fileCallback) {
+    async generateCommonModule(appName, basePackage, steps, transport, unionDefinitions, input, sources, fileCallback) {
         // Generate common POM
         await this.generateCommonPom(appName, basePackage, transport, fileCallback);
 
@@ -509,6 +523,8 @@ class BrowserTemplateEngine {
         }
 
         await this.generateUnionClasses(unionDefinitions, basePackage, fileCallback);
+
+        await this.generateObjectSnapshotMapper(input, sources, basePackage, fileCallback);
 
         // Generate base entity
         await this.generateBaseEntity(basePackage, fileCallback);
@@ -572,16 +588,44 @@ class BrowserTemplateEngine {
         return Boolean((input && input.subscription) || (output && output.checkpoint));
     }
 
+    hasObjectIngest(input, sources) {
+        return Boolean(this.objectInputBoundary(input) && sources && Object.keys(sources).length > 0);
+    }
+
+    objectInputBoundary(input) {
+        if (!input || typeof input !== 'object') {
+            return null;
+        }
+        if (input.object && input.object.emits) {
+            const source = input.object.source || input.object.from;
+            return source ? { ...input.object, source } : null;
+        }
+        if (input.from && input.emits) {
+            return { source: input.from, emits: input.emits };
+        }
+        return null;
+    }
+
     hasAwaitSteps(steps) {
         return (steps || []).some(step => step && step.kind === 'await');
     }
 
-    async generatePipelineRuntimeModule(appName, basePackage, steps, kafkaAwait, hasCheckpointBoundaries, fileCallback) {
+    isServiceStep(step) {
+        return step && step.generatesServiceModule !== false && step.kind !== 'await' && step.kind !== 'query';
+    }
+
+    hasJpaQueries(queries) {
+        return Object.values(queries || {}).some(query => query && query.connector === 'jpa');
+    }
+
+    async generatePipelineRuntimeModule(appName, basePackage, steps, kafkaAwait, hasJpaQuery, hasObjectIngest, hasCheckpointBoundaries, requiresQueueAsyncRuntime, fileCallback) {
         const rootProjectName = appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
         const context = {
             basePackage,
             rootProjectName,
             kafkaAwait,
+            hasJpaQuery,
+            hasObjectIngest,
             sourceDirs: (steps || []).map((step, index) => {
                 const key = `s${index}`;
                 return {
@@ -596,11 +640,14 @@ class BrowserTemplateEngine {
 
         const appPropsContent = this.render('application-properties', {
             serviceName: 'pipeline-runtime-svc',
+            basePackage,
             rootProjectName,
             portOffset: 1,
             kafkaAwait,
+            hasJpaQuery,
+            hasObjectIngest,
             hasCheckpointBoundaries,
-            hasQueueAsyncRuntime: hasCheckpointBoundaries || this.hasAwaitSteps(steps)
+            hasQueueAsyncRuntime: requiresQueueAsyncRuntime
         });
         await fileCallback('pipeline-runtime-svc/src/main/resources/application.properties', appPropsContent);
         const appDevProps = this.render('module-application-dev-properties', {});
@@ -616,7 +663,10 @@ class BrowserTemplateEngine {
         includePersistenceModule,
         includeCacheInvalidationModule,
         kafkaAwait,
+        hasJpaQuery,
+        hasObjectIngest,
         hasCheckpointBoundaries,
+        requiresQueueAsyncRuntime,
         fileCallback
     ) {
         const rootProjectName = appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
@@ -654,6 +704,8 @@ class BrowserTemplateEngine {
             includePersistenceModule,
             includeCacheInvalidationModule,
             kafkaAwait,
+            hasJpaQuery,
+            hasObjectIngest,
             sourceDirs
         };
         const pomContent = this.render('monolith-svc-pom', context);
@@ -661,11 +713,14 @@ class BrowserTemplateEngine {
 
         const appPropsContent = this.render('application-properties', {
             serviceName: 'monolith-svc',
+            basePackage,
             rootProjectName,
             portOffset: 0,
             kafkaAwait,
+            hasJpaQuery,
+            hasObjectIngest,
             hasCheckpointBoundaries,
-            hasQueueAsyncRuntime: hasCheckpointBoundaries || this.hasAwaitSteps(steps)
+            hasQueueAsyncRuntime: requiresQueueAsyncRuntime
         });
         await fileCallback('monolith-svc/src/main/resources/application.properties', appPropsContent);
         const appDevProps = this.render('module-application-dev-properties', {});
@@ -866,6 +921,26 @@ class BrowserTemplateEngine {
         }
     }
 
+    async generateObjectSnapshotMapper(input, sources, basePackage, fileCallback) {
+        const objectInput = this.objectInputBoundary(input);
+        if (!this.hasObjectIngest(input, sources)) {
+            return;
+        }
+        if (!objectInput.emits || !objectInput.emits.mapper || (!objectInput.emits.typeName && !objectInput.emits.type)) {
+            throw new Error('Object ingest scaffold requires input.object.emits.mapper and input.object.emits.type or typeName.');
+        }
+        const mapperType = objectInput.emits.mapper;
+        const mapperClassName = mapperType.split('.').pop();
+        const outputTypeName = objectInput.emits.typeName || objectInput.emits.type.split('.').pop();
+        const context = {
+            basePackage,
+            className: mapperClassName,
+            outputTypeName
+        };
+        const mapperPath = `common/src/main/java/${this.toPath(basePackage + '.common.mapper')}/${mapperClassName}.java`;
+        await fileCallback(mapperPath, this.render('object-snapshot-mapper', context));
+    }
+
     async generateMapperClass(className, step, basePackage, fileCallback) {
         const mapperFields = this.mapperFieldsForClass(className, step)
             .map(field => ({
@@ -908,7 +983,7 @@ class BrowserTemplateEngine {
         await fileCallback(filePath, rendered);
     }
 
-    async generateStepService(appName, basePackage, step, stepIndex, allSteps, transport, fileCallback) {
+    async generateStepService(appName, basePackage, step, stepIndex, allSteps, transport, requiresQueueAsyncRuntime, fileCallback) {
         // noinspection JSUnusedLocalSymbols
         const serviceNameForPackage = step.serviceName.replace('-svc', '').replace(/-/g, '_');
 
@@ -920,6 +995,18 @@ class BrowserTemplateEngine {
 
         // Generate the service class
         await this.generateStepServiceClass(appName, basePackage, step, stepIndex, allSteps, fileCallback);
+
+        await fileCallback(
+            `${step.serviceName}/src/main/resources/application.properties`,
+            this.render('application-properties', {
+                ...step,
+                basePackage,
+                rootProjectName: step.rootProjectName,
+                serviceName: step.serviceName,
+                portOffset: stepIndex + 1,
+                hasQueueAsyncRuntime: requiresQueueAsyncRuntime
+            })
+        );
 
     }
 
@@ -1001,7 +1088,10 @@ class BrowserTemplateEngine {
         includeCacheInvalidationModule,
         aspectDefinitions,
         transport,
+        hasJpaQuery,
+        hasObjectIngest,
         hasCheckpointBoundaries,
+        requiresQueueAsyncRuntime,
         fileCallback) {
         await this.generateOrchestratorApplication(appName, basePackage, fileCallback);
 
@@ -1013,6 +1103,8 @@ class BrowserTemplateEngine {
             includeCacheInvalidationModule,
             transport,
             steps,
+            hasJpaQuery,
+            hasObjectIngest,
             fileCallback);
 
         await this.generateOrchestratorApplicationProperties(
@@ -1023,7 +1115,10 @@ class BrowserTemplateEngine {
             includeCacheInvalidationModule,
             aspectDefinitions,
             transport,
+            hasJpaQuery,
+            hasObjectIngest,
             hasCheckpointBoundaries,
+            requiresQueueAsyncRuntime,
             fileCallback);
         await this.generateOrchestratorApplicationDevProperties(basePackage, steps, fileCallback);
         await this.generateOrchestratorApplicationTestProperties(fileCallback);
@@ -1044,6 +1139,8 @@ class BrowserTemplateEngine {
         includeCacheInvalidationModule,
         transport,
         steps,
+        hasJpaQuery,
+        hasObjectIngest,
         fileCallback) {
         const transportMode = this.normalizeTransport(transport);
         const awaitTransports = new Set((steps || [])
@@ -1063,6 +1160,8 @@ class BrowserTemplateEngine {
             hasSqsAwait: awaitTransports.has('sqs'),
             hasWebhookAwait: awaitTransports.has('webhook'),
             hasInteractionApiAwait: awaitTransports.has('interaction-api'),
+            hasJpaQuery,
+            hasObjectIngest,
             isRestTransport: transportMode === 'REST',
             isGrpcTransport: transportMode === 'GRPC'
         };
@@ -1079,11 +1178,14 @@ class BrowserTemplateEngine {
         includeCacheInvalidationModule,
         aspectDefinitions,
         transport,
+        hasJpaQuery,
+        hasObjectIngest,
         hasCheckpointBoundaries,
+        requiresQueueAsyncRuntime,
         fileCallback) {
         const transportMode = this.normalizeTransport(transport);
         const aspects = this.normalizeAspectDefinitions(aspectDefinitions);
-        const serviceSteps = (steps || []).filter(step => step.generatesServiceModule !== false && step.kind !== 'await');
+        const serviceSteps = (steps || []).filter(step => this.isServiceStep(step));
         const awaitTransports = new Set((steps || [])
             .filter(step => step.kind === 'await')
             .map(step => step.await && step.await.transport && step.await.transport.type)
@@ -1102,12 +1204,14 @@ class BrowserTemplateEngine {
             includeCacheInvalidationModule,
             kafkaAwait: this.createKafkaAwaitContext(steps, appName),
             hasCheckpointBoundaries,
-            hasQueueAsyncRuntime: hasCheckpointBoundaries || awaitTransports.size > 0,
+            hasQueueAsyncRuntime: requiresQueueAsyncRuntime,
             hasAwaitSteps: awaitTransports.size > 0,
             hasKafkaAwait: awaitTransports.has('kafka'),
             hasSqsAwait: awaitTransports.has('sqs'),
             hasWebhookAwait: awaitTransports.has('webhook'),
             hasInteractionApiAwait: awaitTransports.has('interaction-api'),
+            hasJpaQuery,
+            hasObjectIngest,
             hasCacheAspect: aspects.some(aspect => aspect.name === 'cache')
         };
         if (includePersistenceModule) {

@@ -63,6 +63,14 @@ jobs:
         run: ./mvnw -f framework/pom.xml -DskipTests install
         working-directory: pipelineframework-26.6.2-candidate
 
+      - name: Install query JPA connector candidate locally
+        run: ./mvnw -f connectors/query-jpa/pom.xml -DskipTests install
+        working-directory: pipelineframework-26.6.2-candidate
+
+      - name: Install object ingest connector candidate locally
+        run: ./mvnw -f connectors/object-ingest/pom.xml -DskipTests install
+        working-directory: pipelineframework-26.6.2-candidate
+
       - name: Check vendored pipeline schema
         run: npm run check:pipeline-schema -- "${GITHUB_WORKSPACE}/pipelineframework-26.6.2-candidate/framework/deployment/src/main/resources/META-INF/pipeline/pipeline-template-schema.json"
 
@@ -74,6 +82,12 @@ jobs:
 
       - name: Compile generated SQS await scaffold
         run: npm run smoke:sqs-await -- --framework-dir "${GITHUB_WORKSPACE}/pipelineframework-26.6.2-candidate"
+
+      - name: Compile generated query connector scaffold
+        run: npm run smoke:query-connector -- --framework-dir "${GITHUB_WORKSPACE}/pipelineframework-26.6.2-candidate"
+
+      - name: Compile generated object ingest scaffold
+        run: npm run smoke:object-ingest -- --framework-dir "${GITHUB_WORKSPACE}/pipelineframework-26.6.2-candidate"
 
       - name: Validate generated checkpoint/composition scaffold
         run: npm run smoke:checkpoint-composition -- --framework-dir "${GITHUB_WORKSPACE}/pipelineframework-26.6.2-candidate"
