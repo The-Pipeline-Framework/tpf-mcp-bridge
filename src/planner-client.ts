@@ -150,10 +150,75 @@ const awaitConfigSchema = z.object({
   transport: awaitTransportSchema
 });
 
+const queryCaptureSchema = z.object({
+  keyFields: z.array(z.string().trim().min(1)).optional()
+});
+
+const jpaQueryDefinitionSchema = z.object({
+  entity: z.string().trim().min(1),
+  where: z.record(z.string().trim().min(1), z.string().trim().min(1)),
+  projection: z.record(z.string().trim().min(1), z.string().trim().min(1)).optional(),
+  result: z.literal("single").optional()
+});
+
+const queryDefinitionSchema = z.object({
+  connector: z.literal("jpa"),
+  input: z.string().trim().min(1).optional(),
+  inputType: z.string().trim().min(1).optional(),
+  output: z.string().trim().min(1).optional(),
+  outputType: z.string().trim().min(1).optional(),
+  version: z.string().trim().min(1).optional(),
+  jpa: jpaQueryDefinitionSchema
+}).refine((value) => Boolean(value.input || value.inputType), {
+  message: "Query definitions must include input or inputType."
+}).refine((value) => Boolean(value.output || value.outputType), {
+  message: "Query definitions must include output or outputType."
+});
+
+const objectInputEmitSchema = z.object({
+  type: z.string().trim().min(1),
+  typeName: z.string().trim().min(1).optional(),
+  mapper: z.string().trim().min(1)
+});
+
+const objectInputBoundarySchema = z.object({
+  source: z.string().trim().min(1).optional(),
+  from: z.string().trim().min(1).optional(),
+  emits: objectInputEmitSchema
+}).refine((value) => Boolean(value.source || value.from), {
+  message: "Object input boundaries must include source or from."
+});
+
+const objectSourceSchema = z.object({
+  kind: z.literal("object"),
+  provider: z.enum(["filesystem", "s3"]),
+  location: z.record(z.string().trim().min(1), z.unknown()).optional(),
+  filter: z.object({
+    include: z.array(z.string().trim().min(1)).optional(),
+    exclude: z.array(z.string().trim().min(1)).optional()
+  }).optional(),
+  poll: z.object({
+    enabled: z.boolean().optional(),
+    interval: z.string().trim().min(1).optional(),
+    batchSize: z.number().int().positive().optional()
+  }).optional(),
+  identity: z.object({
+    fields: z.array(z.string().trim().min(1)).optional()
+  }).optional(),
+  payload: z.object({
+    mode: z.enum(["metadata", "reference", "text"]).optional(),
+    refField: z.string().trim().min(1).optional(),
+    maxBytes: z.number().int().nonnegative().optional(),
+    charset: z.string().trim().min(1).optional()
+  }).optional()
+});
+
 const stepDraftCommonSchema = z.object({
-  kind: z.enum(["internal", "delegated", "remote", "await"]).optional(),
+  kind: z.enum(["internal", "delegated", "remote", "await", "query"]).optional(),
   inputTypeName: z.string(),
   outputTypeName: z.string(),
+  query: z.string().optional(),
+  capture: queryCaptureSchema.optional(),
   flowRole: z.enum(["forward", "query", "resume", "expansion", "reduction", "merge"]).optional(),
   flowBoundaryRationale: z.string().optional(),
   timeout: z.string().optional(),
@@ -173,7 +238,10 @@ const checkpointSubscriptionSchema = z.object({
 });
 
 const pipelineInputBoundarySchema = z.object({
-  subscription: checkpointSubscriptionSchema.optional()
+  subscription: checkpointSubscriptionSchema.optional(),
+  object: objectInputBoundarySchema.optional(),
+  from: z.string().trim().min(1).optional(),
+  emits: objectInputEmitSchema.optional()
 });
 
 const pipelineOutputBoundarySchema = z.object({
@@ -237,6 +305,8 @@ const plannerDraftSchema = z.object({
   inputBoundary: pipelineInputBoundarySchema.optional(),
   outputBoundary: pipelineOutputBoundarySchema.optional(),
   compositionManifest: compositionManifestSchema.optional(),
+  queries: z.record(z.string().trim().min(1), queryDefinitionSchema).optional(),
+  sources: z.record(z.string().trim().min(1), objectSourceSchema).optional(),
   aspects: z.record(z.string(), z.object({
     enabled: z.boolean().optional(),
     scope: z.enum(["GLOBAL", "STEPS"]).optional(),
@@ -699,6 +769,8 @@ function buildPlanPrompt(input: SessionStartInput, profile: PlannerProfile): Pla
           "Keep it compact. Prefer concrete contracts and proposal-first contractQuestions.",
           "Preserve core TPF guardrails: no persistence steps, forward adjacency, resume outside the main flow, await only for real suspend/resume external boundaries.",
           "If the brief implies await behavior, use kind \"await\" with timeout, idempotencyKeyFields, and await config.",
+          "If the brief implies a framework-owned read from JPA inside the pipeline, use kind \"query\" with a top-level queries entry; do not generate a fake service step.",
+          "If the brief starts from filesystem/S3/object storage input, use top-level sources plus inputBoundary.object; do not generate a fake read-file step.",
           "",
           "Brief:",
           input.briefText
@@ -710,6 +782,8 @@ function buildPlanPrompt(input: SessionStartInput, profile: PlannerProfile): Pla
           "In the main forward-processing pipeline, step N+1 input must equal step N output unless you explicitly classify the boundary as query, resume, expansion, reduction, or merge.",
           "Never create explicit save, persist, store, or commit business steps for persistence. Persistence belongs to aspects/plugins, not business flow steps.",
           "Model resume or re-entry as a separate query/resumption surface, not a normal forward pipeline step.",
+          "A framework connector query is different from a resume/read surface: use kind \"query\" only for an in-pipeline read boundary, cardinality ONE_TO_ONE, query id, optional capture.keyFields, and a top-level queries entry. In this slice, supported connector is jpa.",
+          "Filesystem/S3 object ingestion is an input boundary, not a business step: use top-level sources and inputBoundary.object with emits.type/typeName/mapper. The first forward step must consume the emitted type.",
           "Use await steps only when the brief implies a real suspend/resume external boundary. Distinguish await steps from checkpoint hand-off and from ordinary forward steps.",
           "For await steps, use kind \"await\" and provide timeout, idempotencyKeyFields, and await.transport / await.correlation details. Supported await transports are interaction-api, webhook, kafka, and sqs.",
           "Checkpoint handoff is not await: model it with outputBoundary.checkpoint and, for downstream pipeline ownership, inputBoundary.subscription or compositionManifest.",
@@ -738,6 +812,8 @@ function buildRevisionPrompt(
           "Revise the TPF planner draft as JSON only.",
           "Apply the provided answers. Keep proposal-first questions only where still needed.",
           "Preserve core TPF guardrails: no persistence steps, forward adjacency, resume outside the main flow, await distinct from checkpoint hand-off.",
+          "Keep framework connector queries as kind \"query\" steps with top-level queries definitions; keep resume/read surfaces outside the main pipeline.",
+          "Keep filesystem/S3 object ingest as top-level sources plus inputBoundary.object, not a read-file service step.",
           "",
           "Brief:",
           input.briefText,
@@ -754,6 +830,8 @@ function buildRevisionPrompt(
           "Preserve TPF semantics: no explicit persistence steps, resume stays separate from the main forward pipeline, and forward steps chain by adjacent output-to-input type unless a non-linear boundary is explicitly classified.",
           "If the brief implies caching, replayability, idempotency, or checkpoint hand-offs, express those as aspects, technical concerns, or focused operational questions rather than as generic business steps.",
           "If the brief implies a human approval, third-party callback, or brokered external decision before the pipeline can continue, model that boundary as kind \"await\" instead of a checkpoint note or fake save step. Use sqs for SQS-brokered await behavior.",
+          "If the brief implies a JPA-backed in-pipeline lookup, model it as kind \"query\" with a referenced top-level queries entry, not as an internal service.",
+          "If the brief starts from filesystem/S3/object storage input, model it with top-level sources and inputBoundary.object; the first forward step consumes inputBoundary.object.emits.typeName.",
           "If ownership transfers to another pipeline after this one completes, model checkpoint handoff with outputBoundary.checkpoint and optional compositionManifest instead of await.",
           "If ambiguity remains, keep only the unresolved contractQuestions.",
           "",
@@ -787,11 +865,13 @@ Rules:
 - In the main forward-processing pipeline, each step must consume the previous forward step's output type.
 - If a step is not part of the forward-processing chain, classify it explicitly with flowRole as query, resume, expansion, reduction, or merge.
 - Resume and re-entry belong to a separate query/resumption surface and must not appear as normal forward pipeline steps.
+- Framework connector queries are different from resume/query surfaces: use kind "query" only for in-pipeline JPA reads that feed the next step. They require cardinality ONE_TO_ONE, a query id, and a matching top-level queries entry with connector "jpa", input or inputType, output or outputType, and jpa.entity / jpa.where.
+- Filesystem/S3 object ingestion is an input boundary: use top-level sources and inputBoundary.object with emits.type/typeName/mapper, and make the first forward step consume the emitted type.
 - Distinguish ordinary forward steps, await steps, and checkpoint hand-offs.
 - Use kind "await" only for suspend/resume external boundaries inside one pipeline execution.
 - Do not confuse checkpoint publication with await steps.
 - Await steps must declare timeout, idempotencyKeyFields, and await config with correlation and transport details.
-- Await transports in this slice are interaction-api, webhook, and kafka.
+- Await transports in this slice are interaction-api, webhook, kafka, and sqs.
 - Await steps are incompatible with FUNCTION pipelines.
 - Use flowBoundaryRationale when a non-forward or non-adjacent boundary is intentional.
 - Treat caching as a cross-cutting optimization concern, not a default business step.
@@ -808,6 +888,8 @@ Rules:
 - no explicit save/persist/store business steps
 - forward steps chain by adjacent output-to-input type
 - resume/query surfaces stay outside the main forward pipeline
+- in-pipeline JPA reads use kind "query" plus a top-level queries entry; do not make a service module for them
+- filesystem/S3 object ingest uses top-level sources plus inputBoundary.object; do not make a read-file service step
 - await is distinct from checkpoint hand-off
 - use kind "await" only for real suspend/resume external boundaries
 - await requires timeout, idempotencyKeyFields, await.correlation.strategy, and await.transport.type

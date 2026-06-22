@@ -36,7 +36,7 @@ class PipelineGenerator {
     async generateFromConfig(configPath, outputPath) {
         const config = this.loadConfig(configPath);
         const scaffoldConfig = this.toScaffoldConfig(config);
-        const { appName, basePackage, steps, aspects, transport, platform, runtimeLayout, unionDefinitions, input, output } = scaffoldConfig;
+        const { appName, basePackage, steps, aspects, transport, platform, runtimeLayout, unionDefinitions, input, output, queries, sources } = scaffoldConfig;
         await this.engine.generateApplication({
             appName,
             basePackage,
@@ -48,6 +48,8 @@ class PipelineGenerator {
             unionDefinitions,
             input,
             output,
+            queries,
+            sources,
             outputPath
         });
         await this.copyConfig(config, outputPath);
@@ -551,7 +553,7 @@ class PipelineGenerator {
     processSteps(steps) {
         return steps.map((step, i) => {
             const processedStep = { ...step };
-            if (processedStep.kind === 'await') {
+            if (processedStep.kind === 'await' || processedStep.kind === 'query') {
                 processedStep.generatesServiceModule = false;
             }
             

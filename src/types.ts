@@ -15,7 +15,7 @@ export type StepCardinality =
   | "ONE_TO_MANY"
   | "MANY_TO_ONE";
 export type StepFlowRole = "forward" | "query" | "resume" | "expansion" | "reduction" | "merge";
-export type StepKind = "internal" | "delegated" | "remote" | "await";
+export type StepKind = "internal" | "delegated" | "remote" | "await" | "query";
 export type AwaitCorrelationStrategy = "interactionId" | "signedResumeToken";
 export type AwaitDispatchMode = "single" | "per-item";
 export type AwaitTransportType = "interaction-api" | "webhook" | "kafka" | "sqs";
@@ -154,6 +154,66 @@ export interface AwaitStepConfig {
   transport: AwaitTransportConfig;
 }
 
+export interface QueryCapture {
+  keyFields?: string[];
+}
+
+export interface JpaQueryDefinition {
+  entity: string;
+  where: Record<string, string>;
+  projection?: Record<string, string>;
+  result?: "single";
+}
+
+export interface PipelineQueryDefinition {
+  connector: "jpa";
+  /** Message name or query-local input alias used by the connector definition. */
+  input?: string;
+  /** Pipeline message type name consumed by the query step; may be simple or fully qualified. */
+  inputType?: string;
+  /** Message name or query-local output alias produced by the connector definition. */
+  output?: string;
+  /** Pipeline message type name produced by the query step; may be simple or fully qualified. */
+  outputType?: string;
+  version?: string;
+  jpa: JpaQueryDefinition;
+}
+
+export type ObjectSourceProvider = "filesystem" | "s3";
+export type ObjectPayloadMode = "metadata" | "reference" | "text";
+
+export interface PipelineObjectSourceFilter {
+  include?: string[];
+  exclude?: string[];
+}
+
+export interface PipelineObjectSourcePoll {
+  enabled?: boolean;
+  interval?: string;
+  batchSize?: number;
+}
+
+export interface PipelineObjectSourceIdentity {
+  fields?: string[];
+}
+
+export interface PipelineObjectSourcePayload {
+  mode?: ObjectPayloadMode;
+  refField?: string;
+  maxBytes?: number;
+  charset?: string;
+}
+
+export interface PipelineObjectSourceDefinition {
+  kind: "object";
+  provider: ObjectSourceProvider;
+  location?: Record<string, unknown>;
+  filter?: PipelineObjectSourceFilter;
+  poll?: PipelineObjectSourcePoll;
+  identity?: PipelineObjectSourceIdentity;
+  payload?: PipelineObjectSourcePayload;
+}
+
 export interface PipelineStep {
   id?: string;
   name: string;
@@ -161,6 +221,8 @@ export interface PipelineStep {
   cardinality: StepCardinality;
   inputTypeName: string;
   outputTypeName: string;
+  query?: string;
+  capture?: QueryCapture;
   flowRole?: StepFlowRole;
   flowBoundaryRationale?: string;
   timeout?: string;
@@ -182,8 +244,21 @@ export interface CheckpointSubscription {
   mapper?: string;
 }
 
+export interface ObjectInputEmit {
+  type: string;
+  typeName?: string;
+  mapper: string;
+}
+
+export interface ObjectInputBoundary {
+  source?: string;
+  from?: string;
+  emits: ObjectInputEmit;
+}
+
 export interface PipelineInputBoundary {
   subscription?: CheckpointSubscription;
+  object?: ObjectInputBoundary;
 }
 
 export interface PipelineOutputBoundary {
@@ -212,6 +287,8 @@ export interface DerivedConfig {
   output?: PipelineOutputBoundary;
   messages: Record<string, MessageDefinition>;
   unions?: Record<string, UnionDefinition>;
+  queries?: Record<string, PipelineQueryDefinition>;
+  sources?: Record<string, PipelineObjectSourceDefinition>;
   steps: PipelineStep[];
   aspects?: Record<string, AspectConfig>;
 }
@@ -244,6 +321,8 @@ export interface BusinessStep {
   kind?: StepKind;
   inputTypeName: string;
   outputTypeName: string;
+  query?: string;
+  capture?: QueryCapture;
   flowRole?: StepFlowRole;
   flowBoundaryRationale?: string;
   timeout?: string;
@@ -260,6 +339,8 @@ export interface StepContract {
   kind?: StepKind;
   inputTypeName: string;
   outputTypeName: string;
+  query?: string;
+  capture?: QueryCapture;
   flowRole?: StepFlowRole;
   flowBoundaryRationale?: string;
   timeout?: string;
@@ -358,6 +439,8 @@ export interface PlannerDraft {
   inputBoundary?: PipelineInputBoundary;
   outputBoundary?: PipelineOutputBoundary;
   compositionManifest?: PipelineCompositionManifest;
+  queries?: Record<string, PipelineQueryDefinition>;
+  sources?: Record<string, PipelineObjectSourceDefinition>;
   technicalConcerns?: TechnicalConcern[];
   couplingFindings?: CouplingFinding[];
 }

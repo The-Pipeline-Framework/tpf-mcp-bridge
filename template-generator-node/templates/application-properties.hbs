@@ -49,6 +49,22 @@ mp.messaging.incoming.tpf-await-kafka-responses.group.id={{kafkaAwait.consumerGr
 mp.messaging.incoming.tpf-await-kafka-responses.auto.offset.reset=${TPF_AWAIT_KAFKA_RESPONSES_OFFSET_RESET:earliest}
 mp.messaging.incoming.tpf-await-kafka-responses.value.deserializer=org.apache.kafka.common.serialization.StringDeserializer
 {{/if}}
+{{#if hasJpaQuery}}
+
+# JPA query connector starter settings.
+quarkus.datasource.db-kind=${TPF_QUERY_JPA_DB_KIND:postgresql}
+%dev.quarkus.datasource.devservices.enabled=true
+%test.quarkus.datasource.devservices.enabled=true
+# quarkus.datasource.reactive.url=${TPF_QUERY_JPA_REACTIVE_URL}
+# quarkus.datasource.username=${TPF_QUERY_JPA_USERNAME}
+# quarkus.datasource.password=${TPF_QUERY_JPA_PASSWORD}
+# quarkus.hibernate-orm.packages={{basePackage}}.common.domain
+{{/if}}
+{{#if hasObjectIngest}}
+
+# Object ingest connector starter.
+# Object source provider/location/polling settings are declared in config/pipeline.yaml under sources and input.object.
+{{/if}}
 
 # Micrometer configuration
 quarkus.micrometer.export.prometheus.enabled=${QUARKUS_MICROMETER_EXPORT_PROMETHEUS_ENABLED:false}

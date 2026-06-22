@@ -57,6 +57,20 @@
             <artifactId>quarkus-messaging-kafka</artifactId>
         </dependency>
 {{/if}}
+{{#if hasJpaQuery}}
+        <dependency>
+            <groupId>org.pipelineframework</groupId>
+            <artifactId>query-jpa-connector</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+{{/if}}
+{{#if hasObjectIngest}}
+        <dependency>
+            <groupId>org.pipelineframework</groupId>
+            <artifactId>object-ingest-connector</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+{{/if}}
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-container-image-jib</artifactId>

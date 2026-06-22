@@ -38,7 +38,6 @@ export function assertDerivedConfigInvariants(config: DerivedConfig): void {
       }
     });
   }
-  validateBoundaries(config);
 
   const knownMessages = new Set(messageEntries.map(([name]) => name));
   const unionEntries = Object.entries(config.unions || {});
@@ -57,6 +56,9 @@ export function assertDerivedConfigInvariants(config: DerivedConfig): void {
     }
   }
   const knownBoundaryTypes = new Set([...knownMessages, ...knownUnions]);
+  validateObjectSources(config);
+  validateBoundaries(config, knownBoundaryTypes);
+  validateQueryDefinitions(config, knownMessages);
   for (const step of config.steps || []) {
     if (!knownBoundaryTypes.has(step.inputTypeName)) {
       throw new DerivedConfigValidationError(`Step '${step.name}' references unknown input type '${step.inputTypeName}'.`);
@@ -66,6 +68,7 @@ export function assertDerivedConfigInvariants(config: DerivedConfig): void {
     }
     validateVirtualThreadStep(step);
     validateAwaitStep(config, step);
+    validateQueryStep(config, step, knownMessages);
   }
 }
 
@@ -215,6 +218,101 @@ function validateAwaitStep(config: DerivedConfig, step: DerivedConfig["steps"][n
   }
 }
 
+function validateQueryDefinitions(config: DerivedConfig, knownMessages: Set<string>): void {
+  const queryEntries = Object.entries(config.queries || {});
+  for (const [queryId, query] of queryEntries) {
+    if (!queryId.trim()) {
+      throw new DerivedConfigValidationError("Query definition id must not be empty.");
+    }
+    if (query.connector !== "jpa") {
+      throw new DerivedConfigValidationError(`Query '${queryId}' uses unsupported connector '${String(query.connector)}'.`);
+    }
+    const inputType = query.inputType || query.input;
+    const outputType = query.outputType || query.output;
+    if (!inputType?.trim()) {
+      throw new DerivedConfigValidationError(`Query '${queryId}' must declare input or inputType.`);
+    }
+    if (!outputType?.trim()) {
+      throw new DerivedConfigValidationError(`Query '${queryId}' must declare output or outputType.`);
+    }
+    if (!hasKnownType(knownMessages, inputType)) {
+      throw new DerivedConfigValidationError(`Query '${queryId}' references unknown input type '${inputType}'.`);
+    }
+    if (!hasKnownType(knownMessages, outputType)) {
+      throw new DerivedConfigValidationError(`Query '${queryId}' references unknown output type '${outputType}'.`);
+    }
+    if (!query.jpa?.entity?.trim()) {
+      throw new DerivedConfigValidationError(`Query '${queryId}' must declare jpa.entity.`);
+    }
+    if (!query.jpa.where || Object.keys(query.jpa.where).length === 0) {
+      throw new DerivedConfigValidationError(`Query '${queryId}' must declare at least one jpa.where binding.`);
+    }
+    for (const [field, expression] of Object.entries(query.jpa.where)) {
+      if (!field.trim() || !expression.trim()) {
+        throw new DerivedConfigValidationError(`Query '${queryId}' has an invalid jpa.where binding.`);
+      }
+    }
+    if (query.jpa.result && query.jpa.result !== "single") {
+      throw new DerivedConfigValidationError(`Query '${queryId}' uses unsupported jpa.result '${query.jpa.result}'.`);
+    }
+  }
+}
+
+function validateQueryStep(
+  config: DerivedConfig,
+  step: DerivedConfig["steps"][number],
+  knownMessages: Set<string>
+): void {
+  if (step.kind !== "query") {
+    if (step.query || step.capture) {
+      throw new DerivedConfigValidationError(
+        `Step '${step.name}' declares query connector fields but is not marked as kind 'query'.`
+      );
+    }
+    return;
+  }
+
+  if (step.await || step.timeout || step.idempotencyKeyFields?.length) {
+    throw new DerivedConfigValidationError(`Query step '${step.name}' must not declare await-step fields.`);
+  }
+  if (step.cardinality !== "ONE_TO_ONE") {
+    throw new DerivedConfigValidationError(`Query step '${step.name}' must use ONE_TO_ONE cardinality.`);
+  }
+  if (step.runOnVirtualThreads) {
+    throw new DerivedConfigValidationError(`Query step '${step.name}' must not declare runOnVirtualThreads.`);
+  }
+  const queryId = step.query?.trim();
+  if (!queryId) {
+    throw new DerivedConfigValidationError(`Query step '${step.name}' must reference a query id.`);
+  }
+  const query = config.queries?.[queryId];
+  if (!query) {
+    throw new DerivedConfigValidationError(`Query step '${step.name}' references unknown query '${queryId}'.`);
+  }
+  const queryInput = query.inputType || query.input;
+  const queryOutput = query.outputType || query.output;
+  if (!typeNamesMatch(queryInput, step.inputTypeName)) {
+    throw new DerivedConfigValidationError(
+      `Query step '${step.name}' input '${step.inputTypeName}' does not match query '${queryId}' input '${queryInput}'.`
+    );
+  }
+  if (!typeNamesMatch(queryOutput, step.outputTypeName)) {
+    throw new DerivedConfigValidationError(
+      `Query step '${step.name}' output '${step.outputTypeName}' does not match query '${queryId}' output '${queryOutput}'.`
+    );
+  }
+  const inputMessageName = simpleTypeName(step.inputTypeName);
+  const inputFields = knownMessages.has(inputMessageName) ? config.messages[inputMessageName]?.fields || [] : [];
+  const inputFieldNames = new Set(inputFields.map((field) => field.name));
+  for (const keyField of step.capture?.keyFields || []) {
+    if (!inputFieldNames.has(keyField)) {
+      throw new DerivedConfigValidationError(
+        `Query step '${step.name}' capture key field '${keyField}' is not present on input type '${step.inputTypeName}'.`
+      );
+    }
+  }
+}
+
 function validateVirtualThreadStep(step: DerivedConfig["steps"][number]): void {
   if (!step.runOnVirtualThreads) {
     return;
@@ -226,13 +324,87 @@ function validateVirtualThreadStep(step: DerivedConfig["steps"][number]): void {
   }
 }
 
-function validateBoundaries(config: DerivedConfig): void {
+// TPF scaffold messages are keyed by unique simple names today. If fully-qualified
+// message keys are introduced, update these helpers to detect simple-name collisions.
+function hasKnownType(knownMessages: Set<string>, value: string): boolean {
+  return knownMessages.has(value) || knownMessages.has(simpleTypeName(value));
+}
+
+function typeNamesMatch(left: string | undefined, right: string | undefined): boolean {
+  if (!left || !right) {
+    return false;
+  }
+  return left === right || simpleTypeName(left) === simpleTypeName(right);
+}
+
+function simpleTypeName(value: string): string {
+  return value.replace(/.*\./, "");
+}
+
+function validateObjectSources(config: DerivedConfig): void {
+  for (const [sourceName, source] of Object.entries(config.sources || {})) {
+    validateBoundaryName(sourceName, "sources entry");
+    if (source.kind !== "object") {
+      throw new DerivedConfigValidationError(`Object source '${sourceName}' must declare kind 'object'.`);
+    }
+    if (source.provider !== "filesystem" && source.provider !== "s3") {
+      throw new DerivedConfigValidationError(`Object source '${sourceName}' uses unsupported provider '${source.provider}'.`);
+    }
+    const location = source.location || {};
+    if (source.provider === "filesystem" && typeof location.root !== "string") {
+      throw new DerivedConfigValidationError(`Filesystem object source '${sourceName}' must declare location.root.`);
+    }
+    if (source.provider === "s3" && typeof location.bucket !== "string") {
+      throw new DerivedConfigValidationError(`S3 object source '${sourceName}' must declare location.bucket.`);
+    }
+    if (source.poll?.batchSize !== undefined && source.poll.batchSize <= 0) {
+      throw new DerivedConfigValidationError(`Object source '${sourceName}' poll.batchSize must be positive.`);
+    }
+    if (source.poll?.interval !== undefined && !source.poll.interval.trim()) {
+      throw new DerivedConfigValidationError(`Object source '${sourceName}' poll.interval must not be empty.`);
+    }
+    if (source.payload?.mode && !["metadata", "reference", "text"].includes(source.payload.mode)) {
+      throw new DerivedConfigValidationError(`Object source '${sourceName}' payload.mode '${source.payload.mode}' is unsupported.`);
+    }
+    if (source.payload?.maxBytes !== undefined && source.payload.maxBytes < 0) {
+      throw new DerivedConfigValidationError(`Object source '${sourceName}' payload.maxBytes must not be negative.`);
+    }
+  }
+}
+
+function validateBoundaries(config: DerivedConfig, knownBoundaryTypes: Set<string>): void {
   const subscription = config.input?.subscription;
+  const objectInput = config.input?.object || legacyObjectInputBoundary(config.input);
   const checkpoint = config.output?.checkpoint;
+  if (subscription && objectInput) {
+    throw new DerivedConfigValidationError("Derived config input must not declare both subscription and object boundaries.");
+  }
   if (subscription) {
     validateBoundaryName(subscription.publication, "input.subscription.publication");
     if (subscription.mapper && !/^[a-zA-Z_$][a-zA-Z\d_$]*(\.[a-zA-Z_$][a-zA-Z\d_$]*)*\.[A-Z][a-zA-Z\d_$]*$/.test(subscription.mapper)) {
       throw new DerivedConfigValidationError(`Input subscription mapper '${subscription.mapper}' is not a valid Java type name.`);
+    }
+  }
+  if (objectInput) {
+    const sourceName = objectInput.source || objectInput.from;
+    if (!sourceName?.trim()) {
+      throw new DerivedConfigValidationError("Input object boundary must declare source.");
+    }
+    if (!config.sources?.[sourceName]) {
+      throw new DerivedConfigValidationError(`Input object boundary references unknown source '${sourceName}'.`);
+    }
+    const emittedType = objectInput.emits?.typeName || simpleTypeName(objectInput.emits?.type || "");
+    if (!emittedType || !hasKnownType(knownBoundaryTypes, emittedType)) {
+      throw new DerivedConfigValidationError(`Input object boundary emits unknown type '${emittedType}'.`);
+    }
+    if (!objectInput.emits?.mapper || !/^[a-zA-Z_$][a-zA-Z\d_$]*(\.[a-zA-Z_$][a-zA-Z\d_$]*)*\.[A-Z][a-zA-Z\d_$]*$/.test(objectInput.emits.mapper)) {
+      throw new DerivedConfigValidationError(`Input object boundary mapper '${objectInput.emits?.mapper || ""}' is not a valid Java type name.`);
+    }
+    const firstForwardStep = config.steps?.find((step) => step.kind !== "query");
+    if (firstForwardStep && !typeNamesMatch(firstForwardStep.inputTypeName, emittedType)) {
+      throw new DerivedConfigValidationError(
+        `Input object boundary emits '${emittedType}' but first pipeline step '${firstForwardStep.name}' consumes '${firstForwardStep.inputTypeName}'.`
+      );
     }
   }
   if (checkpoint) {
@@ -251,6 +423,11 @@ function validateBoundaries(config: DerivedConfig): void {
       }
     }
   }
+}
+
+function legacyObjectInputBoundary(input: DerivedConfig["input"]): NonNullable<DerivedConfig["input"]>["object"] | undefined {
+  const legacy = input as unknown as { from?: string; emits?: NonNullable<NonNullable<DerivedConfig["input"]>["object"]>["emits"] } | undefined;
+  return legacy?.from && legacy.emits ? { source: legacy.from, emits: legacy.emits } : undefined;
 }
 
 function validateBoundaryName(value: string, label: string): void {
