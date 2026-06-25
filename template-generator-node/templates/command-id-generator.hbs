@@ -1,0 +1,21 @@
+package {{packageName}};
+
+import jakarta.enterprise.context.ApplicationScoped;
+
+import org.pipelineframework.command.CommandDescriptor;
+import org.pipelineframework.command.CommandIdGenerator;
+import {{inputTypeFqcn}};
+
+@ApplicationScoped
+public class {{className}} implements CommandIdGenerator<{{inputTypeName}}> {
+  @Override
+  public String commandId(CommandDescriptor descriptor, {{inputTypeName}} input) {
+    if (descriptor == null) {
+      throw new IllegalArgumentException("descriptor is required");
+    }
+    if (input == null) {
+      throw new IllegalArgumentException("input is required");
+    }
+    throw new UnsupportedOperationException("Implement a deterministic command id for '{{command}}'.");
+  }
+}
