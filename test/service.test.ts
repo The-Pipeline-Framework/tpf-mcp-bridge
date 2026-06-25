@@ -276,6 +276,69 @@ test("planner analysis rejects trimmed duplicate query and object source ids", a
     /duplicate object source 'documents' after trimming ids/
   );
 
+  const duplicateWhereDraft = await createHeuristicPlannerClient().planInitialBrief({ briefText: structuredBackendBrief });
+  duplicateWhereDraft.queries = {
+    "customer-risk": {
+      connector: "jpa",
+      inputType: "CustomerRequest",
+      outputType: "CustomerResponse",
+      jpa: {
+        entity: "com.example.registration.common.domain.CustomerEntity",
+        where: Object.assign(Object.create(null), {
+          customerId: "input.customerId",
+          " customerId ": "input.customerId"
+        })
+      }
+    }
+  };
+  assert.throws(
+    () => analyzePlannerDraft({ briefText: structuredBackendBrief }, duplicateWhereDraft),
+    /duplicate jpa\.where field 'customerId' after trimming/
+  );
+
+  const duplicateOrderByDraft = await createHeuristicPlannerClient().planInitialBrief({ briefText: structuredBackendBrief });
+  duplicateOrderByDraft.queries = {
+    "customer-risk": {
+      connector: "jpa",
+      inputType: "CustomerRequest",
+      outputType: "CustomerResponse",
+      jpa: {
+        entity: "com.example.registration.common.domain.CustomerEntity",
+        where: {
+          customerId: "input.customerId"
+        },
+        orderBy: Object.assign(Object.create(null), {
+          createdAt: "desc",
+          " createdAt ": "asc"
+        })
+      }
+    }
+  };
+  assert.throws(
+    () => analyzePlannerDraft({ briefText: structuredBackendBrief }, duplicateOrderByDraft),
+    /duplicate jpa\.orderBy field 'createdAt' after trimming/
+  );
+
+  const conflictingQueryAliasDraft = await createHeuristicPlannerClient().planInitialBrief({ briefText: structuredBackendBrief });
+  conflictingQueryAliasDraft.queries = {
+    "customer-risk": {
+      connector: "jpa",
+      inputType: "CustomerRequest",
+      input: "OtherCustomerRequest",
+      outputType: "CustomerResponse",
+      jpa: {
+        entity: "com.example.registration.common.domain.CustomerEntity",
+        where: {
+          customerId: "input.customerId"
+        }
+      }
+    }
+  };
+  assert.throws(
+    () => analyzePlannerDraft({ briefText: structuredBackendBrief }, conflictingQueryAliasDraft),
+    /conflicting input and inputType values/
+  );
+
   const missingQueryInputDraft = await createHeuristicPlannerClient().planInitialBrief({ briefText: structuredBackendBrief });
   missingQueryInputDraft.queries = {
     "customer-risk": {
@@ -1003,6 +1066,20 @@ test("query connector DerivedConfig validates released JPA predicate semantics",
   invalidOrderBy.queries!["customer-risk-by-id"].jpa.orderBy = { score: "sideways" };
   await assert.rejects(
     () => validateDerivedConfig(invalidOrderBy),
+    /invalid jpa\.orderBy binding/
+  );
+
+  const invalidWhereField = buildQueryConnectorConfig();
+  invalidWhereField.queries!["customer-risk-by-id"].jpa.where = { "bad field": "input.customerId" };
+  await assert.rejects(
+    () => validateDerivedConfig(invalidWhereField),
+    /invalid jpa\.where field/
+  );
+
+  const nonStringOrderBy = buildQueryConnectorConfig();
+  nonStringOrderBy.queries!["customer-risk-by-id"].jpa.orderBy = { score: 1 as never };
+  await assert.rejects(
+    () => validateDerivedConfig(nonStringOrderBy),
     /invalid jpa\.orderBy binding/
   );
 
@@ -2819,7 +2896,10 @@ function buildQueryConnectorConfig(): DerivedConfig {
     messages: {
       CustomerRiskLookup: {
         fields: [
-          { number: 1, name: "customerId", type: "uuid" }
+          { number: 1, name: "customerId", type: "uuid" },
+          { number: 2, name: "windowStart", type: "timestamp" },
+          { number: 3, name: "windowEnd", type: "timestamp" },
+          { number: 4, name: "namePrefix", type: "string", optional: true }
         ]
       },
       CustomerRiskSnapshot: {

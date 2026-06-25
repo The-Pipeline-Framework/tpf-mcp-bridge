@@ -309,6 +309,12 @@ function normalizeQueries(
     const input = query.input?.trim();
     const outputType = query.outputType?.trim();
     const output = query.output?.trim();
+    if (inputType && input && !typeNamesMatch(input, inputType)) {
+      throw new Error(`Planner draft query '${normalizedId}' declares conflicting input and inputType values.`);
+    }
+    if (outputType && output && !typeNamesMatch(output, outputType)) {
+      throw new Error(`Planner draft query '${normalizedId}' declares conflicting output and outputType values.`);
+    }
     if (!inputType && !input) {
       throw new Error(`Planner draft query '${normalizedId}' must include inputType or input.`);
     }
@@ -412,11 +418,16 @@ function normalizeJpaWhere(
   if (entries.length === 0) {
     throw new Error(`Planner draft query '${queryId}' must include at least one jpa.where binding.`);
   }
+  const seenFields = new Set<string>();
   return Object.fromEntries(entries.map(([key, item]) => {
     const field = key.trim();
     if (!field) {
       throw new Error(`Planner draft query '${queryId}' has an empty jpa.where field.`);
     }
+    if (seenFields.has(field)) {
+      throw new Error(`Planner draft query '${queryId}' defines duplicate jpa.where field '${field}' after trimming.`);
+    }
+    seenFields.add(field);
     if (typeof item === "string") {
       const expression = item.trim();
       if (!expression) {
@@ -507,9 +518,14 @@ function normalizeJpaOrderBy(
   if (entries.length === 0) {
     throw new Error(`Planner draft query '${queryId}' jpa.orderBy must include at least one field.`);
   }
+  const seenFields = new Set<string>();
   return Object.fromEntries(entries.map(([key, direction]) => {
     const field = key.trim();
-    const normalizedDirection = direction.trim().toLowerCase();
+    if (seenFields.has(field)) {
+      throw new Error(`Planner draft query '${queryId}' defines duplicate jpa.orderBy field '${field}' after trimming.`);
+    }
+    seenFields.add(field);
+    const normalizedDirection = typeof direction === "string" ? direction.trim().toLowerCase() : "";
     if (!field || !/^(asc|desc)$/.test(normalizedDirection)) {
       throw new Error(`Planner draft query '${queryId}' has an invalid jpa.orderBy binding.`);
     }

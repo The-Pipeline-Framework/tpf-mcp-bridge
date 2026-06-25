@@ -7,6 +7,7 @@ const MAX_PACKAGE_SEGMENT_LENGTH = 24;
 const MAX_APP_NAME_LENGTH = 80;
 const MAX_COMPOSITION_PIPELINE_ID_LENGTH = 80;
 const MAX_COMPOSITION_PIPELINE_PATH_LENGTH = 240;
+const JPA_PATH_PATTERN = /^[A-Za-z_$][A-Za-z\d_$]*(\.[A-Za-z_$][A-Za-z\d_$]*)*$/;
 
 export class DerivedConfigValidationError extends Error {
   constructor(message: string) {
@@ -281,7 +282,7 @@ function validateQueryDefinitions(config: DerivedConfig, knownMessages: Set<stri
 
 function validateJpaWhere(queryId: string, where: PipelineQueryDefinition["jpa"]["where"]): void {
   for (const [field, expression] of Object.entries(where)) {
-    if (!field.trim()) {
+    if (!JPA_PATH_PATTERN.test(field)) {
       throw new DerivedConfigValidationError(`Query '${queryId}' has an invalid jpa.where field.`);
     }
     if (typeof expression === "string") {
@@ -362,9 +363,8 @@ function validateJpaProjection(
   queryId: string,
   projection: NonNullable<PipelineQueryDefinition["jpa"]["projection"]>
 ): void {
-  const pathPattern = /^[A-Za-z_$][A-Za-z\d_$]*(\.[A-Za-z_$][A-Za-z\d_$]*)*$/;
   for (const [source, target] of Object.entries(projection)) {
-    if (!pathPattern.test(source) || !pathPattern.test(target)) {
+    if (!JPA_PATH_PATTERN.test(source) || !JPA_PATH_PATTERN.test(target)) {
       throw new DerivedConfigValidationError(`Query '${queryId}' has an invalid jpa.projection binding.`);
     }
   }
@@ -375,7 +375,7 @@ function validateJpaOrderBy(queryId: string, orderBy: NonNullable<PipelineQueryD
     throw new DerivedConfigValidationError(`Query '${queryId}' jpa.orderBy must include at least one field.`);
   }
   for (const [field, direction] of Object.entries(orderBy)) {
-    if (!field.trim() || !/^(asc|desc)$/i.test(direction.trim())) {
+    if (!JPA_PATH_PATTERN.test(field) || typeof direction !== "string" || !/^(asc|desc)$/i.test(direction.trim())) {
       throw new DerivedConfigValidationError(`Query '${queryId}' has an invalid jpa.orderBy binding.`);
     }
   }
