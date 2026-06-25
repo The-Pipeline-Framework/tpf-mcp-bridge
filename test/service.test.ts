@@ -1111,6 +1111,7 @@ test("generateScaffoldZip with object ingest emits source boundary, connector de
   assert.equal(pipelineConfig.input?.object?.source, "documents");
   assert.equal(pipelineConfig.input?.object?.emits.typeName, "RawDocument");
   assert.equal(pipelineConfig.input?.object?.emits.mapper, "com.example.objectingest.common.mapper.RawDocumentObjectSnapshotMapper");
+  assert.equal(pipelineConfig.steps[0].inboundMapper, "com.example.objectingest.common.mapper.RawDocumentMapper");
 
   const orchestratorPom = await zip.file("orchestrator-svc/pom.xml")!.async("string");
   assert.match(orchestratorPom, /object-ingest-connector/);
@@ -2958,7 +2959,8 @@ function buildObjectIngestConfig(): DerivedConfig {
         kind: "internal",
         cardinality: "ONE_TO_ONE",
         inputTypeName: "RawDocument",
-        outputTypeName: "ParsedDocument"
+        outputTypeName: "ParsedDocument",
+        inboundMapper: "com.example.objectingest.common.mapper.RawDocumentMapper"
       }
     ]
   };

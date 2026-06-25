@@ -481,6 +481,7 @@ steps:
     cardinality: ONE_TO_ONE
     inputTypeName: RawDocument
     outputTypeName: ParsedDocument
+    inboundMapper: com.example.objectingest.common.mapper.RawDocumentMapper
 `);
 
     const config = generator.loadConfig(configPath);
@@ -492,6 +493,7 @@ steps:
     expect(scaffold.sources.documents.location.root).toBe('/var/tpf/inbox');
     expect(scaffold.input.object.emits.typeName).toBe('RawDocument');
     expect(scaffold.steps[0].inputTypeName).toBe('RawDocument');
+    expect(scaffold.steps[0].inboundMapper).toBe('com.example.objectingest.common.mapper.RawDocumentMapper');
     expect(scaffold.steps[0].inputFields.map((field) => field.name)).toEqual(['documentId', 'objectUri']);
   });
 

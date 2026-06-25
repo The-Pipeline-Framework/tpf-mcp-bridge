@@ -239,6 +239,8 @@ export interface PipelineStep {
   cardinality: StepCardinality;
   inputTypeName: string;
   outputTypeName: string;
+  inboundMapper?: string;
+  outboundMapper?: string;
   query?: string;
   capture?: QueryCapture;
   flowRole?: StepFlowRole;
