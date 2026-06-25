@@ -173,7 +173,8 @@ function buildObjectIngestConfig() {
         kind: "internal",
         cardinality: "ONE_TO_ONE",
         inputTypeName: "RawDocument",
-        outputTypeName: "ParsedDocument"
+        outputTypeName: "ParsedDocument",
+        inboundMapper: "com.example.objectingestsmoke.common.mapper.RawDocumentMapper"
       }
     ]
   };

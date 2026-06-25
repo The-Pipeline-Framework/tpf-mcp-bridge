@@ -22,6 +22,7 @@ import { InMemoryArtifactStore, InMemorySessionStore, LocalFileArtifactStore } f
 import { generateScaffoldZip, validateDerivedConfig } from "../src/template-bridge.js";
 import { BriefSessionDurableObject, InMemoryKv, InMemoryR2Bucket, handleWorkerRequest } from "../src/worker.js";
 import type { DerivedConfig, PlannerDraft, SessionResult, SessionStartInput, SessionState } from "../src/types.js";
+import { analyzePlannerDraft } from "../src/planner-analysis.js";
 
 const structuredBackendBrief = `
 # Customer Registration Backend
@@ -129,6 +130,28 @@ test("start_brief_session returns structured contract questions for onboarding b
 
 test("openai-compatible planner adapter parses structured planner drafts", async () => {
   const initialDraft = await createHeuristicPlannerClient().planInitialBrief({ briefText: structuredBackendBrief });
+  initialDraft.queries = {
+    "recent-customer-by-id": {
+      connector: "jpa",
+      inputType: "CustomerRequest",
+      outputType: "CustomerResponse",
+      version: "v1",
+      jpa: {
+        entity: "com.example.registration.common.domain.CustomerEntity",
+        where: {
+          customerId: { eq: "input.customerId" },
+          status: { in: ["ACTIVE", "PENDING"] },
+          createdAt: { gte: "input.createdAfter" },
+          deletedAt: { isNull: "true" }
+        },
+        orderBy: {
+          createdAt: "DESC"
+        },
+        limit: 1,
+        result: "single"
+      }
+    }
+  };
   const planner = createOpenAiPlannerClient({
     endpoint: "https://planner.example/v1",
     model: "gpt-5",
@@ -139,6 +162,215 @@ test("openai-compatible planner adapter parses structured planner drafts", async
   const draft = await planner.planInitialBrief({ briefText: structuredBackendBrief });
   assert.equal(draft.title, initialDraft.title);
   assert.equal(draft.pipelineSteps[0]?.name, "Validate Customer Request");
+  assert.deepEqual(draft.queries?.["recent-customer-by-id"].jpa.where.status, { in: ["ACTIVE", "PENDING"] });
+  assert.deepEqual(draft.queries?.["recent-customer-by-id"].jpa.orderBy, { createdAt: "DESC" });
+  assert.equal(draft.queries?.["recent-customer-by-id"].jpa.limit, 1);
+});
+
+test("openai-compatible planner adapter rejects invalid JPA predicate drafts", async () => {
+  const invalidDraft = await createHeuristicPlannerClient().planInitialBrief({ briefText: structuredBackendBrief });
+  invalidDraft.queries = {
+    "bad-customer-query": {
+      connector: "jpa",
+      inputType: "CustomerRequest",
+      outputType: "CustomerResponse",
+      jpa: {
+        entity: "com.example.registration.common.domain.CustomerEntity",
+        where: {
+          customerId: { in: [] }
+        }
+      }
+    }
+  };
+  const planner = createOpenAiPlannerClient({
+    endpoint: "https://planner.example/v1",
+    model: "gpt-5",
+    token: "planner-token",
+    fetchImpl: createPlannerProviderFetch([invalidDraft])
+  });
+
+  await assert.rejects(
+    () => planner.planInitialBrief({ briefText: structuredBackendBrief }),
+    /invalid draft/
+  );
+});
+
+test("openai-compatible planner adapter rejects invalid JPA query identifiers", async () => {
+  const invalidDraft = await createHeuristicPlannerClient().planInitialBrief({ briefText: structuredBackendBrief });
+  invalidDraft.queries = {
+    "bad-customer-query": {
+      connector: "jpa",
+      inputType: "CustomerRequest",
+      outputType: "CustomerResponse",
+      jpa: {
+        entity: "com.example.registration.common.domain.CustomerEntity",
+        where: {
+          "bad field": "input.customerId"
+        }
+      }
+    }
+  };
+  const planner = createOpenAiPlannerClient({
+    endpoint: "https://planner.example/v1",
+    model: "gpt-5",
+    token: "planner-token",
+    fetchImpl: createPlannerProviderFetch([invalidDraft])
+  });
+
+  await assert.rejects(
+    () => planner.planInitialBrief({ briefText: structuredBackendBrief }),
+    /invalid draft/
+  );
+});
+
+test("planner analysis rejects trimmed duplicate query and object source ids", async () => {
+  const duplicateQueryDraft = await createHeuristicPlannerClient().planInitialBrief({ briefText: structuredBackendBrief });
+  duplicateQueryDraft.queries = {
+    "customer-risk": {
+      connector: "jpa",
+      inputType: "CustomerRequest",
+      outputType: "CustomerResponse",
+      jpa: {
+        entity: "com.example.registration.common.domain.CustomerEntity",
+        where: {
+          customerId: "input.customerId"
+        }
+      }
+    },
+    " customer-risk ": {
+      connector: "jpa",
+      inputType: "CustomerRequest",
+      outputType: "CustomerResponse",
+      jpa: {
+        entity: "com.example.registration.common.domain.CustomerEntity",
+        where: {
+          customerId: "input.customerId"
+        }
+      }
+    }
+  };
+  assert.throws(
+    () => analyzePlannerDraft({ briefText: structuredBackendBrief }, duplicateQueryDraft),
+    /duplicate query 'customer-risk' after trimming ids/
+  );
+
+  const duplicateSourceDraft = await createHeuristicPlannerClient().planInitialBrief({ briefText: structuredBackendBrief });
+  duplicateSourceDraft.sources = {
+    documents: {
+      kind: "object",
+      provider: "filesystem",
+      location: {
+        root: "/var/tpf/inbox"
+      }
+    },
+    " documents ": {
+      kind: "object",
+      provider: "filesystem",
+      location: {
+        root: "/var/tpf/inbox"
+      }
+    }
+  };
+  assert.throws(
+    () => analyzePlannerDraft({ briefText: structuredBackendBrief }, duplicateSourceDraft),
+    /duplicate object source 'documents' after trimming ids/
+  );
+
+  const duplicateWhereDraft = await createHeuristicPlannerClient().planInitialBrief({ briefText: structuredBackendBrief });
+  duplicateWhereDraft.queries = {
+    "customer-risk": {
+      connector: "jpa",
+      inputType: "CustomerRequest",
+      outputType: "CustomerResponse",
+      jpa: {
+        entity: "com.example.registration.common.domain.CustomerEntity",
+        where: Object.assign(Object.create(null), {
+          customerId: "input.customerId",
+          " customerId ": "input.customerId"
+        })
+      }
+    }
+  };
+  assert.throws(
+    () => analyzePlannerDraft({ briefText: structuredBackendBrief }, duplicateWhereDraft),
+    /duplicate jpa\.where field 'customerId' after trimming/
+  );
+
+  const duplicateOrderByDraft = await createHeuristicPlannerClient().planInitialBrief({ briefText: structuredBackendBrief });
+  duplicateOrderByDraft.queries = {
+    "customer-risk": {
+      connector: "jpa",
+      inputType: "CustomerRequest",
+      outputType: "CustomerResponse",
+      jpa: {
+        entity: "com.example.registration.common.domain.CustomerEntity",
+        where: {
+          customerId: "input.customerId"
+        },
+        orderBy: Object.assign(Object.create(null), {
+          createdAt: "desc",
+          " createdAt ": "asc"
+        })
+      }
+    }
+  };
+  assert.throws(
+    () => analyzePlannerDraft({ briefText: structuredBackendBrief }, duplicateOrderByDraft),
+    /duplicate jpa\.orderBy field 'createdAt' after trimming/
+  );
+
+  const conflictingQueryAliasDraft = await createHeuristicPlannerClient().planInitialBrief({ briefText: structuredBackendBrief });
+  conflictingQueryAliasDraft.queries = {
+    "customer-risk": {
+      connector: "jpa",
+      inputType: "CustomerRequest",
+      input: "OtherCustomerRequest",
+      outputType: "CustomerResponse",
+      jpa: {
+        entity: "com.example.registration.common.domain.CustomerEntity",
+        where: {
+          customerId: "input.customerId"
+        }
+      }
+    }
+  };
+  assert.throws(
+    () => analyzePlannerDraft({ briefText: structuredBackendBrief }, conflictingQueryAliasDraft),
+    /conflicting input and inputType values/
+  );
+
+  const missingQueryInputDraft = await createHeuristicPlannerClient().planInitialBrief({ briefText: structuredBackendBrief });
+  missingQueryInputDraft.queries = {
+    "customer-risk": {
+      connector: "jpa",
+      outputType: "CustomerResponse",
+      jpa: {
+        entity: "com.example.registration.common.domain.CustomerEntity",
+        where: {
+          customerId: "input.customerId"
+        }
+      }
+    }
+  };
+  assert.throws(
+    () => analyzePlannerDraft({ briefText: structuredBackendBrief }, missingQueryInputDraft),
+    /must include inputType or input/
+  );
+
+  const missingProviderDraft = await createHeuristicPlannerClient().planInitialBrief({ briefText: structuredBackendBrief });
+  missingProviderDraft.sources = {
+    documents: {
+      kind: "object",
+      provider: "" as never,
+      location: {
+        root: "/var/tpf/inbox"
+      }
+    }
+  };
+  assert.throws(
+    () => analyzePlannerDraft({ briefText: structuredBackendBrief }, missingProviderDraft),
+    /object source 'documents' must include provider/
+  );
 });
 
 test("ollama-native planner adapter uses /api/chat structured outputs and parses planner drafts", async () => {
@@ -799,6 +1031,102 @@ test("query connector DerivedConfig validates query references and rejects misma
   );
 });
 
+test("query connector DerivedConfig validates released JPA predicate semantics", async () => {
+  await validateDerivedConfig(buildQueryConnectorConfig());
+
+  const emptyWhere = buildQueryConnectorConfig();
+  emptyWhere.queries!["customer-risk-by-id"].jpa.where = {};
+  await assert.rejects(
+    () => validateDerivedConfig(emptyWhere),
+    /must declare at least one jpa\.where binding/
+  );
+
+  const emptyIn = buildQueryConnectorConfig();
+  emptyIn.queries!["customer-risk-by-id"].jpa.where = { riskBand: { in: [] } };
+  await assert.rejects(
+    () => validateDerivedConfig(emptyIn),
+    /riskBand\.in' must not be empty/
+  );
+
+  const shortBetween = buildQueryConnectorConfig();
+  shortBetween.queries!["customer-risk-by-id"].jpa.where = { score: { between: [1] as unknown as [number, number] } };
+  await assert.rejects(
+    () => validateDerivedConfig(shortBetween),
+    /score\.between' must include exactly two values/
+  );
+
+  const unsupported = buildQueryConnectorConfig();
+  unsupported.queries!["customer-risk-by-id"].jpa.where = { score: { contains: "HIGH" } as never };
+  await assert.rejects(
+    () => validateDerivedConfig(unsupported),
+    /unsupported predicate operator 'contains'/
+  );
+
+  const invalidOrderBy = buildQueryConnectorConfig();
+  invalidOrderBy.queries!["customer-risk-by-id"].jpa.orderBy = { score: "sideways" };
+  await assert.rejects(
+    () => validateDerivedConfig(invalidOrderBy),
+    /invalid jpa\.orderBy binding/
+  );
+
+  const invalidWhereField = buildQueryConnectorConfig();
+  invalidWhereField.queries!["customer-risk-by-id"].jpa.where = { "bad field": "input.customerId" };
+  await assert.rejects(
+    () => validateDerivedConfig(invalidWhereField),
+    /invalid jpa\.where field/
+  );
+
+  const nonStringOrderBy = buildQueryConnectorConfig();
+  nonStringOrderBy.queries!["customer-risk-by-id"].jpa.orderBy = { score: 1 as never };
+  await assert.rejects(
+    () => validateDerivedConfig(nonStringOrderBy),
+    /invalid jpa\.orderBy binding/
+  );
+
+  const limitWithoutOrderBy = buildQueryConnectorConfig();
+  delete limitWithoutOrderBy.queries!["customer-risk-by-id"].jpa.orderBy;
+  limitWithoutOrderBy.queries!["customer-risk-by-id"].jpa.limit = 1;
+  await assert.rejects(
+    () => validateDerivedConfig(limitWithoutOrderBy),
+    /jpa\.limit requires jpa\.orderBy/
+  );
+
+  const unsupportedVersion = buildQueryConnectorConfig();
+  unsupportedVersion.queries!["customer-risk-by-id"].version = "v2";
+  await assert.rejects(
+    () => validateDerivedConfig(unsupportedVersion),
+    /unsupported version 'v2'/
+  );
+
+  const conflictingAliases = buildQueryConnectorConfig();
+  conflictingAliases.queries!["customer-risk-by-id"].input = "OtherLookup";
+  await assert.rejects(
+    () => validateDerivedConfig(conflictingAliases),
+    /conflicting input and inputType values/
+  );
+
+  const invalidProjection = buildQueryConnectorConfig();
+  invalidProjection.queries!["customer-risk-by-id"].jpa.projection = { "bad field": "customerId" };
+  await assert.rejects(
+    () => validateDerivedConfig(invalidProjection),
+    /invalid jpa\.projection binding/
+  );
+
+  const queryStepWithForbiddenField = buildQueryConnectorConfig();
+  queryStepWithForbiddenField.steps[0].idempotencyKeyFields = [];
+  await assert.rejects(
+    () => validateDerivedConfig(queryStepWithForbiddenField),
+    /must not declare await-step fields/
+  );
+
+  const queryStepWithVirtualThreads = buildQueryConnectorConfig();
+  queryStepWithVirtualThreads.steps[0].runOnVirtualThreads = false;
+  await assert.rejects(
+    () => validateDerivedConfig(queryStepWithVirtualThreads),
+    /must not declare runOnVirtualThreads/
+  );
+});
+
 test("generateScaffoldZip with query connector emits query config without query service module", async () => {
   const config = buildQueryConnectorConfig();
 
@@ -816,6 +1144,10 @@ test("generateScaffoldZip with query connector emits query config without query 
   assert.deepEqual(pipelineConfig.steps[0].capture?.keyFields, ["customerId"]);
   assert.equal(pipelineConfig.queries?.["customer-risk-by-id"].connector, "jpa");
   assert.equal(pipelineConfig.queries?.["customer-risk-by-id"].jpa.entity, "com.example.queryconnector.common.domain.CustomerRiskEntity");
+  assert.deepEqual(pipelineConfig.queries?.["customer-risk-by-id"].jpa.where.score, { gte: 0 });
+  assert.deepEqual(pipelineConfig.queries?.["customer-risk-by-id"].jpa.where.updatedAt, { between: ["input.windowStart", "input.windowEnd"] });
+  assert.deepEqual(pipelineConfig.queries?.["customer-risk-by-id"].jpa.orderBy, { score: "desc" });
+  assert.equal(pipelineConfig.queries?.["customer-risk-by-id"].jpa.limit, 1);
 
   const orchestratorPom = await zip.file("orchestrator-svc/pom.xml")!.async("string");
   assert.match(orchestratorPom, /query-jpa-connector/);
@@ -856,6 +1188,7 @@ test("generateScaffoldZip with object ingest emits source boundary, connector de
   assert.equal(pipelineConfig.input?.object?.source, "documents");
   assert.equal(pipelineConfig.input?.object?.emits.typeName, "RawDocument");
   assert.equal(pipelineConfig.input?.object?.emits.mapper, "com.example.objectingest.common.mapper.RawDocumentObjectSnapshotMapper");
+  assert.equal(pipelineConfig.steps[0].inboundMapper, "com.example.objectingest.common.mapper.RawDocumentMapper");
 
   const orchestratorPom = await zip.file("orchestrator-svc/pom.xml")!.async("string");
   assert.match(orchestratorPom, /object-ingest-connector/);
@@ -2563,7 +2896,10 @@ function buildQueryConnectorConfig(): DerivedConfig {
     messages: {
       CustomerRiskLookup: {
         fields: [
-          { number: 1, name: "customerId", type: "uuid" }
+          { number: 1, name: "customerId", type: "uuid" },
+          { number: 2, name: "windowStart", type: "timestamp" },
+          { number: 3, name: "windowEnd", type: "timestamp" },
+          { number: 4, name: "namePrefix", type: "string", optional: true }
         ]
       },
       CustomerRiskSnapshot: {
@@ -2590,13 +2926,32 @@ function buildQueryConnectorConfig(): DerivedConfig {
         jpa: {
           entity: "com.example.queryconnector.common.domain.CustomerRiskEntity",
           where: {
-            customerId: "input.customerId"
+            customerId: "input.customerId",
+            riskBand: {
+              in: ["LOW", "MEDIUM", "HIGH"]
+            },
+            score: {
+              gte: 0
+            },
+            updatedAt: {
+              between: ["input.windowStart", "input.windowEnd"]
+            },
+            deletedAt: {
+              isNull: true
+            },
+            name: {
+              like: "input.namePrefix"
+            }
           },
           projection: {
             customerId: "customerId",
             riskBand: "riskBand",
             score: "score"
           },
+          orderBy: {
+            score: "desc"
+          },
+          limit: 1,
           result: "single"
         }
       }
@@ -2684,7 +3039,8 @@ function buildObjectIngestConfig(): DerivedConfig {
         kind: "internal",
         cardinality: "ONE_TO_ONE",
         inputTypeName: "RawDocument",
-        outputTypeName: "ParsedDocument"
+        outputTypeName: "ParsedDocument",
+        inboundMapper: "com.example.objectingest.common.mapper.RawDocumentMapper"
       }
     ]
   };

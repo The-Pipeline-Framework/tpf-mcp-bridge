@@ -37,7 +37,12 @@ for (const expected of [
   "query: customer-risk-by-id",
   "connector: jpa",
   "entity: com.example.queryconnectorsmoke.common.domain.CustomerRiskEntity",
-  "customerId: input.customerId",
+  "customerId:",
+  "eq: input.customerId",
+  "gte: 0",
+  "orderBy:",
+  "score: desc",
+  "limit: 1",
 ]) {
   if (!pipelineYaml.includes(expected)) {
     throw new Error(`Generated query connector pipeline.yaml is missing '${expected}'.`);
@@ -149,13 +154,25 @@ function buildQueryConnectorConfig() {
         jpa: {
           entity: "com.example.queryconnectorsmoke.common.domain.CustomerRiskEntity",
           where: {
-            customerId: "input.customerId"
+            customerId: {
+              eq: "input.customerId"
+            },
+            score: {
+              gte: 0
+            },
+            riskBand: {
+              in: ["LOW", "MEDIUM", "HIGH"]
+            }
           },
           projection: {
             customerId: "customerId",
             riskBand: "riskBand",
             score: "score"
           },
+          orderBy: {
+            score: "desc"
+          },
+          limit: 1,
           result: "single"
         }
       }

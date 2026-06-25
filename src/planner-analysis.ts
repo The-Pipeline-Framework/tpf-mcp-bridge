@@ -296,15 +296,31 @@ function normalizeQueries(
   if (!queries || typeof queries !== "object") {
     return {};
   }
-  return Object.fromEntries(Object.entries(queries).map(([id, query]) => {
+  const normalizedQueries: Record<string, PipelineQueryDefinition> = {};
+  for (const [id, query] of Object.entries(queries)) {
     const normalizedId = id.trim();
     if (!normalizedId) {
       throw new Error("Planner draft defines a query with an empty id.");
+    }
+    if (normalizedQueries[normalizedId]) {
+      throw new Error(`Planner draft defines duplicate query '${normalizedId}' after trimming ids.`);
     }
     const inputType = query.inputType?.trim();
     const input = query.input?.trim();
     const outputType = query.outputType?.trim();
     const output = query.output?.trim();
+    if (inputType && input && !typeNamesMatch(input, inputType)) {
+      throw new Error(`Planner draft query '${normalizedId}' declares conflicting input and inputType values.`);
+    }
+    if (outputType && output && !typeNamesMatch(output, outputType)) {
+      throw new Error(`Planner draft query '${normalizedId}' declares conflicting output and outputType values.`);
+    }
+    if (!inputType && !input) {
+      throw new Error(`Planner draft query '${normalizedId}' must include inputType or input.`);
+    }
+    if (!outputType && !output) {
+      throw new Error(`Planner draft query '${normalizedId}' must include outputType or output.`);
+    }
     if (!query.jpa) {
       throw new Error(`Planner draft query '${normalizedId}' must include jpa configuration.`);
     }
@@ -312,22 +328,22 @@ function normalizeQueries(
     if (!entity) {
       throw new Error(`Planner draft query '${normalizedId}' must include jpa.entity.`);
     }
-    return [
-      normalizedId,
-      {
-        connector: "jpa",
-        ...(inputType ? { inputType } : input ? { input } : {}),
-        ...(outputType ? { outputType } : output ? { output } : {}),
-        ...(query.version?.trim() ? { version: query.version.trim() } : { version: "v1" }),
-        jpa: {
-          entity,
-          where: normalizeStringMap(query.jpa.where),
-          ...(query.jpa.projection ? { projection: normalizeStringMap(query.jpa.projection) } : {}),
-          ...(query.jpa.result ? { result: query.jpa.result } : {})
-        }
-      } satisfies PipelineQueryDefinition
-    ];
-  }));
+    normalizedQueries[normalizedId] = {
+      connector: "jpa",
+      ...(inputType ? { inputType } : input ? { input } : {}),
+      ...(outputType ? { outputType } : output ? { output } : {}),
+      ...(query.version?.trim() ? { version: query.version.trim() } : { version: "v1" }),
+      jpa: {
+        entity,
+        where: normalizeJpaWhere(query.jpa.where, normalizedId),
+        ...(query.jpa.projection ? { projection: normalizeStringMap(query.jpa.projection) } : {}),
+        ...(query.jpa.orderBy ? { orderBy: normalizeJpaOrderBy(query.jpa.orderBy, normalizedId) } : {}),
+        ...(query.jpa.limit !== undefined ? { limit: normalizeJpaLimit(query.jpa.limit, query.jpa.orderBy, normalizedId) } : {}),
+        ...(query.jpa.result ? { result: query.jpa.result } : {})
+      }
+    };
+  }
+  return normalizedQueries;
 }
 
 function normalizeObjectSources(
@@ -336,26 +352,32 @@ function normalizeObjectSources(
   if (!sources || typeof sources !== "object") {
     return {};
   }
-  return Object.fromEntries(Object.entries(sources).map(([id, source]) => {
+  const normalizedSources: Record<string, PipelineObjectSourceDefinition> = {};
+  for (const [id, source] of Object.entries(sources)) {
     const normalizedId = id.trim();
     if (!normalizedId) {
       throw new Error("Planner draft defines an object source with an empty id.");
     }
-    return [
-      normalizedId,
-      {
-        kind: "object",
-        provider: source.provider,
-        ...(source.location ? { location: source.location } : {}),
-        ...(source.filter ? { filter: normalizeObjectSourceFilter(source.filter) } : {}),
-        ...(source.poll ? { poll: normalizeObjectSourcePoll(source.poll) } : {}),
-        ...(source.identity?.fields?.length
-          ? { identity: { fields: [...new Set(source.identity.fields.map((field) => field.trim()).filter(Boolean))] } }
-          : {}),
-        ...(source.payload ? { payload: normalizeObjectSourcePayload(source.payload) } : {})
-      } satisfies PipelineObjectSourceDefinition
-    ];
-  }));
+    if (normalizedSources[normalizedId]) {
+      throw new Error(`Planner draft defines duplicate object source '${normalizedId}' after trimming ids.`);
+    }
+    const provider = source.provider?.trim() as PipelineObjectSourceDefinition["provider"] | undefined;
+    if (!provider) {
+      throw new Error(`Planner draft object source '${normalizedId}' must include provider.`);
+    }
+    normalizedSources[normalizedId] = {
+      kind: "object",
+      provider,
+      ...(source.location ? { location: source.location } : {}),
+      ...(source.filter ? { filter: normalizeObjectSourceFilter(source.filter) } : {}),
+      ...(source.poll ? { poll: normalizeObjectSourcePoll(source.poll) } : {}),
+      ...(source.identity?.fields?.length
+        ? { identity: { fields: [...new Set(source.identity.fields.map((field) => field.trim()).filter(Boolean))] } }
+        : {}),
+      ...(source.payload ? { payload: normalizeObjectSourcePayload(source.payload) } : {})
+    };
+  }
+  return normalizedSources;
 }
 
 function normalizeObjectSourceFilter(filter: PipelineObjectSourceDefinition["filter"]): PipelineObjectSourceDefinition["filter"] {
@@ -386,6 +408,143 @@ function normalizeStringMap(value: Record<string, string>): Record<string, strin
   return Object.fromEntries(Object.entries(value || {})
     .map(([key, item]) => [key.trim(), item.trim()])
     .filter(([key, item]) => Boolean(key && item)));
+}
+
+function normalizeJpaWhere(
+  value: PipelineQueryDefinition["jpa"]["where"],
+  queryId: string
+): PipelineQueryDefinition["jpa"]["where"] {
+  const entries = Object.entries(value || {});
+  if (entries.length === 0) {
+    throw new Error(`Planner draft query '${queryId}' must include at least one jpa.where binding.`);
+  }
+  const seenFields = new Set<string>();
+  return Object.fromEntries(entries.map(([key, item]) => {
+    const field = key.trim();
+    if (!field) {
+      throw new Error(`Planner draft query '${queryId}' has an empty jpa.where field.`);
+    }
+    if (seenFields.has(field)) {
+      throw new Error(`Planner draft query '${queryId}' defines duplicate jpa.where field '${field}' after trimming.`);
+    }
+    seenFields.add(field);
+    if (typeof item === "string") {
+      const expression = item.trim();
+      if (!expression) {
+        throw new Error(`Planner draft query '${queryId}' has an empty jpa.where binding for '${field}'.`);
+      }
+      return [field, expression];
+    }
+    return [field, normalizeJpaPredicate(item, queryId, field)];
+  }));
+}
+
+function normalizeJpaPredicate(
+  value: Exclude<PipelineQueryDefinition["jpa"]["where"][string], string>,
+  queryId: string,
+  field: string
+): Exclude<PipelineQueryDefinition["jpa"]["where"][string], string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`Planner draft query '${queryId}' has an invalid jpa.where predicate for '${field}'.`);
+  }
+  const entries = Object.entries(value).filter(([, item]) => item !== undefined);
+  if (entries.length !== 1) {
+    throw new Error(`Planner draft query '${queryId}' jpa.where predicate for '${field}' must declare exactly one operator.`);
+  }
+  const [operator, raw] = entries[0]!;
+  switch (operator) {
+    case "eq":
+    case "gt":
+    case "gte":
+    case "lt":
+    case "lte":
+    case "like":
+      return { [operator]: normalizeJpaScalar(raw, queryId, field, operator) };
+    case "in":
+      if (Array.isArray(raw)) {
+        if (raw.length === 0) {
+          throw new Error(`Planner draft query '${queryId}' jpa.where '${field}.in' must not be empty.`);
+        }
+        return { in: raw.map((item) => normalizeJpaScalar(item, queryId, field, operator)) };
+      }
+      return { in: normalizeJpaScalar(raw, queryId, field, operator) };
+    case "between":
+      if (!Array.isArray(raw) || raw.length !== 2) {
+        throw new Error(`Planner draft query '${queryId}' jpa.where '${field}.between' must include exactly two values.`);
+      }
+      return {
+        between: [
+          normalizeJpaScalar(raw[0], queryId, field, operator),
+          normalizeJpaScalar(raw[1], queryId, field, operator)
+        ]
+      };
+    case "isNull":
+      if (typeof raw === "boolean") {
+        return { isNull: raw };
+      }
+      if (typeof raw === "string" && /^(true|false)$/i.test(raw.trim())) {
+        return { isNull: raw.trim().toLowerCase() === "true" };
+      }
+      throw new Error(`Planner draft query '${queryId}' jpa.where '${field}.isNull' must be boolean or boolean-like string.`);
+    default:
+      throw new Error(`Planner draft query '${queryId}' jpa.where '${field}' uses unsupported predicate operator '${operator}'.`);
+  }
+}
+
+function normalizeJpaScalar(
+  value: unknown,
+  queryId: string,
+  field: string,
+  operator: string
+): string | number | boolean {
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) {
+      throw new Error(`Planner draft query '${queryId}' jpa.where '${field}.${operator}' must not be blank.`);
+    }
+    return normalized;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  throw new Error(`Planner draft query '${queryId}' jpa.where '${field}.${operator}' must be a string, number, or boolean.`);
+}
+
+function normalizeJpaOrderBy(
+  value: NonNullable<PipelineQueryDefinition["jpa"]["orderBy"]>,
+  queryId: string
+): Record<string, string> {
+  const entries = Object.entries(value || {});
+  if (entries.length === 0) {
+    throw new Error(`Planner draft query '${queryId}' jpa.orderBy must include at least one field.`);
+  }
+  const seenFields = new Set<string>();
+  return Object.fromEntries(entries.map(([key, direction]) => {
+    const field = key.trim();
+    if (seenFields.has(field)) {
+      throw new Error(`Planner draft query '${queryId}' defines duplicate jpa.orderBy field '${field}' after trimming.`);
+    }
+    seenFields.add(field);
+    const normalizedDirection = typeof direction === "string" ? direction.trim().toLowerCase() : "";
+    if (!field || !/^(asc|desc)$/.test(normalizedDirection)) {
+      throw new Error(`Planner draft query '${queryId}' has an invalid jpa.orderBy binding.`);
+    }
+    return [field, normalizedDirection];
+  }));
+}
+
+function normalizeJpaLimit(
+  value: PipelineQueryDefinition["jpa"]["limit"],
+  orderBy: PipelineQueryDefinition["jpa"]["orderBy"],
+  queryId: string
+): 1 {
+  if (value !== 1) {
+    throw new Error(`Planner draft query '${queryId}' jpa.limit must be 1 when present.`);
+  }
+  if (!orderBy || Object.keys(orderBy).length === 0) {
+    throw new Error(`Planner draft query '${queryId}' jpa.limit requires jpa.orderBy.`);
+  }
+  return value;
 }
 
 function normalizeQuestions(questions: Question[]): Question[] {
