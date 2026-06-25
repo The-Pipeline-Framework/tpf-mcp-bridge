@@ -376,10 +376,22 @@ queries:
     jpa:
       entity: com.example.queryconnector.common.domain.CustomerRiskEntity
       where:
-        customerId: customerId
+        customerId:
+          eq: customerId
+        riskScore:
+          gte: 70
+        riskBand:
+          in:
+            - LOW
+            - MEDIUM
+        archivedAt:
+          isNull: true
       projection:
         customerId: customerId
         riskScore: riskScore
+      orderBy:
+        riskScore: desc
+      limit: 1
       result: single
 steps:
   - name: Load Customer Risk
@@ -400,11 +412,20 @@ steps:
 
     const config = generator.loadConfig(configPath);
     expect(config.queries['customer-risk-by-id'].connector).toBe('jpa');
+    expect(config.queries['customer-risk-by-id'].jpa.where.customerId).toEqual({ eq: 'customerId' });
+    expect(config.queries['customer-risk-by-id'].jpa.where.riskScore).toEqual({ gte: 70 });
+    expect(config.queries['customer-risk-by-id'].jpa.where.riskBand).toEqual({ in: ['LOW', 'MEDIUM'] });
+    expect(config.queries['customer-risk-by-id'].jpa.where.archivedAt).toEqual({ isNull: true });
+    expect(config.queries['customer-risk-by-id'].jpa.orderBy).toEqual({ riskScore: 'desc' });
+    expect(config.queries['customer-risk-by-id'].jpa.limit).toBe(1);
     expect(config.steps[0].kind).toBe('query');
     expect(config.steps[0].capture.keyFields).toEqual(['customerId']);
 
     const scaffold = generator.toScaffoldConfig(config);
     expect(scaffold.queries['customer-risk-by-id'].jpa.entity).toBe('com.example.queryconnector.common.domain.CustomerRiskEntity');
+    expect(scaffold.queries['customer-risk-by-id'].jpa.where.riskScore).toEqual({ gte: 70 });
+    expect(scaffold.queries['customer-risk-by-id'].jpa.orderBy).toEqual({ riskScore: 'desc' });
+    expect(scaffold.queries['customer-risk-by-id'].jpa.limit).toBe(1);
     expect(scaffold.steps[0].kind).toBe('query');
     expect(scaffold.steps[0].query).toBe('customer-risk-by-id');
     expect(scaffold.steps[0].inputFields.map((field) => field.name)).toEqual(['customerId']);

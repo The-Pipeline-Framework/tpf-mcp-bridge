@@ -1,4 +1,4 @@
-import type { DerivedConfig, PipelineCompositionManifest } from "./types.js";
+import type { DerivedConfig, PipelineCompositionManifest, PipelineQueryDefinition } from "./types.js";
 import { legacyObjectInputBoundary, simpleTypeName, typeNamesMatch } from "./type-name-utils.js";
 
 const MAX_BASE_PACKAGE_LENGTH = 80;
@@ -228,6 +228,16 @@ function validateQueryDefinitions(config: DerivedConfig, knownMessages: Set<stri
     if (query.connector !== "jpa") {
       throw new DerivedConfigValidationError(`Query '${queryId}' uses unsupported connector '${String(query.connector)}'.`);
     }
+    const queryVersion = query.version ?? "v1";
+    if (queryVersion !== "v1") {
+      throw new DerivedConfigValidationError(`Query '${queryId}' uses unsupported version '${queryVersion}'.`);
+    }
+    if (query.input && query.inputType && !typeNamesMatch(query.input, query.inputType)) {
+      throw new DerivedConfigValidationError(`Query '${queryId}' declares conflicting input and inputType values.`);
+    }
+    if (query.output && query.outputType && !typeNamesMatch(query.output, query.outputType)) {
+      throw new DerivedConfigValidationError(`Query '${queryId}' declares conflicting output and outputType values.`);
+    }
     const inputType = query.inputType || query.input;
     const outputType = query.outputType || query.output;
     if (!inputType?.trim()) {
@@ -248,13 +258,125 @@ function validateQueryDefinitions(config: DerivedConfig, knownMessages: Set<stri
     if (!query.jpa.where || Object.keys(query.jpa.where).length === 0) {
       throw new DerivedConfigValidationError(`Query '${queryId}' must declare at least one jpa.where binding.`);
     }
-    for (const [field, expression] of Object.entries(query.jpa.where)) {
-      if (!field.trim() || !expression.trim()) {
-        throw new DerivedConfigValidationError(`Query '${queryId}' has an invalid jpa.where binding.`);
+    validateJpaWhere(queryId, query.jpa.where);
+    if (query.jpa.projection) {
+      validateJpaProjection(queryId, query.jpa.projection);
+    }
+    if (query.jpa.orderBy) {
+      validateJpaOrderBy(queryId, query.jpa.orderBy);
+    }
+    if (query.jpa.limit !== undefined) {
+      if (query.jpa.limit !== 1) {
+        throw new DerivedConfigValidationError(`Query '${queryId}' jpa.limit must be 1 when present.`);
+      }
+      if (!query.jpa.orderBy || Object.keys(query.jpa.orderBy).length === 0) {
+        throw new DerivedConfigValidationError(`Query '${queryId}' jpa.limit requires jpa.orderBy.`);
       }
     }
     if (query.jpa.result && query.jpa.result !== "single") {
       throw new DerivedConfigValidationError(`Query '${queryId}' uses unsupported jpa.result '${query.jpa.result}'.`);
+    }
+  }
+}
+
+function validateJpaWhere(queryId: string, where: PipelineQueryDefinition["jpa"]["where"]): void {
+  for (const [field, expression] of Object.entries(where)) {
+    if (!field.trim()) {
+      throw new DerivedConfigValidationError(`Query '${queryId}' has an invalid jpa.where field.`);
+    }
+    if (typeof expression === "string") {
+      if (!expression.trim()) {
+        throw new DerivedConfigValidationError(`Query '${queryId}' has an invalid jpa.where binding.`);
+      }
+      continue;
+    }
+    validateJpaPredicate(queryId, field, expression);
+  }
+}
+
+function validateJpaPredicate(
+  queryId: string,
+  field: string,
+  expression: Exclude<PipelineQueryDefinition["jpa"]["where"][string], string>
+): void {
+  if (!expression || typeof expression !== "object" || Array.isArray(expression)) {
+    throw new DerivedConfigValidationError(`Query '${queryId}' has an invalid jpa.where predicate for '${field}'.`);
+  }
+  const entries = Object.entries(expression).filter(([, value]) => value !== undefined);
+  if (entries.length !== 1) {
+    throw new DerivedConfigValidationError(`Query '${queryId}' jpa.where predicate for '${field}' must declare exactly one operator.`);
+  }
+  const [operator, value] = entries[0]!;
+  switch (operator) {
+    case "eq":
+    case "gt":
+    case "gte":
+    case "lt":
+    case "lte":
+    case "like":
+      validateJpaScalar(queryId, field, operator, value);
+      return;
+    case "in":
+      if (Array.isArray(value)) {
+        if (value.length === 0) {
+          throw new DerivedConfigValidationError(`Query '${queryId}' jpa.where '${field}.in' must not be empty.`);
+        }
+        value.forEach((item) => validateJpaScalar(queryId, field, operator, item));
+        return;
+      }
+      validateJpaScalar(queryId, field, operator, value);
+      return;
+    case "between":
+      if (!Array.isArray(value) || value.length !== 2) {
+        throw new DerivedConfigValidationError(`Query '${queryId}' jpa.where '${field}.between' must include exactly two values.`);
+      }
+      value.forEach((item) => validateJpaScalar(queryId, field, operator, item));
+      return;
+    case "isNull":
+      if (typeof value === "boolean") {
+        return;
+      }
+      if (typeof value === "string" && /^(true|false)$/i.test(value.trim())) {
+        return;
+      }
+      throw new DerivedConfigValidationError(`Query '${queryId}' jpa.where '${field}.isNull' must be boolean or boolean-like string.`);
+    default:
+      throw new DerivedConfigValidationError(`Query '${queryId}' jpa.where '${field}' uses unsupported predicate operator '${operator}'.`);
+  }
+}
+
+function validateJpaScalar(queryId: string, field: string, operator: string, value: unknown): void {
+  if (typeof value === "string") {
+    if (!value.trim()) {
+      throw new DerivedConfigValidationError(`Query '${queryId}' jpa.where '${field}.${operator}' must not be blank.`);
+    }
+    return;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return;
+  }
+  throw new DerivedConfigValidationError(`Query '${queryId}' jpa.where '${field}.${operator}' must be a string, number, or boolean.`);
+}
+
+function validateJpaProjection(
+  queryId: string,
+  projection: NonNullable<PipelineQueryDefinition["jpa"]["projection"]>
+): void {
+  const pathPattern = /^[A-Za-z_$][A-Za-z\d_$]*(\.[A-Za-z_$][A-Za-z\d_$]*)*$/;
+  for (const [source, target] of Object.entries(projection)) {
+    if (!pathPattern.test(source) || !pathPattern.test(target)) {
+      throw new DerivedConfigValidationError(`Query '${queryId}' has an invalid jpa.projection binding.`);
+    }
+  }
+}
+
+function validateJpaOrderBy(queryId: string, orderBy: NonNullable<PipelineQueryDefinition["jpa"]["orderBy"]>): void {
+  if (Object.keys(orderBy).length === 0) {
+    throw new DerivedConfigValidationError(`Query '${queryId}' jpa.orderBy must include at least one field.`);
+  }
+  for (const [field, direction] of Object.entries(orderBy)) {
+    if (!field.trim() || !/^(asc|desc)$/i.test(direction.trim())) {
+      throw new DerivedConfigValidationError(`Query '${queryId}' has an invalid jpa.orderBy binding.`);
     }
   }
 }
@@ -273,13 +395,13 @@ function validateQueryStep(
     return;
   }
 
-  if (step.await || step.timeout || step.idempotencyKeyFields?.length) {
+  if (step.await !== undefined || step.timeout !== undefined || step.idempotencyKeyFields !== undefined) {
     throw new DerivedConfigValidationError(`Query step '${step.name}' must not declare await-step fields.`);
   }
   if (step.cardinality !== "ONE_TO_ONE") {
     throw new DerivedConfigValidationError(`Query step '${step.name}' must use ONE_TO_ONE cardinality.`);
   }
-  if (step.runOnVirtualThreads) {
+  if (step.runOnVirtualThreads !== undefined) {
     throw new DerivedConfigValidationError(`Query step '${step.name}' must not declare runOnVirtualThreads.`);
   }
   const queryId = step.query?.trim();

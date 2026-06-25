@@ -158,10 +158,28 @@ export interface QueryCapture {
   keyFields?: string[];
 }
 
+export type JpaPredicateScalar = string | number | boolean;
+
+export interface JpaPredicateExpression {
+  eq?: JpaPredicateScalar;
+  in?: JpaPredicateScalar | JpaPredicateScalar[];
+  gt?: JpaPredicateScalar;
+  gte?: JpaPredicateScalar;
+  lt?: JpaPredicateScalar;
+  lte?: JpaPredicateScalar;
+  between?: [JpaPredicateScalar, JpaPredicateScalar];
+  like?: JpaPredicateScalar;
+  isNull?: boolean | string;
+}
+
+export type JpaWhereBinding = string | JpaPredicateExpression;
+
 export interface JpaQueryDefinition {
   entity: string;
-  where: Record<string, string>;
+  where: Record<string, JpaWhereBinding>;
   projection?: Record<string, string>;
+  orderBy?: Record<string, string>;
+  limit?: 1;
   result?: "single";
 }
 

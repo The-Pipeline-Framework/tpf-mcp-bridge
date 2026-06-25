@@ -154,11 +154,62 @@ const queryCaptureSchema = z.object({
   keyFields: z.array(z.string().trim().min(1)).optional()
 });
 
+const jpaQualifiedIdentifierSchema = z.string()
+  .trim()
+  .min(1)
+  .regex(/^[A-Za-z_$][A-Za-z\d_$]*(\.[A-Za-z_$][A-Za-z\d_$]*)*$/);
+
+const jpaPredicateScalarSchema = z.union([
+  z.string().trim().min(1),
+  z.number(),
+  z.boolean()
+]);
+
+const jpaPredicateExpressionSchema = z.object({
+  eq: jpaPredicateScalarSchema.optional(),
+  in: z.union([
+    jpaPredicateScalarSchema,
+    z.array(jpaPredicateScalarSchema).min(1)
+  ]).optional(),
+  gt: jpaPredicateScalarSchema.optional(),
+  gte: jpaPredicateScalarSchema.optional(),
+  lt: jpaPredicateScalarSchema.optional(),
+  lte: jpaPredicateScalarSchema.optional(),
+  between: z.tuple([jpaPredicateScalarSchema, jpaPredicateScalarSchema]).optional(),
+  like: jpaPredicateScalarSchema.optional(),
+  isNull: z.union([
+    z.boolean(),
+    z.string().trim().regex(/^([Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee])$/)
+  ]).optional()
+}).strict().refine(
+  (value) => Object.values(value).filter((entry) => entry !== undefined).length === 1,
+  { message: "JPA predicate objects must declare exactly one operator." }
+);
+
+const jpaWhereBindingSchema = z.union([
+  z.string().trim().min(1),
+  jpaPredicateExpressionSchema
+]);
+
 const jpaQueryDefinitionSchema = z.object({
   entity: z.string().trim().min(1),
-  where: z.record(z.string().trim().min(1), z.string().trim().min(1)),
-  projection: z.record(z.string().trim().min(1), z.string().trim().min(1)).optional(),
+  where: z.record(
+    jpaQualifiedIdentifierSchema,
+    jpaWhereBindingSchema
+  ).refine((value) => Object.keys(value).length > 0, {
+    message: "JPA query definitions must include at least one where predicate."
+  }),
+  projection: z.record(jpaQualifiedIdentifierSchema, jpaQualifiedIdentifierSchema).optional(),
+  orderBy: z.record(
+    jpaQualifiedIdentifierSchema,
+    z.string().trim().regex(/^([Aa][Ss][Cc]|[Dd][Ee][Ss][Cc])$/)
+  ).refine((value) => Object.keys(value).length > 0, {
+    message: "JPA orderBy must include at least one field."
+  }).optional(),
+  limit: z.literal(1).optional(),
   result: z.literal("single").optional()
+}).refine((value) => value.limit === undefined || value.orderBy !== undefined, {
+  message: "JPA limit requires orderBy."
 });
 
 const queryDefinitionSchema = z.object({
@@ -770,6 +821,7 @@ function buildPlanPrompt(input: SessionStartInput, profile: PlannerProfile): Pla
           "Preserve core TPF guardrails: no persistence steps, forward adjacency, resume outside the main flow, await only for real suspend/resume external boundaries.",
           "If the brief implies await behavior, use kind \"await\" with timeout, idempotencyKeyFields, and await config.",
           "If the brief implies a framework-owned read from JPA inside the pipeline, use kind \"query\" with a top-level queries entry; do not generate a fake service step.",
+          "For JPA queries, prefer simple equality where bindings by default. Use eq/in/gt/gte/lt/lte/between/like/isNull predicates, orderBy, or limit: 1 only when the brief implies that filtering.",
           "If the brief starts from filesystem/S3/object storage input, use top-level sources plus inputBoundary.object; do not generate a fake read-file step.",
           "",
           "Brief:",
@@ -783,6 +835,7 @@ function buildPlanPrompt(input: SessionStartInput, profile: PlannerProfile): Pla
           "Never create explicit save, persist, store, or commit business steps for persistence. Persistence belongs to aspects/plugins, not business flow steps.",
           "Model resume or re-entry as a separate query/resumption surface, not a normal forward pipeline step.",
           "A framework connector query is different from a resume/read surface: use kind \"query\" only for an in-pipeline read boundary, cardinality ONE_TO_ONE, query id, optional capture.keyFields, and a top-level queries entry. In this slice, supported connector is jpa.",
+          "For JPA query where clauses, use simple equality shorthand by default, for example customerId: \"input.customerId\". Use predicate objects only when the brief explicitly implies them: eq, in, gt, gte, lt, lte, between, like, or isNull. Use orderBy plus limit: 1 only for latest/top-one style reads. Do not invent database tuning or query semantics beyond the brief.",
           "Filesystem/S3 object ingestion is an input boundary, not a business step: use top-level sources and inputBoundary.object with emits.type/typeName/mapper. The first forward step must consume the emitted type.",
           "Use await steps only when the brief implies a real suspend/resume external boundary. Distinguish await steps from checkpoint hand-off and from ordinary forward steps.",
           "For await steps, use kind \"await\" and provide timeout, idempotencyKeyFields, and await.transport / await.correlation details. Supported await transports are interaction-api, webhook, kafka, and sqs.",
@@ -813,6 +866,7 @@ function buildRevisionPrompt(
           "Apply the provided answers. Keep proposal-first questions only where still needed.",
           "Preserve core TPF guardrails: no persistence steps, forward adjacency, resume outside the main flow, await distinct from checkpoint hand-off.",
           "Keep framework connector queries as kind \"query\" steps with top-level queries definitions; keep resume/read surfaces outside the main pipeline.",
+          "For JPA queries, keep equality shorthand unless the answer explicitly requires range/list/prefix/null/latest filtering.",
           "Keep filesystem/S3 object ingest as top-level sources plus inputBoundary.object, not a read-file service step.",
           "",
           "Brief:",
@@ -831,6 +885,7 @@ function buildRevisionPrompt(
           "If the brief implies caching, replayability, idempotency, or checkpoint hand-offs, express those as aspects, technical concerns, or focused operational questions rather than as generic business steps.",
           "If the brief implies a human approval, third-party callback, or brokered external decision before the pipeline can continue, model that boundary as kind \"await\" instead of a checkpoint note or fake save step. Use sqs for SQS-brokered await behavior.",
           "If the brief implies a JPA-backed in-pipeline lookup, model it as kind \"query\" with a referenced top-level queries entry, not as an internal service.",
+          "For JPA lookups, preserve simple equality unless the brief or answer explicitly requires richer predicates. Use orderBy with limit: 1 only for latest/top-one reads.",
           "If the brief starts from filesystem/S3/object storage input, model it with top-level sources and inputBoundary.object; the first forward step consumes inputBoundary.object.emits.typeName.",
           "If ownership transfers to another pipeline after this one completes, model checkpoint handoff with outputBoundary.checkpoint and optional compositionManifest instead of await.",
           "If ambiguity remains, keep only the unresolved contractQuestions.",
@@ -866,6 +921,7 @@ Rules:
 - If a step is not part of the forward-processing chain, classify it explicitly with flowRole as query, resume, expansion, reduction, or merge.
 - Resume and re-entry belong to a separate query/resumption surface and must not appear as normal forward pipeline steps.
 - Framework connector queries are different from resume/query surfaces: use kind "query" only for in-pipeline JPA reads that feed the next step. They require cardinality ONE_TO_ONE, a query id, and a matching top-level queries entry with connector "jpa", input or inputType, output or outputType, and jpa.entity / jpa.where.
+- In JPA where clauses, use equality shorthand by default. Use predicate objects only when explicit filtering is implied: eq, in, gt, gte, lt, lte, between, like, isNull. Use orderBy plus limit: 1 only for latest/top-one semantics. Do not invent database tuning or hidden query behavior.
 - Filesystem/S3 object ingestion is an input boundary: use top-level sources and inputBoundary.object with emits.type/typeName/mapper, and make the first forward step consume the emitted type.
 - Distinguish ordinary forward steps, await steps, and checkpoint hand-offs.
 - Use kind "await" only for suspend/resume external boundaries inside one pipeline execution.
@@ -889,6 +945,7 @@ Rules:
 - forward steps chain by adjacent output-to-input type
 - resume/query surfaces stay outside the main forward pipeline
 - in-pipeline JPA reads use kind "query" plus a top-level queries entry; do not make a service module for them
+- JPA where defaults to equality shorthand; richer predicates and orderBy/limit only when the brief asks for range/list/prefix/null/latest filtering
 - filesystem/S3 object ingest uses top-level sources plus inputBoundary.object; do not make a read-file service step
 - await is distinct from checkpoint hand-off
 - use kind "await" only for real suspend/resume external boundaries
