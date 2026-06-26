@@ -219,8 +219,30 @@ function normalizePipelineSteps(steps: AnalyzeResult["inferredSteps"], basePacka
 }
 
 function normalizeInputBoundary(boundary: PipelineInputBoundary | undefined): PipelineInputBoundary | undefined {
-  const subscriptionPublication = boundary?.subscription?.publication?.trim();
-  const objectBoundary = normalizeObjectInputBoundary(boundary?.object || legacyObjectInputBoundary(boundary));
+  if (!boundary) {
+    return undefined;
+  }
+  const legacyBoundary = boundary as PipelineInputBoundary & {
+    from?: string;
+    emits?: NonNullable<PipelineInputBoundary["object"]>["emits"];
+  };
+  const hasSubscription = boundary.subscription !== undefined;
+  const hasObjectBoundary = boundary.object !== undefined;
+  const hasLegacyObjectBoundary = legacyBoundary.from !== undefined || legacyBoundary.emits !== undefined;
+  if (hasSubscription && (hasObjectBoundary || hasLegacyObjectBoundary)) {
+    throw new Error("Planner draft input boundary cannot declare both subscription and object input.");
+  }
+  const subscriptionPublication = boundary.subscription?.publication?.trim();
+  if (hasSubscription && !subscriptionPublication) {
+    throw new Error("Planner draft input subscription boundary must include a non-empty publication.");
+  }
+  if (hasObjectBoundary && hasLegacyObjectBoundary) {
+    throw new Error("Planner draft input object boundary must use either object or legacy from/emits shape, not both.");
+  }
+  if (hasLegacyObjectBoundary && (!legacyBoundary.from?.trim() || !legacyBoundary.emits)) {
+    throw new Error("Planner draft object input boundary must include source/from and emits.");
+  }
+  const objectBoundary = normalizeObjectInputBoundary(boundary.object || legacyObjectInputBoundary(boundary), hasObjectBoundary || hasLegacyObjectBoundary);
   if (!subscriptionPublication && !objectBoundary) {
     return undefined;
   }
@@ -237,10 +259,13 @@ function normalizeInputBoundary(boundary: PipelineInputBoundary | undefined): Pi
   };
 }
 
-function normalizeObjectInputBoundary(boundary: PipelineInputBoundary["object"] | undefined): PipelineInputBoundary["object"] | undefined {
+function normalizeObjectInputBoundary(boundary: PipelineInputBoundary["object"] | undefined, declared = false): PipelineInputBoundary["object"] | undefined {
   const source = boundary?.source?.trim() || boundary?.from?.trim();
   const emits = boundary?.emits;
   if (!source || !emits?.type?.trim() || !emits?.mapper?.trim()) {
+    if (declared) {
+      throw new Error("Planner draft object input boundary must include source/from and emits.");
+    }
     return undefined;
   }
   return {
