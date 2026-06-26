@@ -364,7 +364,8 @@ class BrowserTemplateEngine {
         const hasJpaQuery = this.hasJpaQueries(normalizedOptions.queries);
         const hasObjectIngest = this.hasObjectIngest(normalizedOptions.input, normalizedOptions.sources);
         const hasCheckpointBoundaries = this.hasCheckpointBoundaries(normalizedOptions.input, normalizedOptions.output);
-        const requiresQueueAsyncRuntime = hasCheckpointBoundaries || hasObjectIngest || this.hasAwaitSteps(stepsValue);
+        const hasCommandSteps = this.hasCommandSteps(stepsValue);
+        const requiresQueueAsyncRuntime = hasCheckpointBoundaries || hasObjectIngest || this.hasAwaitSteps(stepsValue) || hasCommandSteps;
         const normalizedRuntimeLayout = normalizedOptions.runtimeLayout;
         const transportMode = normalizedOptions.transport;
         const aspectConfig = normalizedOptions.aspects;
@@ -424,6 +425,7 @@ class BrowserTemplateEngine {
             hasJpaQuery,
             hasObjectIngest,
             hasCheckpointBoundaries,
+            hasCommandSteps,
             requiresQueueAsyncRuntime,
             normalizedOptions.fileCallback);
 
@@ -436,6 +438,7 @@ class BrowserTemplateEngine {
                 hasJpaQuery,
                 hasObjectIngest,
                 hasCheckpointBoundaries,
+                hasCommandSteps,
                 requiresQueueAsyncRuntime,
                 normalizedOptions.fileCallback
             );
@@ -450,6 +453,7 @@ class BrowserTemplateEngine {
                 hasJpaQuery,
                 hasObjectIngest,
                 hasCheckpointBoundaries,
+                hasCommandSteps,
                 requiresQueueAsyncRuntime,
                 normalizedOptions.fileCallback
             );
@@ -525,6 +529,7 @@ class BrowserTemplateEngine {
         await this.generateUnionClasses(unionDefinitions, basePackage, fileCallback);
 
         await this.generateObjectSnapshotMapper(input, sources, basePackage, fileCallback);
+        await this.generateCommandSupportClasses(steps, basePackage, fileCallback);
 
         // Generate base entity
         await this.generateBaseEntity(basePackage, fileCallback);
@@ -610,15 +615,23 @@ class BrowserTemplateEngine {
         return (steps || []).some(step => step && step.kind === 'await');
     }
 
+    hasCommandSteps(steps) {
+        return (steps || []).some(step => step && step.kind === 'command');
+    }
+
     isServiceStep(step) {
-        return step && step.generatesServiceModule !== false && step.kind !== 'await' && step.kind !== 'query';
+        return step
+            && step.generatesServiceModule !== false
+            && step.kind !== 'await'
+            && step.kind !== 'query'
+            && step.kind !== 'command';
     }
 
     hasJpaQueries(queries) {
         return Object.values(queries || {}).some(query => query && query.connector === 'jpa');
     }
 
-    async generatePipelineRuntimeModule(appName, basePackage, steps, kafkaAwait, hasJpaQuery, hasObjectIngest, hasCheckpointBoundaries, requiresQueueAsyncRuntime, fileCallback) {
+    async generatePipelineRuntimeModule(appName, basePackage, steps, kafkaAwait, hasJpaQuery, hasObjectIngest, hasCheckpointBoundaries, hasCommandSteps, requiresQueueAsyncRuntime, fileCallback) {
         const rootProjectName = appName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
         const context = {
             basePackage,
@@ -647,6 +660,7 @@ class BrowserTemplateEngine {
             hasJpaQuery,
             hasObjectIngest,
             hasCheckpointBoundaries,
+            hasCommandSteps,
             hasQueueAsyncRuntime: requiresQueueAsyncRuntime
         });
         await fileCallback('pipeline-runtime-svc/src/main/resources/application.properties', appPropsContent);
@@ -666,6 +680,7 @@ class BrowserTemplateEngine {
         hasJpaQuery,
         hasObjectIngest,
         hasCheckpointBoundaries,
+        hasCommandSteps,
         requiresQueueAsyncRuntime,
         fileCallback
     ) {
@@ -720,6 +735,7 @@ class BrowserTemplateEngine {
             hasJpaQuery,
             hasObjectIngest,
             hasCheckpointBoundaries,
+            hasCommandSteps,
             hasQueueAsyncRuntime: requiresQueueAsyncRuntime
         });
         await fileCallback('monolith-svc/src/main/resources/application.properties', appPropsContent);
@@ -941,6 +957,58 @@ class BrowserTemplateEngine {
         await fileCallback(mapperPath, this.render('object-snapshot-mapper', context));
     }
 
+    async generateCommandSupportClasses(steps, basePackage, fileCallback) {
+        const commandSteps = (steps || []).filter(step => step && step.kind === 'command');
+        if (commandSteps.length === 0) {
+            return;
+        }
+
+        for (const step of commandSteps) {
+            const inputTypeName = this.simpleTypeName(step.inputTypeName);
+            const outputTypeName = this.simpleTypeName(step.outputTypeName);
+            const command = typeof step.command === 'string' ? step.command.trim() : '';
+            const generatorFqcn = (typeof step.commandIdGenerator === 'string' ? step.commandIdGenerator.trim() : '')
+                || this.defaultCommandIdGenerator(basePackage, inputTypeName);
+            if (!inputTypeName || !outputTypeName || !command) {
+                throw new Error(`Command step ${step.name || step.serviceName || '<unnamed>'} requires inputTypeName, outputTypeName, and command.`);
+            }
+            if (!this.isJavaFqcn(generatorFqcn)) {
+                throw new Error(`Command step ${step.name || step.serviceName || '<unnamed>'} commandIdGenerator must be a Java fully qualified class name.`);
+            }
+
+            const generatorClassName = this.simpleTypeName(generatorFqcn);
+            const generatorPackage = generatorFqcn.split('.').slice(0, -1).join('.') || `${basePackage}.common.command`;
+            const connectorClassName = `${this.toPascalIdentifier(command)}CommandConnector`;
+            const generatorPath = this.javaSourceArchivePath(generatorPackage, generatorClassName);
+            const connectorPath = this.javaSourceArchivePath(`${basePackage}.common.command`, connectorClassName);
+            const context = {
+                basePackage,
+                command,
+                inputTypeName,
+                outputTypeName,
+                inputTypeFqcn: this.typeFqcn(step.inputTypeName, basePackage),
+                outputTypeFqcn: this.typeFqcn(step.outputTypeName, basePackage)
+            };
+
+            await fileCallback(
+                generatorPath,
+                this.render('command-id-generator', {
+                    ...context,
+                    className: generatorClassName,
+                    packageName: generatorPackage
+                })
+            );
+            await fileCallback(
+                connectorPath,
+                this.render('command-connector', {
+                    ...context,
+                    className: connectorClassName,
+                    packageName: `${basePackage}.common.command`
+                })
+            );
+        }
+    }
+
     async generateMapperClass(className, step, basePackage, fileCallback) {
         const mapperFields = this.mapperFieldsForClass(className, step)
             .map(field => ({
@@ -1091,6 +1159,7 @@ class BrowserTemplateEngine {
         hasJpaQuery,
         hasObjectIngest,
         hasCheckpointBoundaries,
+        hasCommandSteps,
         requiresQueueAsyncRuntime,
         fileCallback) {
         await this.generateOrchestratorApplication(appName, basePackage, fileCallback);
@@ -1118,6 +1187,7 @@ class BrowserTemplateEngine {
             hasJpaQuery,
             hasObjectIngest,
             hasCheckpointBoundaries,
+            hasCommandSteps,
             requiresQueueAsyncRuntime,
             fileCallback);
         await this.generateOrchestratorApplicationDevProperties(basePackage, steps, fileCallback);
@@ -1181,6 +1251,7 @@ class BrowserTemplateEngine {
         hasJpaQuery,
         hasObjectIngest,
         hasCheckpointBoundaries,
+        hasCommandSteps,
         requiresQueueAsyncRuntime,
         fileCallback) {
         const transportMode = this.normalizeTransport(transport);
@@ -1205,6 +1276,7 @@ class BrowserTemplateEngine {
             kafkaAwait: this.createKafkaAwaitContext(steps, appName),
             hasCheckpointBoundaries,
             hasQueueAsyncRuntime: requiresQueueAsyncRuntime,
+            hasCommandSteps,
             hasAwaitSteps: awaitTransports.size > 0,
             hasKafkaAwait: awaitTransports.has('kafka'),
             hasSqsAwait: awaitTransports.has('sqs'),
@@ -1570,6 +1642,63 @@ wrapperUrl=https://repo.maven.apache.org/maven2/org/apache/maven/wrapper/maven-w
             .filter(part => part)
             .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
             .join('');
+    }
+
+    simpleTypeName(typeName) {
+        if (!typeName || typeof typeName !== 'string') {
+            return '';
+        }
+        const parts = typeName.split('.');
+        return parts[parts.length - 1] || '';
+    }
+
+    typeFqcn(typeName, basePackage) {
+        if (!typeName || typeof typeName !== 'string') {
+            return '';
+        }
+        const trimmed = typeName.trim();
+        return trimmed.includes('.') ? trimmed : `${basePackage}.common.domain.${trimmed}`;
+    }
+
+    defaultCommandIdGenerator(basePackage, inputTypeName) {
+        return `${basePackage}.common.command.${this.simpleTypeName(inputTypeName)}CommandIdGenerator`;
+    }
+
+    isJavaClassName(value) {
+        return typeof value === 'string' && /^[A-Z][A-Za-z\d_$]*$/.test(value);
+    }
+
+    isJavaPackageName(value) {
+        return typeof value === 'string' && /^[a-zA-Z_$][a-zA-Z\d_$]*(\.[a-zA-Z_$][a-zA-Z\d_$]*)*$/.test(value);
+    }
+
+    isJavaFqcn(value) {
+        if (typeof value !== 'string') {
+            return false;
+        }
+        const segments = value.split('.');
+        return segments.length >= 2
+            && this.isJavaClassName(segments[segments.length - 1])
+            && this.isJavaPackageName(segments.slice(0, -1).join('.'));
+    }
+
+    javaSourceArchivePath(packageName, className) {
+        if (!this.isJavaPackageName(packageName) || !this.isJavaClassName(className)) {
+            throw new Error(`Invalid Java source target '${packageName}.${className}'.`);
+        }
+        const archivePath = `common/src/main/java/${this.toPath(packageName)}/${className}.java`;
+        if (!archivePath.startsWith('common/src/main/java/') || archivePath.includes('..') || archivePath.includes('\\') || archivePath.startsWith('/')) {
+            throw new Error(`Refusing to emit Java source outside common/src/main/java: ${archivePath}`);
+        }
+        return archivePath;
+    }
+
+    toPascalIdentifier(value) {
+        const tokens = String(value || '').match(/[A-Za-z0-9]+/g) || [];
+        const joined = tokens
+            .map(token => token.charAt(0).toUpperCase() + token.slice(1))
+            .join('');
+        return joined || 'Command';
     }
 
     extractEntityName(serviceNamePascal) {

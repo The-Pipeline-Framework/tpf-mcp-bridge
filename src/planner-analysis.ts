@@ -4,6 +4,7 @@ import type {
   AspectConfig,
   BriefInput,
   BusinessStep,
+  CommandDuplicatePolicy,
   ContractQuestion,
   CouplingFinding,
   DerivedConfig,
@@ -45,9 +46,9 @@ export function analyzePlannerDraft(
       { fields: message.fields } satisfies MessageDefinition
     ])
   );
-  const businessSteps = normalizeBusinessSteps(draft.businessSteps, messages);
-  const stepContracts = normalizeStepContracts(draft.stepContracts, businessSteps, messages);
-  const inferredSteps = normalizePipelineSteps(draft.pipelineSteps);
+  const businessSteps = normalizeBusinessSteps(draft.businessSteps, messages, basePackage);
+  const stepContracts = normalizeStepContracts(draft.stepContracts, businessSteps, messages, basePackage);
+  const inferredSteps = normalizePipelineSteps(draft.pipelineSteps, basePackage);
   const inputBoundary = normalizeInputBoundary(draft.inputBoundary);
   const outputBoundary = normalizeOutputBoundary(draft.outputBoundary);
   const compositionManifest = normalizeCompositionManifest(draft.compositionManifest);
@@ -139,7 +140,8 @@ function normalizeMessageCatalog(messages: MessageCatalogEntry[]): MessageCatalo
 
 function normalizeBusinessSteps(
   steps: BusinessStep[],
-  messages: Record<string, MessageDefinition>
+  messages: Record<string, MessageDefinition>,
+  basePackage: string
 ): BusinessStep[] {
   const seen = new Set<string>();
   return steps.map((step) => {
@@ -156,6 +158,7 @@ function normalizeBusinessSteps(
       kind: normalizeStepKind(step.kind),
       ...(normalizeQueryId(step.query) ? { query: normalizeQueryId(step.query) } : {}),
       ...(normalizeQueryCapture(step.capture) ? { capture: normalizeQueryCapture(step.capture) } : {}),
+      ...normalizeCommandFields(step, basePackage),
       timeout: step.timeout?.trim() || undefined,
       idempotencyKeyFields: normalizeIdempotencyKeyFields(step.idempotencyKeyFields),
       await: normalizeAwaitConfig(step.await),
@@ -168,7 +171,8 @@ function normalizeBusinessSteps(
 function normalizeStepContracts(
   contracts: StepContract[],
   steps: BusinessStep[],
-  messages: Record<string, MessageDefinition>
+  messages: Record<string, MessageDefinition>,
+  basePackage: string
 ): StepContract[] {
   const stepById = new Map(steps.map((step) => [step.id, step]));
   return contracts.map((contract) => {
@@ -181,6 +185,7 @@ function normalizeStepContracts(
       kind: normalizeStepKind(contract.kind),
       ...(normalizeQueryId(contract.query) ? { query: normalizeQueryId(contract.query) } : {}),
       ...(normalizeQueryCapture(contract.capture) ? { capture: normalizeQueryCapture(contract.capture) } : {}),
+      ...normalizeCommandFields(contract, basePackage),
       timeout: contract.timeout?.trim() || undefined,
       idempotencyKeyFields: normalizeIdempotencyKeyFields(contract.idempotencyKeyFields),
       await: normalizeAwaitConfig(contract.await),
@@ -191,7 +196,7 @@ function normalizeStepContracts(
   });
 }
 
-function normalizePipelineSteps(steps: AnalyzeResult["inferredSteps"]): AnalyzeResult["inferredSteps"] {
+function normalizePipelineSteps(steps: AnalyzeResult["inferredSteps"], basePackage: string): AnalyzeResult["inferredSteps"] {
   const seen = new Set<string>();
   return steps.map((step) => {
     const id = step.id || stepId(step.name);
@@ -205,6 +210,7 @@ function normalizePipelineSteps(steps: AnalyzeResult["inferredSteps"]): AnalyzeR
       kind: normalizeStepKind(step.kind),
       ...(normalizeQueryId(step.query) ? { query: normalizeQueryId(step.query) } : {}),
       ...(normalizeQueryCapture(step.capture) ? { capture: normalizeQueryCapture(step.capture) } : {}),
+      ...normalizeCommandFields(step, basePackage),
       timeout: step.timeout?.trim() || undefined,
       idempotencyKeyFields: normalizeIdempotencyKeyFields(step.idempotencyKeyFields),
       await: normalizeAwaitConfig(step.await)
@@ -614,6 +620,7 @@ function assertPlannerSemantics(
     assertCoherentStepViews(businessStep, contract, pipelineStep);
     assertAwaitSemantics(businessStep.name, kind, businessStep, contract, pipelineStep);
     assertQuerySemantics(businessStep.name, kind, businessStep, contract, pipelineStep, queries);
+    assertCommandSemantics(businessStep.name, kind, businessStep, contract, pipelineStep);
     if (kind === "await" && platform === "FUNCTION") {
       throw new Error(
         `Planner draft violates TPF semantics: await step '${businessStep.name}' is not supported for FUNCTION pipelines.`
@@ -652,6 +659,9 @@ function assertPlannerSemantics(
       if (!queryId || !queries[queryId]) {
         throw new Error(`Planner draft defines query step '${pipelineStep.name}' without a matching top-level queries entry.`);
       }
+    }
+    if (kind === "command" && (!pipelineStep.command?.trim() || !pipelineStep.commandIdGenerator?.trim())) {
+      throw new Error(`Planner draft defines command step '${pipelineStep.name}' without command metadata.`);
     }
   }
 
@@ -698,6 +708,27 @@ function assertCoherentStepViews(
   }
   if ((businessStep.timeout || "") !== (contract.timeout || "") || (businessStep.timeout || "") !== (pipelineStep.timeout || "")) {
     throw new Error(`Planner draft defines inconsistent await timeouts for business step '${businessStep.name}'.`);
+  }
+  if ((businessStep.command || "") !== (contract.command || "") || (businessStep.command || "") !== (pipelineStep.command || "")) {
+    throw new Error(`Planner draft defines inconsistent command names for business step '${businessStep.name}'.`);
+  }
+  if (
+    (businessStep.commandIdGenerator || "") !== (contract.commandIdGenerator || "")
+    || (businessStep.commandIdGenerator || "") !== (pipelineStep.commandIdGenerator || "")
+  ) {
+    throw new Error(`Planner draft defines inconsistent command id generators for business step '${businessStep.name}'.`);
+  }
+  if (
+    (businessStep.duplicatePolicy || "") !== (contract.duplicatePolicy || "")
+    || (businessStep.duplicatePolicy || "") !== (pipelineStep.duplicatePolicy || "")
+  ) {
+    throw new Error(`Planner draft defines inconsistent command duplicate policies for business step '${businessStep.name}'.`);
+  }
+  if (
+    commandConfigSignature(businessStep.config) !== commandConfigSignature(contract.config)
+    || commandConfigSignature(businessStep.config) !== commandConfigSignature(pipelineStep.config)
+  ) {
+    throw new Error(`Planner draft defines inconsistent command config metadata for business step '${businessStep.name}'.`);
   }
   assertVirtualThreadSemantics(businessStep, contract, pipelineStep);
 }
@@ -753,6 +784,68 @@ function normalizeQueryCapture(capture: PipelineStep["capture"] | BusinessStep["
   return keyFields.length > 0 ? { keyFields } : undefined;
 }
 
+function normalizeCommandFields(
+  step: Pick<PipelineStep, "kind" | "inputTypeName" | "command" | "commandIdGenerator" | "duplicatePolicy"> & { config?: unknown },
+  basePackage: string
+): Pick<PipelineStep, "command" | "commandIdGenerator" | "duplicatePolicy" | "config"> {
+  if (normalizeStepKind(step.kind) !== "command") {
+    return {
+      command: step.command?.trim() || undefined,
+      commandIdGenerator: step.commandIdGenerator?.trim() || undefined,
+      duplicatePolicy: normalizeDuplicatePolicy(step.duplicatePolicy) as PipelineStep["duplicatePolicy"],
+      config: normalizeCommandConfig(step.config) as PipelineStep["config"]
+    };
+  }
+  return {
+    command: step.command?.trim() || undefined,
+    commandIdGenerator: step.commandIdGenerator?.trim() || defaultCommandIdGenerator(basePackage, step.inputTypeName),
+    duplicatePolicy: (step.duplicatePolicy === undefined ? "RETURN_RECORDED" : normalizeDuplicatePolicy(step.duplicatePolicy)) as PipelineStep["duplicatePolicy"],
+    config: normalizeCommandConfig(step.config) as PipelineStep["config"]
+  };
+}
+
+function normalizeDuplicatePolicy(policy: CommandDuplicatePolicy | string | undefined): CommandDuplicatePolicy | string | undefined {
+  if (policy === undefined) {
+    return undefined;
+  }
+  const normalized = policy?.trim().toUpperCase();
+  return normalized;
+}
+
+function normalizeCommandConfig(config: unknown): unknown {
+  if (config === undefined) {
+    return undefined;
+  }
+  if (config === null || Array.isArray(config) || typeof config !== "object") {
+    return config;
+  }
+  return { ...config };
+}
+
+function defaultCommandIdGenerator(basePackage: string, inputTypeName: string): string {
+  return `${basePackage}.common.command.${simpleTypeName(inputTypeName)}CommandIdGenerator`;
+}
+
+function commandConfigSignature(config: unknown): string {
+  if (config === undefined) {
+    return "";
+  }
+  return stableJson(config);
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJson).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "undefined";
+}
+
 function normalizeIdempotencyKeyFields(fields: string[] | undefined): string[] | undefined {
   if (!fields || fields.length === 0) {
     return undefined;
@@ -806,7 +899,71 @@ function assertQuerySemantics(
 
 function isForwardChainStep(step: BusinessStep): boolean {
   const role = inferFlowRole(step.flowRole, step.name, step.inputTypeName, step.outputTypeName);
-  return role === "forward" || normalizeStepKind(step.kind) === "query";
+  const kind = normalizeStepKind(step.kind);
+  return role === "forward" || kind === "query" || kind === "command";
+}
+
+function assertCommandSemantics(
+  stepName: string,
+  kind: StepKind,
+  businessStep: BusinessStep,
+  contract: StepContract,
+  pipelineStep: PipelineStep
+): void {
+  const commandDeclared = [
+    businessStep.command,
+    contract.command,
+    pipelineStep.command,
+    businessStep.commandIdGenerator,
+    contract.commandIdGenerator,
+    pipelineStep.commandIdGenerator,
+    businessStep.duplicatePolicy,
+    contract.duplicatePolicy,
+    pipelineStep.duplicatePolicy,
+    businessStep.config,
+    contract.config,
+    pipelineStep.config
+  ].some((value) => value !== undefined);
+  if (kind !== "command" && commandDeclared) {
+    throw new Error(`Planner draft violates TPF semantics: '${stepName}' declares command-step fields without kind 'command'.`);
+  }
+  if (kind !== "command") {
+    return;
+  }
+  if (pipelineStep.cardinality !== "ONE_TO_ONE") {
+    throw new Error(`Planner draft violates TPF semantics: command step '${stepName}' must use ONE_TO_ONE cardinality.`);
+  }
+  if (!businessStep.command?.trim() || !contract.command?.trim() || !pipelineStep.command?.trim()) {
+    throw new Error(`Planner draft violates TPF semantics: command step '${stepName}' must declare command in every step view.`);
+  }
+  if (!businessStep.commandIdGenerator?.trim() || !contract.commandIdGenerator?.trim() || !pipelineStep.commandIdGenerator?.trim()) {
+    throw new Error(`Planner draft violates TPF semantics: command step '${stepName}' must declare commandIdGenerator in every step view.`);
+  }
+  const policies = [businessStep.duplicatePolicy, contract.duplicatePolicy, pipelineStep.duplicatePolicy]
+    .filter((policy) => policy !== undefined);
+  if (policies.some((policy) => policy !== "RETURN_RECORDED" && policy !== "FAIL")) {
+    throw new Error(`Planner draft violates TPF semantics: command step '${stepName}' declares an invalid duplicatePolicy.`);
+  }
+  if (
+    businessStep.await !== undefined || contract.await !== undefined || pipelineStep.await !== undefined
+    || businessStep.timeout !== undefined || contract.timeout !== undefined || pipelineStep.timeout !== undefined
+    || businessStep.idempotencyKeyFields !== undefined || contract.idempotencyKeyFields !== undefined || pipelineStep.idempotencyKeyFields !== undefined
+  ) {
+    throw new Error(`Planner draft violates TPF semantics: command step '${stepName}' must not declare await-step fields.`);
+  }
+  if (
+    businessStep.query !== undefined || contract.query !== undefined || pipelineStep.query !== undefined
+    || businessStep.capture !== undefined || contract.capture !== undefined || pipelineStep.capture !== undefined
+  ) {
+    throw new Error(`Planner draft violates TPF semantics: command step '${stepName}' must not declare query connector fields.`);
+  }
+  if (
+    businessStep.runOnVirtualThreads !== undefined
+    || contract.runOnVirtualThreads !== undefined
+    || pipelineStep.runOnVirtualThreads !== undefined
+  ) {
+    throw new Error(`Planner draft violates TPF semantics: command step '${stepName}' must not declare runOnVirtualThreads.`);
+  }
 }
 
 function normalizeAwaitConfig(

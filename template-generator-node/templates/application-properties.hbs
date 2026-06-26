@@ -28,9 +28,12 @@ quarkus.http.ssl.certificate.key-store-password=secret
 quarkus.http.insecure-requests=disabled
 {{#if hasQueueAsyncRuntime}}
 
-# Await steps and checkpoint hand-offs require queue-async orchestration so executions can park, resume, or publish boundaries.
+# Await steps, command steps, and checkpoint hand-offs require queue-async orchestration so executions can park, replay effects, resume, or publish boundaries.
 pipeline.orchestrator.mode=QUEUE_ASYNC
 pipeline.orchestrator.resume-token-secret=${TPF_RESUME_TOKEN_SECRET}
+{{#if hasCommandSteps}}
+# Keep command connectors idempotent over deterministic command ids. Configure provider endpoints and credentials outside pipeline.yaml.
+{{/if}}
 {{#if hasCheckpointBoundaries}}
 # Keep checkpoint publishers/subscribers idempotent over the configured boundary key fields.
 {{/if}}

@@ -7,6 +7,7 @@ import type {
 } from "@modelcontextprotocol/sdk/types.js";
 import { analyzeBrief } from "./brief-analysis.js";
 import type {
+  CommandDuplicatePolicy,
   ContractAnswerRecord,
   PlannerProfile,
   PlannerProviderMode,
@@ -154,6 +155,10 @@ const queryCaptureSchema = z.object({
   keyFields: z.array(z.string().trim().min(1)).optional()
 });
 
+const commandDuplicatePolicySchema = z.string()
+  .trim()
+  .regex(/^(RETURN_RECORDED|FAIL)$/i);
+
 const jpaQualifiedIdentifierSchema = z.string()
   .trim()
   .min(1)
@@ -265,11 +270,15 @@ const objectSourceSchema = z.object({
 });
 
 const stepDraftCommonSchema = z.object({
-  kind: z.enum(["internal", "delegated", "remote", "await", "query"]).optional(),
+  kind: z.enum(["internal", "delegated", "remote", "await", "query", "command"]).optional(),
   inputTypeName: z.string(),
   outputTypeName: z.string(),
   query: z.string().optional(),
   capture: queryCaptureSchema.optional(),
+  command: z.string().optional(),
+  commandIdGenerator: z.string().optional(),
+  duplicatePolicy: commandDuplicatePolicySchema.optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
   flowRole: z.enum(["forward", "query", "resume", "expansion", "reduction", "merge"]).optional(),
   flowBoundaryRationale: z.string().optional(),
   timeout: z.string().optional(),
@@ -689,6 +698,9 @@ function truncateProviderMessage(value: string, maxLength = 240): string {
 function normalizePlannerDraft(draft: z.output<typeof plannerDraftSchema>): PlannerDraft {
   return {
     ...draft,
+    businessSteps: draft.businessSteps.map(normalizeParsedStepDraft),
+    pipelineSteps: draft.pipelineSteps.map(normalizeParsedStepDraft),
+    stepContracts: draft.stepContracts.map(normalizeParsedStepDraft),
     messageCatalog: draft.messageCatalog.map((message) => ({
       ...message,
       id: message.id || `message.${message.name.toLowerCase()}`
@@ -703,6 +715,18 @@ function normalizePlannerDraft(draft: z.output<typeof plannerDraftSchema>): Plan
           }
         : undefined
     }))
+  };
+}
+
+function normalizeParsedStepDraft<T extends { duplicatePolicy?: string }>(
+  step: T
+): Omit<T, "duplicatePolicy"> & { duplicatePolicy?: CommandDuplicatePolicy } {
+  const duplicatePolicy = step.duplicatePolicy?.trim().toUpperCase();
+  return {
+    ...step,
+    ...(duplicatePolicy === "RETURN_RECORDED" || duplicatePolicy === "FAIL"
+      ? { duplicatePolicy: duplicatePolicy as CommandDuplicatePolicy }
+      : {})
   };
 }
 
@@ -821,6 +845,7 @@ function buildPlanPrompt(input: SessionStartInput, profile: PlannerProfile): Pla
           "Preserve core TPF guardrails: no persistence steps, forward adjacency, resume outside the main flow, await only for real suspend/resume external boundaries.",
           "If the brief implies await behavior, use kind \"await\" with timeout, idempotencyKeyFields, and await config.",
           "If the brief implies a framework-owned read from JPA inside the pipeline, use kind \"query\" with a top-level queries entry; do not generate a fake service step.",
+          "If the brief implies a replay-safe external write/effect, use kind \"command\" with command, commandIdGenerator, and optional duplicatePolicy/config; do not generate a fake service step.",
           "For JPA queries, prefer simple equality where bindings by default. Use eq/in/gt/gte/lt/lte/between/like/isNull predicates, orderBy, or limit: 1 only when the brief implies that filtering.",
           "If the brief starts from filesystem/S3/object storage input, use top-level sources plus inputBoundary.object; do not generate a fake read-file step.",
           "",
@@ -836,6 +861,8 @@ function buildPlanPrompt(input: SessionStartInput, profile: PlannerProfile): Pla
           "Model resume or re-entry as a separate query/resumption surface, not a normal forward pipeline step.",
           "A framework connector query is different from a resume/read surface: use kind \"query\" only for an in-pipeline read boundary, cardinality ONE_TO_ONE, query id, optional capture.keyFields, and a top-level queries entry. In this slice, supported connector is jpa.",
           "For JPA query where clauses, use simple equality shorthand by default, for example customerId: \"input.customerId\". Use predicate objects only when the brief explicitly implies them: eq, in, gt, gte, lt, lte, between, like, or isNull. Use orderBy plus limit: 1 only for latest/top-one style reads. Do not invent database tuning or query semantics beyond the brief.",
+          "Use kind \"command\" for replay-safe external writes/effects with deterministic command identity. Command steps require cardinality ONE_TO_ONE, command, commandIdGenerator, optional duplicatePolicy RETURN_RECORDED or FAIL, and optional config. Keep provider endpoints, credentials, and tuning outside the planner output unless the brief explicitly provides them.",
+          "Do not use command for async callback or human approval; that is await. Do not use command for downstream ownership transfer; that is checkpoint handoff. Do not use command for ordinary internal business logic.",
           "Filesystem/S3 object ingestion is an input boundary, not a business step: use top-level sources and inputBoundary.object with emits.type/typeName/mapper. The first forward step must consume the emitted type.",
           "Use await steps only when the brief implies a real suspend/resume external boundary. Distinguish await steps from checkpoint hand-off and from ordinary forward steps.",
           "For await steps, use kind \"await\" and provide timeout, idempotencyKeyFields, and await.transport / await.correlation details. Supported await transports are interaction-api, webhook, kafka, and sqs.",
@@ -867,6 +894,7 @@ function buildRevisionPrompt(
           "Preserve core TPF guardrails: no persistence steps, forward adjacency, resume outside the main flow, await distinct from checkpoint hand-off.",
           "Keep framework connector queries as kind \"query\" steps with top-level queries definitions; keep resume/read surfaces outside the main pipeline.",
           "For JPA queries, keep equality shorthand unless the answer explicitly requires range/list/prefix/null/latest filtering.",
+          "Keep replay-safe external writes as kind \"command\" steps, not fake service modules. Use command for deterministic external effects, await for callbacks/human approval, and checkpoint for downstream ownership transfer.",
           "Keep filesystem/S3 object ingest as top-level sources plus inputBoundary.object, not a read-file service step.",
           "",
           "Brief:",
@@ -886,6 +914,7 @@ function buildRevisionPrompt(
           "If the brief implies a human approval, third-party callback, or brokered external decision before the pipeline can continue, model that boundary as kind \"await\" instead of a checkpoint note or fake save step. Use sqs for SQS-brokered await behavior.",
           "If the brief implies a JPA-backed in-pipeline lookup, model it as kind \"query\" with a referenced top-level queries entry, not as an internal service.",
           "For JPA lookups, preserve simple equality unless the brief or answer explicitly requires richer predicates. Use orderBy with limit: 1 only for latest/top-one reads.",
+          "If the brief implies a replay-safe external write/effect, model it as kind \"command\" with command, commandIdGenerator, optional duplicatePolicy, and optional config. Do not invent provider endpoint, credential, or tuning details.",
           "If the brief starts from filesystem/S3/object storage input, model it with top-level sources and inputBoundary.object; the first forward step consumes inputBoundary.object.emits.typeName.",
           "If ownership transfers to another pipeline after this one completes, model checkpoint handoff with outputBoundary.checkpoint and optional compositionManifest instead of await.",
           "If ambiguity remains, keep only the unresolved contractQuestions.",
@@ -922,6 +951,9 @@ Rules:
 - Resume and re-entry belong to a separate query/resumption surface and must not appear as normal forward pipeline steps.
 - Framework connector queries are different from resume/query surfaces: use kind "query" only for in-pipeline JPA reads that feed the next step. They require cardinality ONE_TO_ONE, a query id, and a matching top-level queries entry with connector "jpa", input or inputType, output or outputType, and jpa.entity / jpa.where.
 - In JPA where clauses, use equality shorthand by default. Use predicate objects only when explicit filtering is implied: eq, in, gt, gte, lt, lte, between, like, isNull. Use orderBy plus limit: 1 only for latest/top-one semantics. Do not invent database tuning or hidden query behavior.
+- Use kind "command" for replay-safe external writes/effects owned by the TPF command runtime. Command steps require cardinality ONE_TO_ONE, command, commandIdGenerator, optional duplicatePolicy RETURN_RECORDED or FAIL, and optional config.
+- Do not use command for async callbacks/human approval, downstream pipeline ownership transfer, or ordinary internal business logic.
+- Keep provider endpoint, credential, and tuning details out of command steps unless the brief explicitly provides them; prefer runtime configuration guidance.
 - Filesystem/S3 object ingestion is an input boundary: use top-level sources and inputBoundary.object with emits.type/typeName/mapper, and make the first forward step consume the emitted type.
 - Distinguish ordinary forward steps, await steps, and checkpoint hand-offs.
 - Use kind "await" only for suspend/resume external boundaries inside one pipeline execution.
@@ -946,6 +978,7 @@ Rules:
 - resume/query surfaces stay outside the main forward pipeline
 - in-pipeline JPA reads use kind "query" plus a top-level queries entry; do not make a service module for them
 - JPA where defaults to equality shorthand; richer predicates and orderBy/limit only when the brief asks for range/list/prefix/null/latest filtering
+- replay-safe external writes use kind "command" with command, commandIdGenerator, optional duplicatePolicy/config; command is not await, checkpoint, or internal logic
 - filesystem/S3 object ingest uses top-level sources plus inputBoundary.object; do not make a read-file service step
 - await is distinct from checkpoint hand-off
 - use kind "await" only for real suspend/resume external boundaries

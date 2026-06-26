@@ -4,18 +4,21 @@ module.exports = {
     return "#\n# Copyright (c) 2023-2025 Mariano Barcia\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n#\n\n# Pipeline framework\nquarkus.log.category.\"org.pipelineframework\".level=DEBUG\n\n# Enable trace logging for gRPC\n#quarkus.log.category.\"io.grpc\".level=DEBUG\n#quarkus.log.category.\"io.quarkus.grpc\".level=DEBUG\n\n# Enable trace logging for Mutiny and Vert.x\n#quarkus.log.category.\"io.vertx\".level=DEBUG\n#quarkus.log.category.\"io.mutiny\".level=DEBUG\n\nquarkus.log.console.format=%d{HH:mm:ss} %-5p [%c] (%t) %s%e%n\n\n#quarkus.observability.lgtm.enabled=true\n\n# Suppress unnecessary information\nquarkus.log.category.\"io.quarkus.opentelemetry.runtime.QuarkusContextStorage\".level=WARN\n";
 },"useData":true},
   "application-properties": {"0":function(container,depth0,helpers,partials,data) {
-    var stack1, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+    var stack1, alias1=depth0 != null ? depth0 : (container.nullContext || {}), lookupProperty = container.lookupProperty || function(parent, propertyName) {
         if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
           return parent[propertyName];
         }
         return undefined
     };
 
-  return "\n# Await steps and checkpoint hand-offs require queue-async orchestration so executions can park, resume, or publish boundaries.\npipeline.orchestrator.mode=QUEUE_ASYNC\npipeline.orchestrator.resume-token-secret=${TPF_RESUME_TOKEN_SECRET}\n"
-    + ((stack1 = lookupProperty(helpers,"if").call(depth0 != null ? depth0 : (container.nullContext || {}),(depth0 != null ? lookupProperty(depth0,"hasCheckpointBoundaries") : depth0),{"name":"if","hash":{},"fn":container.program(1, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":34,"column":0},"end":{"line":36,"column":7}}})) != null ? stack1 : "");
+  return "\n# Await steps, command steps, and checkpoint hand-offs require queue-async orchestration so executions can park, replay effects, resume, or publish boundaries.\npipeline.orchestrator.mode=QUEUE_ASYNC\npipeline.orchestrator.resume-token-secret=${TPF_RESUME_TOKEN_SECRET}\n"
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasCommandSteps") : depth0),{"name":"if","hash":{},"fn":container.program(1, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":34,"column":0},"end":{"line":36,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasCheckpointBoundaries") : depth0),{"name":"if","hash":{},"fn":container.program(2, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":37,"column":0},"end":{"line":39,"column":7}}})) != null ? stack1 : "");
 },"1":function(container,depth0,helpers,partials,data) {
-    return "# Keep checkpoint publishers/subscribers idempotent over the configured boundary key fields.\n";
+    return "# Keep command connectors idempotent over deterministic command ids. Configure provider endpoints and credentials outside pipeline.yaml.\n";
 },"2":function(container,depth0,helpers,partials,data) {
+    return "# Keep checkpoint publishers/subscribers idempotent over the configured boundary key fields.\n";
+},"3":function(container,depth0,helpers,partials,data) {
     var stack1, alias1=container.lambda, alias2=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
         if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
           return parent[propertyName];
@@ -30,7 +33,7 @@ module.exports = {
     + "\nmp.messaging.incoming.tpf-await-kafka-responses.group.id="
     + alias2(alias1(((stack1 = (depth0 != null ? lookupProperty(depth0,"kafkaAwait") : depth0)) != null ? lookupProperty(stack1,"consumerGroupProperty") : stack1), depth0))
     + "\nmp.messaging.incoming.tpf-await-kafka-responses.auto.offset.reset=${TPF_AWAIT_KAFKA_RESPONSES_OFFSET_RESET:earliest}\nmp.messaging.incoming.tpf-await-kafka-responses.value.deserializer=org.apache.kafka.common.serialization.StringDeserializer\n";
-},"3":function(container,depth0,helpers,partials,data) {
+},"4":function(container,depth0,helpers,partials,data) {
     var helper, lookupProperty = container.lookupProperty || function(parent, propertyName) {
         if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
           return parent[propertyName];
@@ -39,9 +42,9 @@ module.exports = {
     };
 
   return "\n# JPA query connector starter settings.\nquarkus.datasource.db-kind=${TPF_QUERY_JPA_DB_KIND:postgresql}\n%dev.quarkus.datasource.devservices.enabled=true\n%test.quarkus.datasource.devservices.enabled=true\n# quarkus.datasource.reactive.url=${TPF_QUERY_JPA_REACTIVE_URL}\n# quarkus.datasource.username=${TPF_QUERY_JPA_USERNAME}\n# quarkus.datasource.password=${TPF_QUERY_JPA_PASSWORD}\n# quarkus.hibernate-orm.packages="
-    + container.escapeExpression(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : container.hooks.helperMissing),(typeof helper === "function" ? helper.call(depth0 != null ? depth0 : (container.nullContext || {}),{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":61,"column":33},"end":{"line":61,"column":48}}}) : helper)))
+    + container.escapeExpression(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : container.hooks.helperMissing),(typeof helper === "function" ? helper.call(depth0 != null ? depth0 : (container.nullContext || {}),{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":64,"column":33},"end":{"line":64,"column":48}}}) : helper)))
     + ".common.domain\n";
-},"4":function(container,depth0,helpers,partials,data) {
+},"5":function(container,depth0,helpers,partials,data) {
     return "\n# Object ingest connector starter.\n# Object source provider/location/polling settings are declared in config/pipeline.yaml under sources and input.object.\n";
 },"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
     var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3=container.escapeExpression, alias4="function", lookupProperty = container.lookupProperty || function(parent, propertyName) {
@@ -58,14 +61,14 @@ module.exports = {
     + "\n# quarkus.http.enable-compression=true\n\n# HTTP/2 REST and gRPC endpoint using SSL with a self-signed cert\nquarkus.grpc.server.use-separate-server=false\nquarkus.grpc.server.plain-text=false\nquarkus.http.ssl.certificate.key-store-file=${SERVER_KEYSTORE_PATH:../target/dev-certs/"
     + alias3(((helper = (helper = lookupProperty(helpers,"serviceName") || (depth0 != null ? lookupProperty(depth0,"serviceName") : depth0)) != null ? helper : alias2),(typeof helper === alias4 ? helper.call(alias1,{"name":"serviceName","hash":{},"data":data,"loc":{"start":{"line":26,"column":87},"end":{"line":26,"column":102}}}) : helper)))
     + "/server-keystore.jks}\nquarkus.http.ssl.certificate.key-store-password=secret\nquarkus.http.insecure-requests=disabled\n"
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasQueueAsyncRuntime") : depth0),{"name":"if","hash":{},"fn":container.program(0, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":29,"column":0},"end":{"line":37,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"kafkaAwait") : depth0),{"name":"if","hash":{},"fn":container.program(2, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":38,"column":0},"end":{"line":51,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasJpaQuery") : depth0),{"name":"if","hash":{},"fn":container.program(3, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":52,"column":0},"end":{"line":62,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasObjectIngest") : depth0),{"name":"if","hash":{},"fn":container.program(4, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":63,"column":0},"end":{"line":67,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasQueueAsyncRuntime") : depth0),{"name":"if","hash":{},"fn":container.program(0, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":29,"column":0},"end":{"line":40,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"kafkaAwait") : depth0),{"name":"if","hash":{},"fn":container.program(3, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":41,"column":0},"end":{"line":54,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasJpaQuery") : depth0),{"name":"if","hash":{},"fn":container.program(4, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":55,"column":0},"end":{"line":65,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasObjectIngest") : depth0),{"name":"if","hash":{},"fn":container.program(5, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":66,"column":0},"end":{"line":70,"column":7}}})) != null ? stack1 : "")
     + "\n# Micrometer configuration\nquarkus.micrometer.export.prometheus.enabled=${QUARKUS_MICROMETER_EXPORT_PROMETHEUS_ENABLED:false}\nquarkus.micrometer.export.prometheus.path=/q/metrics\nquarkus.micrometer.binder.http-server.enabled=${QUARKUS_OTEL_METRICS_ENABLED:${QUARKUS_MICROMETER_EXPORT_PROMETHEUS_ENABLED:true}}\nquarkus.micrometer.binder.http-client.enabled=${QUARKUS_OTEL_METRICS_ENABLED:${QUARKUS_MICROMETER_EXPORT_PROMETHEUS_ENABLED:true}}\nquarkus.micrometer.binder.jvm=true\n\n# OpenTelemetry defaults\nquarkus.otel.exporter.otlp.protocol=http/protobuf\nquarkus.otel.exporter.otlp.compression=gzip\nquarkus.otel.exporter.otlp.metrics.temporality.preference=delta\n# For non-local deployments, set OTEL_EXPORTER_OTLP_ENDPOINT or quarkus.otel.exporter.otlp.endpoint.\n# quarkus.otel.exporter.otlp.endpoint=${OTEL_EXPORTER_OTLP_ENDPOINT}\n# Prometheus export is opt-in to avoid running LGTM/Prometheus by default in dev.\n# The following defaults only apply when OpenTelemetry is enabled (for example via NEW_RELIC_LICENSE_KEY).\nquarkus.otel.traces.enabled=true\nquarkus.otel.metrics.enabled=true\nquarkus.otel.metric.export.interval=${QUARKUS_OTEL_METRIC_EXPORT_INTERVAL:10s}\nquarkus.otel.traces.sampler=parentbased_traceidratio\nquarkus.otel.traces.sampler.arg=0.001\nquarkus.otel.resource.attributes=service.instance.id=${HOSTNAME:unknown}\n\n# Docker image\nquarkus.container-image.builder=jib\nquarkus.container-image.registry=localhost\nquarkus.container-image.group="
-    + alias3(((helper = (helper = lookupProperty(helpers,"rootProjectName") || (depth0 != null ? lookupProperty(depth0,"rootProjectName") : depth0)) != null ? helper : alias2),(typeof helper === alias4 ? helper.call(alias1,{"name":"rootProjectName","hash":{},"data":data,"loc":{"start":{"line":94,"column":30},"end":{"line":94,"column":49}}}) : helper)))
+    + alias3(((helper = (helper = lookupProperty(helpers,"rootProjectName") || (depth0 != null ? lookupProperty(depth0,"rootProjectName") : depth0)) != null ? helper : alias2),(typeof helper === alias4 ? helper.call(alias1,{"name":"rootProjectName","hash":{},"data":data,"loc":{"start":{"line":97,"column":30},"end":{"line":97,"column":49}}}) : helper)))
     + "\nquarkus.container-image.name="
-    + alias3(((helper = (helper = lookupProperty(helpers,"serviceName") || (depth0 != null ? lookupProperty(depth0,"serviceName") : depth0)) != null ? helper : alias2),(typeof helper === alias4 ? helper.call(alias1,{"name":"serviceName","hash":{},"data":data,"loc":{"start":{"line":95,"column":29},"end":{"line":95,"column":44}}}) : helper)))
+    + alias3(((helper = (helper = lookupProperty(helpers,"serviceName") || (depth0 != null ? lookupProperty(depth0,"serviceName") : depth0)) != null ? helper : alias2),(typeof helper === alias4 ? helper.call(alias1,{"name":"serviceName","hash":{},"data":data,"loc":{"start":{"line":98,"column":29},"end":{"line":98,"column":44}}}) : helper)))
     + "\nquarkus.container-image.tag=latest\n";
 },"useData":true},
   "application-test-properties": {"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
@@ -163,6 +166,56 @@ module.exports = {
 },"useData":true},
   "check-duplicate-sources.sh": {"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
     return "#!/usr/bin/env bash\nset -euo pipefail\n\nif [ \"$#\" -lt 2 ]; then\n  echo \"Usage: $0 <target-dir> <source-dir> [<source-dir> ...]\" >&2\n  exit 2\nfi\n\ntarget_dir=\"$1\"\nshift\n\ntmp_file=\"${target_dir}/source-files.txt\"\nmkdir -p \"$target_dir\"\ntrap 'rm -f \"$tmp_file\"' EXIT\n\n{\n  for dir in \"$@\"; do\n    dir=\"${dir%/}\"\n    if [ -d \"$dir\" ]; then\n      while IFS= read -r -d '' file; do\n        rel_path=\"${file#\"${dir}/\"}\"\n        printf '%s\\n' \"$rel_path\"\n      done < <(find \"$dir\" -type f -name '*.java' -print0)\n    else\n      printf 'Warning: source directory does not exist or is not a directory: %s\\n' \"$dir\" >&2\n    fi\n  done\n} > \"$tmp_file\"\n\nduplicates=\"$(sort \"$tmp_file\" | uniq -d)\"\nif [ -n \"$duplicates\" ]; then\n  echo \"Duplicate Java source paths detected while collecting aggregated runtime sources into ${target_dir}:\" >&2\n  echo \"$duplicates\" >&2\n  exit 1\nfi\n";
+},"useData":true},
+  "command-connector": {"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
+    var helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "package "
+    + alias4(((helper = (helper = lookupProperty(helpers,"packageName") || (depth0 != null ? lookupProperty(depth0,"packageName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"packageName","hash":{},"data":data,"loc":{"start":{"line":1,"column":8},"end":{"line":1,"column":23}}}) : helper)))
+    + ";\n\nimport jakarta.enterprise.context.ApplicationScoped;\n\nimport io.smallrye.mutiny.Uni;\nimport org.pipelineframework.command.CommandConnector;\nimport org.pipelineframework.command.CommandRequest;\nimport "
+    + alias4(((helper = (helper = lookupProperty(helpers,"inputTypeFqcn") || (depth0 != null ? lookupProperty(depth0,"inputTypeFqcn") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"inputTypeFqcn","hash":{},"data":data,"loc":{"start":{"line":8,"column":7},"end":{"line":8,"column":24}}}) : helper)))
+    + ";\nimport "
+    + alias4(((helper = (helper = lookupProperty(helpers,"outputTypeFqcn") || (depth0 != null ? lookupProperty(depth0,"outputTypeFqcn") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"outputTypeFqcn","hash":{},"data":data,"loc":{"start":{"line":9,"column":7},"end":{"line":9,"column":25}}}) : helper)))
+    + ";\n\n@ApplicationScoped\npublic class "
+    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":12,"column":13},"end":{"line":12,"column":26}}}) : helper)))
+    + " implements CommandConnector<"
+    + alias4(((helper = (helper = lookupProperty(helpers,"inputTypeName") || (depth0 != null ? lookupProperty(depth0,"inputTypeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"inputTypeName","hash":{},"data":data,"loc":{"start":{"line":12,"column":55},"end":{"line":12,"column":72}}}) : helper)))
+    + ", "
+    + alias4(((helper = (helper = lookupProperty(helpers,"outputTypeName") || (depth0 != null ? lookupProperty(depth0,"outputTypeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"outputTypeName","hash":{},"data":data,"loc":{"start":{"line":12,"column":74},"end":{"line":12,"column":92}}}) : helper)))
+    + "> {\n  public static final String COMMAND = \""
+    + alias4(((helper = (helper = lookupProperty(helpers,"command") || (depth0 != null ? lookupProperty(depth0,"command") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"command","hash":{},"data":data,"loc":{"start":{"line":13,"column":40},"end":{"line":13,"column":51}}}) : helper)))
+    + "\";\n\n  @Override\n  public String command() {\n    return COMMAND;\n  }\n\n  @Override\n  public Uni<"
+    + alias4(((helper = (helper = lookupProperty(helpers,"outputTypeName") || (depth0 != null ? lookupProperty(depth0,"outputTypeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"outputTypeName","hash":{},"data":data,"loc":{"start":{"line":21,"column":13},"end":{"line":21,"column":31}}}) : helper)))
+    + "> execute(CommandRequest<"
+    + alias4(((helper = (helper = lookupProperty(helpers,"inputTypeName") || (depth0 != null ? lookupProperty(depth0,"inputTypeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"inputTypeName","hash":{},"data":data,"loc":{"start":{"line":21,"column":56},"end":{"line":21,"column":73}}}) : helper)))
+    + "> request) {\n    return Uni.createFrom().failure(\n        new UnsupportedOperationException(\"Configure a CommandConnector implementation for '\" + COMMAND + \"'.\"));\n  }\n}\n";
+},"useData":true},
+  "command-id-generator": {"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
+    var helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
+        if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
+          return parent[propertyName];
+        }
+        return undefined
+    };
+
+  return "package "
+    + alias4(((helper = (helper = lookupProperty(helpers,"packageName") || (depth0 != null ? lookupProperty(depth0,"packageName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"packageName","hash":{},"data":data,"loc":{"start":{"line":1,"column":8},"end":{"line":1,"column":23}}}) : helper)))
+    + ";\n\nimport jakarta.enterprise.context.ApplicationScoped;\n\nimport org.pipelineframework.command.CommandDescriptor;\nimport org.pipelineframework.command.CommandIdGenerator;\nimport "
+    + alias4(((helper = (helper = lookupProperty(helpers,"inputTypeFqcn") || (depth0 != null ? lookupProperty(depth0,"inputTypeFqcn") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"inputTypeFqcn","hash":{},"data":data,"loc":{"start":{"line":7,"column":7},"end":{"line":7,"column":24}}}) : helper)))
+    + ";\n\n@ApplicationScoped\npublic class "
+    + alias4(((helper = (helper = lookupProperty(helpers,"className") || (depth0 != null ? lookupProperty(depth0,"className") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"className","hash":{},"data":data,"loc":{"start":{"line":10,"column":13},"end":{"line":10,"column":26}}}) : helper)))
+    + " implements CommandIdGenerator<"
+    + alias4(((helper = (helper = lookupProperty(helpers,"inputTypeName") || (depth0 != null ? lookupProperty(depth0,"inputTypeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"inputTypeName","hash":{},"data":data,"loc":{"start":{"line":10,"column":57},"end":{"line":10,"column":74}}}) : helper)))
+    + "> {\n  @Override\n  public String commandId(CommandDescriptor descriptor, "
+    + alias4(((helper = (helper = lookupProperty(helpers,"inputTypeName") || (depth0 != null ? lookupProperty(depth0,"inputTypeName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"inputTypeName","hash":{},"data":data,"loc":{"start":{"line":12,"column":56},"end":{"line":12,"column":73}}}) : helper)))
+    + " input) {\n    if (descriptor == null) {\n      throw new IllegalArgumentException(\"descriptor is required\");\n    }\n    if (input == null) {\n      throw new IllegalArgumentException(\"input is required\");\n    }\n    throw new UnsupportedOperationException(\"Implement a deterministic command id for '"
+    + alias4(((helper = (helper = lookupProperty(helpers,"command") || (depth0 != null ? lookupProperty(depth0,"command") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"command","hash":{},"data":data,"loc":{"start":{"line":19,"column":87},"end":{"line":19,"column":98}}}) : helper)))
+    + "'.\");\n  }\n}\n";
 },"useData":true},
   "common-application-properties": {"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
     return "#\n# Copyright (c) 2023-2025 Mariano Barcia\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n#\n\n#\n";
@@ -579,18 +632,21 @@ module.exports = {
         return undefined
     };
 
-  return "\n# Await steps and checkpoint hand-offs require queue-async orchestration so executions can park, resume, or publish boundaries.\npipeline.orchestrator.mode=QUEUE_ASYNC\n# Set TPF_RESUME_TOKEN_SECRET to a deployment secret before starting a queue-async runtime.\npipeline.orchestrator.resume-token-secret=${TPF_RESUME_TOKEN_SECRET}\n\n# Operator-owned redrive/replay policy remains external to the scaffold.\n"
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasAwaitSteps") : depth0),{"name":"if","hash":{},"fn":container.program(3, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":66,"column":0},"end":{"line":68,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasCheckpointBoundaries") : depth0),{"name":"if","hash":{},"fn":container.program(4, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":69,"column":0},"end":{"line":71,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasKafkaAwait") : depth0),{"name":"if","hash":{},"fn":container.program(5, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":72,"column":0},"end":{"line":91,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasSqsAwait") : depth0),{"name":"if","hash":{},"fn":container.program(8, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":92,"column":0},"end":{"line":100,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasWebhookAwait") : depth0),{"name":"if","hash":{},"fn":container.program(9, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":101,"column":0},"end":{"line":105,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasInteractionApiAwait") : depth0),{"name":"if","hash":{},"fn":container.program(10, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":106,"column":0},"end":{"line":110,"column":7}}})) != null ? stack1 : "");
+  return "\n# Await steps, command steps, and checkpoint hand-offs require queue-async orchestration so executions can park, replay effects, resume, or publish boundaries.\npipeline.orchestrator.mode=QUEUE_ASYNC\n# Set TPF_RESUME_TOKEN_SECRET to a deployment secret before starting a queue-async runtime.\npipeline.orchestrator.resume-token-secret=${TPF_RESUME_TOKEN_SECRET}\n\n# Operator-owned redrive/replay policy remains external to the scaffold.\n"
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasCommandSteps") : depth0),{"name":"if","hash":{},"fn":container.program(3, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":66,"column":0},"end":{"line":68,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasAwaitSteps") : depth0),{"name":"if","hash":{},"fn":container.program(4, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":69,"column":0},"end":{"line":71,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasCheckpointBoundaries") : depth0),{"name":"if","hash":{},"fn":container.program(5, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":72,"column":0},"end":{"line":74,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasKafkaAwait") : depth0),{"name":"if","hash":{},"fn":container.program(6, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":75,"column":0},"end":{"line":94,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasSqsAwait") : depth0),{"name":"if","hash":{},"fn":container.program(9, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":95,"column":0},"end":{"line":103,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasWebhookAwait") : depth0),{"name":"if","hash":{},"fn":container.program(10, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":104,"column":0},"end":{"line":108,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasInteractionApiAwait") : depth0),{"name":"if","hash":{},"fn":container.program(11, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":109,"column":0},"end":{"line":113,"column":7}}})) != null ? stack1 : "");
 },"3":function(container,depth0,helpers,partials,data) {
-    return "# Keep await handlers idempotent over the configured idempotencyKeyFields.\n";
+    return "# Keep command connectors idempotent over deterministic command ids. Configure provider endpoints and credentials outside pipeline.yaml.\n";
 },"4":function(container,depth0,helpers,partials,data) {
-    return "# Keep checkpoint publishers/subscribers idempotent over the configured boundary key fields.\n";
+    return "# Keep await handlers idempotent over the configured idempotencyKeyFields.\n";
 },"5":function(container,depth0,helpers,partials,data) {
+    return "# Keep checkpoint publishers/subscribers idempotent over the configured boundary key fields.\n";
+},"6":function(container,depth0,helpers,partials,data) {
     var stack1, lookupProperty = container.lookupProperty || function(parent, propertyName) {
         if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
           return parent[propertyName];
@@ -599,8 +655,8 @@ module.exports = {
     };
 
   return "\n# Kafka await transport starter settings.\n"
-    + ((stack1 = lookupProperty(helpers,"if").call(depth0 != null ? depth0 : (container.nullContext || {}),(depth0 != null ? lookupProperty(depth0,"kafkaAwait") : depth0),{"name":"if","hash":{},"fn":container.program(6, data, 0),"inverse":container.program(7, data, 0),"data":data,"loc":{"start":{"line":75,"column":0},"end":{"line":90,"column":7}}})) != null ? stack1 : "");
-},"6":function(container,depth0,helpers,partials,data) {
+    + ((stack1 = lookupProperty(helpers,"if").call(depth0 != null ? depth0 : (container.nullContext || {}),(depth0 != null ? lookupProperty(depth0,"kafkaAwait") : depth0),{"name":"if","hash":{},"fn":container.program(7, data, 0),"inverse":container.program(8, data, 0),"data":data,"loc":{"start":{"line":78,"column":0},"end":{"line":93,"column":7}}})) != null ? stack1 : "");
+},"7":function(container,depth0,helpers,partials,data) {
     var stack1, alias1=container.lambda, alias2=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
         if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
           return parent[propertyName];
@@ -615,7 +671,7 @@ module.exports = {
     + "\nmp.messaging.incoming.tpf-await-kafka-responses.group.id="
     + alias2(alias1(((stack1 = (depth0 != null ? lookupProperty(depth0,"kafkaAwait") : depth0)) != null ? lookupProperty(stack1,"consumerGroupProperty") : stack1), depth0))
     + "\nmp.messaging.incoming.tpf-await-kafka-responses.auto.offset.reset=${TPF_AWAIT_KAFKA_RESPONSES_OFFSET_RESET:earliest}\nmp.messaging.incoming.tpf-await-kafka-responses.value.deserializer=org.apache.kafka.common.serialization.StringDeserializer\n";
-},"7":function(container,depth0,helpers,partials,data) {
+},"8":function(container,depth0,helpers,partials,data) {
     var helper, lookupProperty = container.lookupProperty || function(parent, propertyName) {
         if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
           return parent[propertyName];
@@ -624,17 +680,17 @@ module.exports = {
     };
 
   return "# mp.messaging.outgoing.<await-request-channel>.topic=<request-topic>\n# mp.messaging.incoming.<await-response-channel>.topic=<response-topic>\n# mp.messaging.incoming.<await-response-channel>.group.id="
-    + container.escapeExpression(((helper = (helper = lookupProperty(helpers,"rootProjectName") || (depth0 != null ? lookupProperty(depth0,"rootProjectName") : depth0)) != null ? helper : container.hooks.helperMissing),(typeof helper === "function" ? helper.call(depth0 != null ? depth0 : (container.nullContext || {}),{"name":"rootProjectName","hash":{},"data":data,"loc":{"start":{"line":89,"column":58},"end":{"line":89,"column":77}}}) : helper)))
+    + container.escapeExpression(((helper = (helper = lookupProperty(helpers,"rootProjectName") || (depth0 != null ? lookupProperty(depth0,"rootProjectName") : depth0)) != null ? helper : container.hooks.helperMissing),(typeof helper === "function" ? helper.call(depth0 != null ? depth0 : (container.nullContext || {}),{"name":"rootProjectName","hash":{},"data":data,"loc":{"start":{"line":92,"column":58},"end":{"line":92,"column":77}}}) : helper)))
     + "-await-responses\n";
-},"8":function(container,depth0,helpers,partials,data) {
-    return "\n# SQS await transport starter settings.\ntpf.await.sqs.poller.enabled=true\ntpf.await.sqs.request-queue-url=${TPF_AWAIT_SQS_REQUEST_QUEUE_URL}\ntpf.await.sqs.response-queue-url=${TPF_AWAIT_SQS_RESPONSE_QUEUE_URL}\nquarkus.sqs.aws.region=${AWS_REGION:us-east-1}\nquarkus.sqs.endpoint-override=${SQS_ENDPOINT_OVERRIDE:}\n";
 },"9":function(container,depth0,helpers,partials,data) {
-    return "\n# Webhook await transport starter settings.\n# tpf.await.webhook.callback-base-url=${TPF_AWAIT_WEBHOOK_CALLBACK_BASE_URL}\n";
+    return "\n# SQS await transport starter settings.\ntpf.await.sqs.poller.enabled=true\ntpf.await.sqs.request-queue-url=${TPF_AWAIT_SQS_REQUEST_QUEUE_URL}\ntpf.await.sqs.response-queue-url=${TPF_AWAIT_SQS_RESPONSE_QUEUE_URL}\nquarkus.sqs.aws.region=${AWS_REGION:us-east-1}\nquarkus.sqs.endpoint-override=${SQS_ENDPOINT_OVERRIDE:}\n";
 },"10":function(container,depth0,helpers,partials,data) {
-    return "\n# Interaction API await transport starter settings.\n# tpf.await.interaction-api.base-path=/pipeline/interactions\n";
+    return "\n# Webhook await transport starter settings.\n# tpf.await.webhook.callback-base-url=${TPF_AWAIT_WEBHOOK_CALLBACK_BASE_URL}\n";
 },"11":function(container,depth0,helpers,partials,data) {
-    return "pipeline.cache.policy=prefer-cache\n\n# Cache provider configuration (build-time)\n# Choose one: redis | caffeine | memory\npipeline.cache.provider=redis\n%prod.quarkus.redis.hosts=${REDIS_HOSTS:redis://localhost:6379}\n%dev.quarkus.redis.devservices.enabled=true\n%test.quarkus.redis.devservices.enabled=true\n\n# Caffeine (in-process) alternative:\n# pipeline.cache.provider=caffeine\n# pipeline.cache.caffeine.name=pipeline-cache\n# pipeline.cache.caffeine.maximum-size=10000\n# pipeline.cache.caffeine.expire-after-write=PT30M\n# pipeline.cache.caffeine.expire-after-access=PT30M\n\n# In-memory (simple map) alternative:\n# pipeline.cache.provider=memory\n";
+    return "\n# Interaction API await transport starter settings.\n# tpf.await.interaction-api.base-path=/pipeline/interactions\n";
 },"12":function(container,depth0,helpers,partials,data) {
+    return "pipeline.cache.policy=prefer-cache\n\n# Cache provider configuration (build-time)\n# Choose one: redis | caffeine | memory\npipeline.cache.provider=redis\n%prod.quarkus.redis.hosts=${REDIS_HOSTS:redis://localhost:6379}\n%dev.quarkus.redis.devservices.enabled=true\n%test.quarkus.redis.devservices.enabled=true\n\n# Caffeine (in-process) alternative:\n# pipeline.cache.provider=caffeine\n# pipeline.cache.caffeine.name=pipeline-cache\n# pipeline.cache.caffeine.maximum-size=10000\n# pipeline.cache.caffeine.expire-after-write=PT30M\n# pipeline.cache.caffeine.expire-after-access=PT30M\n\n# In-memory (simple map) alternative:\n# pipeline.cache.provider=memory\n";
+},"13":function(container,depth0,helpers,partials,data) {
     var helper, lookupProperty = container.lookupProperty || function(parent, propertyName) {
         if (Object.prototype.hasOwnProperty.call(parent, propertyName)) {
           return parent[propertyName];
@@ -643,9 +699,9 @@ module.exports = {
     };
 
   return "\n# JPA query connector starter settings.\nquarkus.datasource.db-kind=${TPF_QUERY_JPA_DB_KIND:postgresql}\n%dev.quarkus.datasource.devservices.enabled=true\n%test.quarkus.datasource.devservices.enabled=true\n# quarkus.datasource.reactive.url=${TPF_QUERY_JPA_REACTIVE_URL}\n# quarkus.datasource.username=${TPF_QUERY_JPA_USERNAME}\n# quarkus.datasource.password=${TPF_QUERY_JPA_PASSWORD}\n# quarkus.hibernate-orm.packages="
-    + container.escapeExpression(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : container.hooks.helperMissing),(typeof helper === "function" ? helper.call(depth0 != null ? depth0 : (container.nullContext || {}),{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":141,"column":33},"end":{"line":141,"column":48}}}) : helper)))
+    + container.escapeExpression(((helper = (helper = lookupProperty(helpers,"basePackage") || (depth0 != null ? lookupProperty(depth0,"basePackage") : depth0)) != null ? helper : container.hooks.helperMissing),(typeof helper === "function" ? helper.call(depth0 != null ? depth0 : (container.nullContext || {}),{"name":"basePackage","hash":{},"data":data,"loc":{"start":{"line":144,"column":33},"end":{"line":144,"column":48}}}) : helper)))
     + ".common.domain\n";
-},"13":function(container,depth0,helpers,partials,data) {
+},"14":function(container,depth0,helpers,partials,data) {
     return "\n# Object ingest connector starter.\n# Object source provider/location/polling settings are declared in config/pipeline.yaml under sources and input.object.\n";
 },"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {
     var stack1, helper, alias1=depth0 != null ? depth0 : (container.nullContext || {}), alias2=container.hooks.helperMissing, alias3="function", alias4=container.escapeExpression, lookupProperty = container.lookupProperty || function(parent, propertyName) {
@@ -660,14 +716,14 @@ module.exports = {
     + "\n"
     + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"isRestTransport") : depth0),{"name":"if","hash":{},"fn":container.program(1, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":34,"column":0},"end":{"line":50,"column":7}}})) != null ? stack1 : "")
     + "\n# Pipeline Configuration\npipeline.defaults.retry-limit=10\npipeline.defaults.retry-wait-ms=500\npipeline.defaults.recover-on-failure=false\npipeline.defaults.max-backoff=30000\npipeline.defaults.jitter=false\n"
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasQueueAsyncRuntime") : depth0),{"name":"if","hash":{},"fn":container.program(2, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":58,"column":0},"end":{"line":111,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasCacheAspect") : depth0),{"name":"if","hash":{},"fn":container.program(11, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":112,"column":0},"end":{"line":131,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasJpaQuery") : depth0),{"name":"if","hash":{},"fn":container.program(12, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":132,"column":0},"end":{"line":142,"column":7}}})) != null ? stack1 : "")
-    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasObjectIngest") : depth0),{"name":"if","hash":{},"fn":container.program(13, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":143,"column":0},"end":{"line":147,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasQueueAsyncRuntime") : depth0),{"name":"if","hash":{},"fn":container.program(2, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":58,"column":0},"end":{"line":114,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasCacheAspect") : depth0),{"name":"if","hash":{},"fn":container.program(12, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":115,"column":0},"end":{"line":134,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasJpaQuery") : depth0),{"name":"if","hash":{},"fn":container.program(13, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":135,"column":0},"end":{"line":145,"column":7}}})) != null ? stack1 : "")
+    + ((stack1 = lookupProperty(helpers,"if").call(alias1,(depth0 != null ? lookupProperty(depth0,"hasObjectIngest") : depth0),{"name":"if","hash":{},"fn":container.program(14, data, 0),"inverse":container.noop,"data":data,"loc":{"start":{"line":146,"column":0},"end":{"line":150,"column":7}}})) != null ? stack1 : "")
     + "\n# Client wiring defaults (endpoints generated by the annotation processor)\n# A module groups one or more services into the same runtime (for example, legacy layouts).\n# Client overrides target a single step or synthetic side-effect client.\n# pipeline.client.base-port=8443\n# pipeline.module.<module>.host=localhost\n# pipeline.module.<module>.port=8444\n# pipeline.module.<module>.steps=process-foo,process-bar\n# pipeline.module.<module>.aspects=persistence,cache\n# pipeline.client.tls-configuration-name=pipeline-client\n# quarkus.grpc.clients.<client>.host=host\n# quarkus.grpc.clients.<client>.port=8444\n# quarkus.rest-client.<client>.url=https://host:8444\n\n# TLS configuration (optional shared registry)\n# quarkus.tls.pipeline-client.trust-store.jks.path=${CLIENT_TRUSTSTORE_PATH:../target/dev-certs/orchestrator-svc/client-truststore.jks}\n# quarkus.tls.pipeline-client.trust-store.jks.password=secret\n\n# Micrometer configuration\nquarkus.micrometer.export.prometheus.enabled=${QUARKUS_MICROMETER_EXPORT_PROMETHEUS_ENABLED:false}\nquarkus.micrometer.export.prometheus.path=/q/metrics\nquarkus.micrometer.binder.http-server.enabled=${QUARKUS_OTEL_METRICS_ENABLED:${QUARKUS_MICROMETER_EXPORT_PROMETHEUS_ENABLED:true}}\nquarkus.micrometer.binder.http-client.enabled=${QUARKUS_OTEL_METRICS_ENABLED:${QUARKUS_MICROMETER_EXPORT_PROMETHEUS_ENABLED:true}}\nquarkus.micrometer.binder.jvm=true\n\n# OpenTelemetry configuration\n# Prometheus export is opt-in to avoid running LGTM/Prometheus by default in dev.\n# The following defaults only apply when OpenTelemetry is enabled (for example via NEW_RELIC_LICENSE_KEY).\n# For non-local deployments, set OTEL_EXPORTER_OTLP_ENDPOINT or quarkus.otel.exporter.otlp.endpoint.\n# quarkus.otel.exporter.otlp.endpoint=${OTEL_EXPORTER_OTLP_ENDPOINT}\nquarkus.otel.exporter.otlp.endpoint=http://otel-collector:4318\nquarkus.otel.exporter.otlp.protocol=http/protobuf\nquarkus.otel.exporter.otlp.compression=gzip\nquarkus.otel.exporter.otlp.metrics.temporality.preference=delta\nquarkus.otel.traces.enabled=true\nquarkus.otel.metrics.enabled=true\nquarkus.otel.logs.enabled=true\nquarkus.otel.metric.export.interval=${QUARKUS_OTEL_METRIC_EXPORT_INTERVAL:10s}\nquarkus.otel.traces.sampler=parentbased_traceidratio\nquarkus.otel.traces.sampler.arg=0.001\nquarkus.otel.resource.attributes=service.instance.id=${HOSTNAME:unknown}\n\n# Docker image\nquarkus.container-image.builder=jib\nquarkus.container-image.registry=localhost\nquarkus.container-image.group="
-    + alias4(((helper = (helper = lookupProperty(helpers,"rootProjectName") || (depth0 != null ? lookupProperty(depth0,"rootProjectName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"rootProjectName","hash":{},"data":data,"loc":{"start":{"line":193,"column":30},"end":{"line":193,"column":49}}}) : helper)))
+    + alias4(((helper = (helper = lookupProperty(helpers,"rootProjectName") || (depth0 != null ? lookupProperty(depth0,"rootProjectName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"rootProjectName","hash":{},"data":data,"loc":{"start":{"line":196,"column":30},"end":{"line":196,"column":49}}}) : helper)))
     + "\nquarkus.container-image.name="
-    + alias4(((helper = (helper = lookupProperty(helpers,"serviceName") || (depth0 != null ? lookupProperty(depth0,"serviceName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"serviceName","hash":{},"data":data,"loc":{"start":{"line":194,"column":29},"end":{"line":194,"column":44}}}) : helper)))
+    + alias4(((helper = (helper = lookupProperty(helpers,"serviceName") || (depth0 != null ? lookupProperty(depth0,"serviceName") : depth0)) != null ? helper : alias2),(typeof helper === alias3 ? helper.call(alias1,{"name":"serviceName","hash":{},"data":data,"loc":{"start":{"line":197,"column":29},"end":{"line":197,"column":44}}}) : helper)))
     + "\nquarkus.container-image.tag=latest\n";
 },"useData":true},
   "orchestrator-application-test-properties": {"compiler":[8,">= 4.3.0"],"main":function(container,depth0,helpers,partials,data) {

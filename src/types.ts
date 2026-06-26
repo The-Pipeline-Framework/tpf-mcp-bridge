@@ -15,7 +15,8 @@ export type StepCardinality =
   | "ONE_TO_MANY"
   | "MANY_TO_ONE";
 export type StepFlowRole = "forward" | "query" | "resume" | "expansion" | "reduction" | "merge";
-export type StepKind = "internal" | "delegated" | "remote" | "await" | "query";
+export type StepKind = "internal" | "delegated" | "remote" | "await" | "query" | "command";
+export type CommandDuplicatePolicy = "RETURN_RECORDED" | "FAIL";
 export type AwaitCorrelationStrategy = "interactionId" | "signedResumeToken";
 export type AwaitDispatchMode = "single" | "per-item";
 export type AwaitTransportType = "interaction-api" | "webhook" | "kafka" | "sqs";
@@ -243,6 +244,10 @@ export interface PipelineStep {
   outboundMapper?: string;
   query?: string;
   capture?: QueryCapture;
+  command?: string;
+  commandIdGenerator?: string;
+  duplicatePolicy?: CommandDuplicatePolicy;
+  config?: Record<string, unknown>;
   flowRole?: StepFlowRole;
   flowBoundaryRationale?: string;
   timeout?: string;
@@ -343,6 +348,10 @@ export interface BusinessStep {
   outputTypeName: string;
   query?: string;
   capture?: QueryCapture;
+  command?: string;
+  commandIdGenerator?: string;
+  duplicatePolicy?: CommandDuplicatePolicy;
+  config?: Record<string, unknown>;
   flowRole?: StepFlowRole;
   flowBoundaryRationale?: string;
   timeout?: string;
@@ -361,6 +370,10 @@ export interface StepContract {
   outputTypeName: string;
   query?: string;
   capture?: QueryCapture;
+  command?: string;
+  commandIdGenerator?: string;
+  duplicatePolicy?: CommandDuplicatePolicy;
+  config?: Record<string, unknown>;
   flowRole?: StepFlowRole;
   flowBoundaryRationale?: string;
   timeout?: string;

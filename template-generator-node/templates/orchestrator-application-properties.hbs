@@ -57,12 +57,15 @@ pipeline.defaults.max-backoff=30000
 pipeline.defaults.jitter=false
 {{#if hasQueueAsyncRuntime}}
 
-# Await steps and checkpoint hand-offs require queue-async orchestration so executions can park, resume, or publish boundaries.
+# Await steps, command steps, and checkpoint hand-offs require queue-async orchestration so executions can park, replay effects, resume, or publish boundaries.
 pipeline.orchestrator.mode=QUEUE_ASYNC
 # Set TPF_RESUME_TOKEN_SECRET to a deployment secret before starting a queue-async runtime.
 pipeline.orchestrator.resume-token-secret=${TPF_RESUME_TOKEN_SECRET}
 
 # Operator-owned redrive/replay policy remains external to the scaffold.
+{{#if hasCommandSteps}}
+# Keep command connectors idempotent over deterministic command ids. Configure provider endpoints and credentials outside pipeline.yaml.
+{{/if}}
 {{#if hasAwaitSteps}}
 # Keep await handlers idempotent over the configured idempotencyKeyFields.
 {{/if}}

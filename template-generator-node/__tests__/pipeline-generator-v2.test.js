@@ -432,6 +432,91 @@ steps:
     expect(scaffold.steps[1].inputFields.map((field) => field.name)).toEqual(['customerId', 'riskScore']);
   });
 
+  test('loadConfig and toScaffoldConfig preserve command step semantics', () => {
+    const generator = new PipelineGenerator();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
+    const configPath = path.join(tempDir, 'command-step.yaml');
+    fs.writeFileSync(configPath, `version: 2
+appName: CommandStepApp
+basePackage: com.example.commandstep
+transport: REST
+runtimeLayout: MODULAR
+messages:
+  RawDocument:
+    fields:
+      - number: 1
+        name: documentId
+        type: string
+      - number: 2
+        name: content
+        type: string
+  SearchIndexDocument:
+    fields:
+      - number: 1
+        name: documentId
+        type: string
+      - number: 2
+        name: indexName
+        type: string
+      - number: 3
+        name: body
+        type: string
+  SearchIndexWriteResult:
+    fields:
+      - number: 1
+        name: documentId
+        type: string
+      - number: 2
+        name: written
+        type: bool
+  IndexAck:
+    fields:
+      - number: 1
+        name: documentId
+        type: string
+      - number: 2
+        name: status
+        type: string
+steps:
+  - name: Build Search Document
+    kind: internal
+    cardinality: ONE_TO_ONE
+    inputTypeName: RawDocument
+    outputTypeName: SearchIndexDocument
+  - name: Write Search Index Document
+    kind: command
+    cardinality: ONE_TO_ONE
+    inputTypeName: SearchIndexDocument
+    outputTypeName: SearchIndexWriteResult
+    command: opensearch-index-document
+    commandIdGenerator: com.example.commandstep.common.command.SearchIndexDocumentCommandIdGenerator
+    duplicatePolicy: RETURN_RECORDED
+    config:
+      indexName: documents
+  - name: Summarize Search Write
+    kind: internal
+    cardinality: ONE_TO_ONE
+    inputTypeName: SearchIndexWriteResult
+    outputTypeName: IndexAck
+`);
+
+    const config = generator.loadConfig(configPath);
+    expect(config.steps[1].kind).toBe('command');
+    expect(config.steps[1].command).toBe('opensearch-index-document');
+    expect(config.steps[1].commandIdGenerator).toBe('com.example.commandstep.common.command.SearchIndexDocumentCommandIdGenerator');
+    expect(config.steps[1].duplicatePolicy).toBe('RETURN_RECORDED');
+    expect(config.steps[1].config).toEqual({ indexName: 'documents' });
+
+    const scaffold = generator.toScaffoldConfig(config);
+    expect(scaffold.steps[1].kind).toBe('command');
+    expect(scaffold.steps[1].command).toBe('opensearch-index-document');
+    expect(scaffold.steps[1].commandIdGenerator).toBe('com.example.commandstep.common.command.SearchIndexDocumentCommandIdGenerator');
+    expect(scaffold.steps[1].duplicatePolicy).toBe('RETURN_RECORDED');
+    expect(scaffold.steps[1].config).toEqual({ indexName: 'documents' });
+    expect(scaffold.steps[1].inputFields.map((field) => field.name)).toEqual(['documentId', 'indexName', 'body']);
+    expect(scaffold.steps[2].inputFields.map((field) => field.name)).toEqual(['documentId', 'written']);
+  });
+
   test('loadConfig and toScaffoldConfig preserve object-ingest boundary semantics', () => {
     const generator = new PipelineGenerator();
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));

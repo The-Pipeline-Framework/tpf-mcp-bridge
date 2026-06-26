@@ -71,6 +71,7 @@ export function assertDerivedConfigInvariants(config: DerivedConfig): void {
     validateVirtualThreadStep(step);
     validateAwaitStep(config, step);
     validateQueryStep(config, step, knownMessages);
+    validateCommandStep(step);
   }
 }
 
@@ -433,6 +434,50 @@ function validateQueryStep(
         `Query step '${step.name}' capture key field '${keyField}' is not present on input type '${step.inputTypeName}'.`
       );
     }
+  }
+}
+
+function validateCommandStep(step: DerivedConfig["steps"][number]): void {
+  if (step.kind !== "command") {
+    if (
+      step.command !== undefined
+      || step.commandIdGenerator !== undefined
+      || step.duplicatePolicy !== undefined
+      || step.config !== undefined
+    ) {
+      throw new DerivedConfigValidationError(
+        `Step '${step.name}' declares command-step fields but is not marked as kind 'command'.`
+      );
+    }
+    return;
+  }
+
+  if (step.cardinality !== "ONE_TO_ONE") {
+    throw new DerivedConfigValidationError(`Command step '${step.name}' must use ONE_TO_ONE cardinality.`);
+  }
+  if (!step.command?.trim()) {
+    throw new DerivedConfigValidationError(`Command step '${step.name}' must declare command.`);
+  }
+  if (!step.commandIdGenerator?.trim()) {
+    throw new DerivedConfigValidationError(`Command step '${step.name}' must declare commandIdGenerator.`);
+  }
+  if (!/^[a-zA-Z_$][a-zA-Z\d_$]*(\.[a-zA-Z_$][a-zA-Z\d_$]*)*\.[A-Z][a-zA-Z\d_$]*$/.test(step.commandIdGenerator)) {
+    throw new DerivedConfigValidationError(`Command step '${step.name}' commandIdGenerator is not a valid Java FQCN.`);
+  }
+  if (step.duplicatePolicy !== undefined && step.duplicatePolicy !== "RETURN_RECORDED" && step.duplicatePolicy !== "FAIL") {
+    throw new DerivedConfigValidationError(`Command step '${step.name}' uses unsupported duplicatePolicy '${step.duplicatePolicy}'.`);
+  }
+  if (step.config !== undefined && (typeof step.config !== "object" || Array.isArray(step.config))) {
+    throw new DerivedConfigValidationError(`Command step '${step.name}' config must be an object map.`);
+  }
+  if (step.await !== undefined || step.timeout !== undefined || step.idempotencyKeyFields !== undefined) {
+    throw new DerivedConfigValidationError(`Command step '${step.name}' must not declare await-step fields.`);
+  }
+  if (step.query !== undefined || step.capture !== undefined) {
+    throw new DerivedConfigValidationError(`Command step '${step.name}' must not declare query connector fields.`);
+  }
+  if (step.runOnVirtualThreads !== undefined) {
+    throw new DerivedConfigValidationError(`Command step '${step.name}' must not declare runOnVirtualThreads.`);
   }
 }
 

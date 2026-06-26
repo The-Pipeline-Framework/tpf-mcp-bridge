@@ -60,17 +60,23 @@ const TEMPLATES = ${JSON.stringify(templates, null, 2)};
 module.exports = TEMPLATES;
 `;
 
-// Write the templates file
-const outputPath = path.join(__dirname, './dist/templates.js');
-const outputDir = path.dirname(outputPath);
-if (!fs.existsSync(outputDir)) {
-  fs.mkdirSync(outputDir, { recursive: true });
-}
-try {
-  fs.writeFileSync(outputPath, jsContent);
-} catch (error) {
-  console.error(`Error writing output file ${outputPath}: ${error.message}`);
-  process.exit(1);
+// Write the templates files used by package consumers and the source ZIP generator.
+const outputPaths = [
+  path.join(__dirname, './dist/templates.js'),
+  path.join(__dirname, './src/template-bundle.js')
+];
+
+for (const outputPath of outputPaths) {
+  const outputDir = path.dirname(outputPath);
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+  try {
+    fs.writeFileSync(outputPath, jsContent);
+  } catch (error) {
+    console.error(`Error writing output file ${outputPath}: ${error.message}`);
+    process.exit(1);
+  }
 }
 
-console.log('Templates have been packaged into dist/templates.js');
+console.log('Templates have been packaged into dist/templates.js and src/template-bundle.js');

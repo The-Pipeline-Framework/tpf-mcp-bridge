@@ -167,6 +167,21 @@ test("openai-compatible planner adapter parses structured planner drafts", async
   assert.equal(draft.queries?.["recent-customer-by-id"].jpa.limit, 1);
 });
 
+test("openai-compatible planner adapter parses command step drafts", async () => {
+  const initialDraft = buildCommandPlannerDraft({ duplicatePolicy: "fail" });
+  const planner = createOpenAiPlannerClient({
+    endpoint: "https://planner.example/v1",
+    model: "gpt-5",
+    token: "planner-token",
+    fetchImpl: createPlannerProviderFetch([initialDraft])
+  });
+
+  const draft = await planner.planInitialBrief({ briefText: "Index a document through a replay-safe external search command." });
+  const commandStep = draft.pipelineSteps.find((step) => step.kind === "command");
+  assert.equal(commandStep?.command, "opensearch-index-document");
+  assert.equal(commandStep?.duplicatePolicy, "FAIL");
+});
+
 test("openai-compatible planner adapter rejects invalid JPA predicate drafts", async () => {
   const invalidDraft = await createHeuristicPlannerClient().planInitialBrief({ briefText: structuredBackendBrief });
   invalidDraft.queries = {
@@ -827,6 +842,49 @@ test("await-step planner drafts survive normalization and scaffold ZIP generatio
   assert.ok(!fileNames.some((name) => name.startsWith("await-fraud-decision-svc/")));
 });
 
+test("command-step planner drafts derive generator metadata and scaffold without a fake command module", async () => {
+  const planner = {
+    async planInitialBrief(): Promise<PlannerDraft> {
+      return buildCommandPlannerDraft();
+    },
+    async revisePlanWithAnswers(): Promise<PlannerDraft> {
+      return buildCommandPlannerDraft();
+    }
+  };
+
+  const service = new BriefSessionService(new InMemorySessionStore(), new LocalFileArtifactStore(), planner);
+  const session = await service.startSession({
+    briefText: "Build a document indexing pipeline that writes to OpenSearch with a replay-safe command step.",
+    appName: "CommandIndex",
+    basePackage: "com.example.commandindex",
+    platform: "COMPUTE"
+  });
+  assert.equal(session.status, "ready");
+  const commandStep = session.inferredSteps.find((step) => step.kind === "command");
+  assert.equal(commandStep?.name, "Write Search Index Document");
+  assert.equal(commandStep?.command, "opensearch-index-document");
+  assert.equal(commandStep?.commandIdGenerator, "com.example.commandindex.common.command.SearchIndexDocumentCommandIdGenerator");
+  assert.equal(commandStep?.duplicatePolicy, "RETURN_RECORDED");
+
+  const generated = await service.generateScaffold({ sessionId: session.sessionId });
+  assert.equal(generated.status, "generated");
+  const zipBytes = await fs.readFile(generated.artifact!.localPath!);
+  const zip = await JSZip.loadAsync(zipBytes);
+  const pipelineYaml = await zip.file("config/pipeline.yaml")!.async("string");
+  const pipelineConfig = YAML.load(pipelineYaml) as DerivedConfig;
+  const yamlCommandStep = pipelineConfig.steps.find((step) => step.kind === "command");
+  assert.equal(yamlCommandStep?.command, "opensearch-index-document");
+  assert.equal(yamlCommandStep?.commandIdGenerator, "com.example.commandindex.common.command.SearchIndexDocumentCommandIdGenerator");
+  assert.equal(yamlCommandStep?.duplicatePolicy, "RETURN_RECORDED");
+
+  const fileNames = Object.keys(zip.files);
+  assert.ok(fileNames.some((name) => name.startsWith("build-search-document-svc/")));
+  assert.ok(fileNames.some((name) => name.startsWith("summarize-search-write-svc/")));
+  assert.ok(!fileNames.some((name) => name.startsWith("write-search-index-document-svc/")));
+  assert.ok(fileNames.includes("common/src/main/java/com/example/commandindex/common/command/SearchIndexDocumentCommandIdGenerator.java"));
+  assert.ok(fileNames.includes("common/src/main/java/com/example/commandindex/common/command/OpensearchIndexDocumentCommandConnector.java"));
+});
+
 test("sqs await drafts generate queue-async scaffold guidance without a fake await module", async () => {
   const planner = {
     async planInitialBrief(): Promise<PlannerDraft> {
@@ -1154,6 +1212,89 @@ test("generateScaffoldZip with query connector emits query config without query 
   const applicationProperties = await zip.file("orchestrator-svc/src/main/resources/application.properties")!.async("string");
   assert.match(applicationProperties, /quarkus\.datasource\.db-kind=\$\{TPF_QUERY_JPA_DB_KIND:postgresql\}/);
   assert.match(applicationProperties, /#\s*quarkus\.hibernate-orm\.packages=com\.example\.queryconnector\.common\.domain/);
+});
+
+test("command step DerivedConfig validates command semantics", async () => {
+  await validateDerivedConfig(buildCommandStepConfig());
+
+  const missingCommand = buildCommandStepConfig();
+  delete missingCommand.steps[1].command;
+  await assert.rejects(
+    () => validateDerivedConfig(missingCommand),
+    /must declare command/
+  );
+
+  const missingGenerator = buildCommandStepConfig();
+  delete missingGenerator.steps[1].commandIdGenerator;
+  await assert.rejects(
+    () => validateDerivedConfig(missingGenerator),
+    /must declare commandIdGenerator/
+  );
+
+  const invalidGenerator = buildCommandStepConfig();
+  invalidGenerator.steps[1].commandIdGenerator = "not a class";
+  await assert.rejects(
+    () => validateDerivedConfig(invalidGenerator),
+    /commandIdGenerator is not a valid Java FQCN/
+  );
+
+  const invalidDuplicatePolicy = buildCommandStepConfig();
+  invalidDuplicatePolicy.steps[1].duplicatePolicy = "IGNORE" as never;
+  await assert.rejects(
+    () => validateDerivedConfig(invalidDuplicatePolicy),
+    /unsupported duplicatePolicy/
+  );
+
+  const invalidCardinality = buildCommandStepConfig();
+  invalidCardinality.steps[1].cardinality = "EXPANSION";
+  await assert.rejects(
+    () => validateDerivedConfig(invalidCardinality),
+    /must use ONE_TO_ONE cardinality/
+  );
+
+  const commandWithAwait = buildCommandStepConfig();
+  commandWithAwait.steps[1].timeout = "PT1M";
+  await assert.rejects(
+    () => validateDerivedConfig(commandWithAwait),
+    /declares await-step fields/
+  );
+
+  const commandWithQuery = buildCommandStepConfig();
+  commandWithQuery.steps[1].query = "customer-risk-by-id";
+  await assert.rejects(
+    () => validateDerivedConfig(commandWithQuery),
+    /declares query connector fields/
+  );
+});
+
+test("generateScaffoldZip with command step emits command support without command service module", async () => {
+  const config = buildCommandStepConfig();
+
+  const zipBuffer = await generateScaffoldZip(config);
+  const zip = await JSZip.loadAsync(zipBuffer);
+  const fileNames = Object.keys(zip.files);
+
+  assert.ok(fileNames.some((name) => name.startsWith("build-search-document-svc/")));
+  assert.ok(fileNames.some((name) => name.startsWith("summarize-search-write-svc/")));
+  assert.ok(!fileNames.some((name) => name.startsWith("write-search-index-document-svc/")));
+
+  const pipelineYaml = await zip.file("config/pipeline.yaml")!.async("string");
+  const pipelineConfig = YAML.load(pipelineYaml) as DerivedConfig;
+  assert.equal(pipelineConfig.steps[1].kind, "command");
+  assert.equal(pipelineConfig.steps[1].command, "opensearch-index-document");
+  assert.equal(pipelineConfig.steps[1].commandIdGenerator, "com.example.commandstep.common.command.SearchIndexDocumentCommandIdGenerator");
+  assert.equal(pipelineConfig.steps[1].duplicatePolicy, "RETURN_RECORDED");
+  assert.deepEqual(pipelineConfig.steps[1].config, { indexName: "documents" });
+
+  const generator = await zip.file("common/src/main/java/com/example/commandstep/common/command/SearchIndexDocumentCommandIdGenerator.java")!.async("string");
+  assert.match(generator, /implements CommandIdGenerator<SearchIndexDocument>/);
+  assert.match(generator, /Implement a deterministic command id for 'opensearch-index-document'/);
+  const connector = await zip.file("common/src/main/java/com/example/commandstep/common/command/OpensearchIndexDocumentCommandConnector.java")!.async("string");
+  assert.match(connector, /implements CommandConnector<SearchIndexDocument, SearchIndexWriteResult>/);
+  assert.match(connector, /COMMAND = "opensearch-index-document"/);
+  const applicationProperties = await zip.file("orchestrator-svc/src/main/resources/application.properties")!.async("string");
+  assert.match(applicationProperties, /pipeline\.orchestrator\.mode=QUEUE_ASYNC/);
+  assert.match(applicationProperties, /Keep command connectors idempotent over deterministic command ids/);
 });
 
 test("object ingest DerivedConfig validates source and first step continuity", async () => {
@@ -2421,6 +2562,150 @@ function buildAwaitPlannerDraft(): PlannerDraft {
   };
 }
 
+function buildCommandPlannerDraft(overrides: Partial<{ duplicatePolicy: string; commandIdGenerator: string }> = {}): PlannerDraft {
+  const rawDocumentFields = [
+    { number: 1, name: "documentId", type: "uuid" },
+    { number: 2, name: "content", type: "string" }
+  ];
+  const searchDocumentFields = [
+    { number: 1, name: "documentId", type: "uuid" },
+    { number: 2, name: "indexName", type: "string" },
+    { number: 3, name: "body", type: "string" }
+  ];
+  const writeResultFields = [
+    { number: 1, name: "documentId", type: "uuid" },
+    { number: 2, name: "written", type: "bool" }
+  ];
+  const indexAckFields = [
+    { number: 1, name: "documentId", type: "uuid" },
+    { number: 2, name: "status", type: "string" }
+  ];
+  const commandIdGenerator = overrides.commandIdGenerator ?? "com.example.commandindex.common.command.SearchIndexDocumentCommandIdGenerator";
+  const duplicatePolicy = (overrides.duplicatePolicy ?? "RETURN_RECORDED") as "RETURN_RECORDED" | "FAIL";
+
+  return {
+    title: "Command Index Pipeline",
+    primaryGoal: "Build a search index document and write it through a replay-safe external command.",
+    businessSteps: [
+      {
+        id: "build-search-document",
+        name: "Build Search Document",
+        purpose: "Normalize inbound document data into a search index document.",
+        kind: "internal",
+        inputTypeName: "RawDocument",
+        outputTypeName: "SearchIndexDocument",
+        inputFields: rawDocumentFields,
+        outputFields: searchDocumentFields
+      },
+      {
+        id: "write-search-index-document",
+        name: "Write Search Index Document",
+        purpose: "Execute an idempotent external search-index write.",
+        kind: "command",
+        inputTypeName: "SearchIndexDocument",
+        outputTypeName: "SearchIndexWriteResult",
+        command: "opensearch-index-document",
+        commandIdGenerator,
+        duplicatePolicy,
+        config: { indexName: "documents" },
+        inputFields: searchDocumentFields,
+        outputFields: writeResultFields
+      },
+      {
+        id: "summarize-search-write",
+        name: "Summarize Search Write",
+        purpose: "Summarize the command result for the caller.",
+        kind: "internal",
+        inputTypeName: "SearchIndexWriteResult",
+        outputTypeName: "IndexAck",
+        inputFields: writeResultFields,
+        outputFields: indexAckFields
+      }
+    ],
+    pipelineSteps: [
+      {
+        id: "build-search-document",
+        name: "Build Search Document",
+        kind: "internal",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "RawDocument",
+        outputTypeName: "SearchIndexDocument"
+      },
+      {
+        id: "write-search-index-document",
+        name: "Write Search Index Document",
+        kind: "command",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "SearchIndexDocument",
+        outputTypeName: "SearchIndexWriteResult",
+        command: "opensearch-index-document",
+        commandIdGenerator,
+        duplicatePolicy,
+        config: { indexName: "documents" }
+      },
+      {
+        id: "summarize-search-write",
+        name: "Summarize Search Write",
+        kind: "internal",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "SearchIndexWriteResult",
+        outputTypeName: "IndexAck"
+      }
+    ],
+    messageCatalog: [
+      { id: "message.rawdocument", name: "RawDocument", fields: rawDocumentFields },
+      { id: "message.searchindexdocument", name: "SearchIndexDocument", fields: searchDocumentFields },
+      { id: "message.searchindexwriteresult", name: "SearchIndexWriteResult", fields: writeResultFields },
+      { id: "message.indexack", name: "IndexAck", fields: indexAckFields }
+    ],
+    stepContracts: [
+      {
+        stepId: "build-search-document",
+        stepName: "Build Search Document",
+        kind: "internal",
+        inputTypeName: "RawDocument",
+        outputTypeName: "SearchIndexDocument",
+        inputFields: rawDocumentFields,
+        outputFields: searchDocumentFields,
+        continuity: "coherent",
+        rationale: "Build document."
+      },
+      {
+        stepId: "write-search-index-document",
+        stepName: "Write Search Index Document",
+        kind: "command",
+        inputTypeName: "SearchIndexDocument",
+        outputTypeName: "SearchIndexWriteResult",
+        command: "opensearch-index-document",
+        commandIdGenerator,
+        duplicatePolicy,
+        config: { indexName: "documents" },
+        inputFields: searchDocumentFields,
+        outputFields: writeResultFields,
+        continuity: "coherent",
+        rationale: "External command write."
+      },
+      {
+        stepId: "summarize-search-write",
+        stepName: "Summarize Search Write",
+        kind: "internal",
+        inputTypeName: "SearchIndexWriteResult",
+        outputTypeName: "IndexAck",
+        inputFields: writeResultFields,
+        outputFields: indexAckFields,
+        continuity: "coherent",
+        rationale: "Summarize result."
+      }
+    ],
+    contractQuestions: [],
+    futureStepCandidates: [],
+    assumptions: ["Command connectors are configured with provider endpoints outside pipeline.yaml."],
+    transport: "REST",
+    platform: "COMPUTE",
+    runtimeLayout: "MODULAR"
+  };
+}
+
 function buildSqsAwaitPlannerDraft(): PlannerDraft {
   const draft = JSON.parse(JSON.stringify(buildAwaitPlannerDraft())) as PlannerDraft;
   draft.runtimeLayout = "MODULAR";
@@ -2974,6 +3259,73 @@ function buildQueryConnectorConfig(): DerivedConfig {
         cardinality: "ONE_TO_ONE",
         inputTypeName: "CustomerRiskSnapshot",
         outputTypeName: "CustomerDecision"
+      }
+    ]
+  };
+}
+
+function buildCommandStepConfig(): DerivedConfig {
+  return {
+    version: 2,
+    appName: "CommandStep",
+    basePackage: "com.example.commandstep",
+    transport: "REST",
+    platform: "COMPUTE",
+    runtimeLayout: "MODULAR",
+    messages: {
+      RawDocument: {
+        fields: [
+          { number: 1, name: "documentId", type: "uuid" },
+          { number: 2, name: "content", type: "string" }
+        ]
+      },
+      SearchIndexDocument: {
+        fields: [
+          { number: 1, name: "documentId", type: "uuid" },
+          { number: 2, name: "indexName", type: "string" },
+          { number: 3, name: "body", type: "string" }
+        ]
+      },
+      SearchIndexWriteResult: {
+        fields: [
+          { number: 1, name: "documentId", type: "uuid" },
+          { number: 2, name: "written", type: "bool" }
+        ]
+      },
+      IndexAck: {
+        fields: [
+          { number: 1, name: "documentId", type: "uuid" },
+          { number: 2, name: "status", type: "string" }
+        ]
+      }
+    },
+    steps: [
+      {
+        name: "Build Search Document",
+        kind: "internal",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "RawDocument",
+        outputTypeName: "SearchIndexDocument"
+      },
+      {
+        name: "Write Search Index Document",
+        kind: "command",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "SearchIndexDocument",
+        outputTypeName: "SearchIndexWriteResult",
+        command: "opensearch-index-document",
+        commandIdGenerator: "com.example.commandstep.common.command.SearchIndexDocumentCommandIdGenerator",
+        duplicatePolicy: "RETURN_RECORDED",
+        config: {
+          indexName: "documents"
+        }
+      },
+      {
+        name: "Summarize Search Write",
+        kind: "internal",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "SearchIndexWriteResult",
+        outputTypeName: "IndexAck"
       }
     ]
   };

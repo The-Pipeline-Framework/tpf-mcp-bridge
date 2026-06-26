@@ -223,7 +223,7 @@ function processSteps(steps: Array<Record<string, unknown>>): Array<Record<strin
   return steps.map((step, index) => {
     const processedStep = { ...step } as Record<string, unknown>;
     const name = String(step.name || "");
-    if (processedStep.kind === "await" || processedStep.kind === "query") {
+    if (processedStep.kind === "await" || processedStep.kind === "query" || processedStep.kind === "command") {
       processedStep.generatesServiceModule = false;
     }
 

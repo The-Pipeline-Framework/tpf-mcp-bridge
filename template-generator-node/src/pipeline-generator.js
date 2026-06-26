@@ -553,7 +553,7 @@ class PipelineGenerator {
     processSteps(steps) {
         return steps.map((step, i) => {
             const processedStep = { ...step };
-            if (processedStep.kind === 'await' || processedStep.kind === 'query') {
+            if (processedStep.kind === 'await' || processedStep.kind === 'query' || processedStep.kind === 'command') {
                 processedStep.generatesServiceModule = false;
             }
             

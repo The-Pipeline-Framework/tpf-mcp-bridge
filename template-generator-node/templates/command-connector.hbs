@@ -1,0 +1,25 @@
+package {{packageName}};
+
+import jakarta.enterprise.context.ApplicationScoped;
+
+import io.smallrye.mutiny.Uni;
+import org.pipelineframework.command.CommandConnector;
+import org.pipelineframework.command.CommandRequest;
+import {{inputTypeFqcn}};
+import {{outputTypeFqcn}};
+
+@ApplicationScoped
+public class {{className}} implements CommandConnector<{{inputTypeName}}, {{outputTypeName}}> {
+  public static final String COMMAND = "{{command}}";
+
+  @Override
+  public String command() {
+    return COMMAND;
+  }
+
+  @Override
+  public Uni<{{outputTypeName}}> execute(CommandRequest<{{inputTypeName}}> request) {
+    return Uni.createFrom().failure(
+        new UnsupportedOperationException("Configure a CommandConnector implementation for '" + COMMAND + "'."));
+  }
+}
