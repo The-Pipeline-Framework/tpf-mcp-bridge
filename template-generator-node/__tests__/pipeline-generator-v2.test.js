@@ -582,6 +582,100 @@ steps:
     expect(scaffold.steps[0].inputFields.map((field) => field.name)).toEqual(['documentId', 'objectUri']);
   });
 
+  test('generateFromConfig rejects object-ingest input with missing requested source', async () => {
+    const generator = new PipelineGenerator();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
+    const configPath = path.join(tempDir, 'missing-object-source.yaml');
+    const outputPath = path.join(tempDir, 'output');
+    fs.writeFileSync(configPath, `version: 2
+appName: ObjectIngestApp
+basePackage: com.example.objectingest
+transport: REST
+runtimeLayout: MODULAR
+sources:
+  archive:
+    kind: object
+    provider: filesystem
+    location:
+      root: /var/tpf/archive
+input:
+  object:
+    source: documents
+    emits:
+      type: com.example.objectingest.common.domain.RawDocument
+      typeName: RawDocument
+      mapper: com.example.objectingest.common.mapper.RawDocumentObjectSnapshotMapper
+messages:
+  RawDocument:
+    fields:
+      - number: 1
+        name: documentId
+        type: string
+  ParsedDocument:
+    fields:
+      - number: 1
+        name: documentId
+        type: string
+steps:
+  - name: Parse Document
+    kind: internal
+    cardinality: ONE_TO_ONE
+    inputTypeName: RawDocument
+    outputTypeName: ParsedDocument
+`);
+
+    await expect(generator.generateFromConfig(configPath, outputPath))
+      .rejects
+      .toThrow("Object ingest input references unknown source 'documents'.");
+  });
+
+  test('generateFromConfig rejects object-ingest mapper collisions', async () => {
+    const generator = new PipelineGenerator();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
+    const configPath = path.join(tempDir, 'object-mapper-collision.yaml');
+    const outputPath = path.join(tempDir, 'output');
+    fs.writeFileSync(configPath, `version: 2
+appName: ObjectIngestApp
+basePackage: com.example.objectingest
+transport: REST
+runtimeLayout: MODULAR
+sources:
+  documents:
+    kind: object
+    provider: filesystem
+    location:
+      root: /var/tpf/inbox
+input:
+  object:
+    source: documents
+    emits:
+      type: com.example.objectingest.common.domain.RawDocument
+      typeName: RawDocument
+      mapper: com.example.objectingest.common.mapper.RawDocumentMapper
+messages:
+  RawDocument:
+    fields:
+      - number: 1
+        name: documentId
+        type: string
+  ParsedDocument:
+    fields:
+      - number: 1
+        name: documentId
+        type: string
+steps:
+  - name: Parse Document
+    kind: internal
+    cardinality: ONE_TO_ONE
+    inputTypeName: RawDocument
+    outputTypeName: ParsedDocument
+`);
+
+    await expect(generator.generateFromConfig(configPath, outputPath))
+      .rejects
+      .toThrow("Object ingest snapshot mapper 'RawDocumentMapper' conflicts with an existing generated common mapper class.");
+  });
+
   test('loadConfig accepts remote execution metadata for v2 steps', () => {
     const generator = new PipelineGenerator();
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));

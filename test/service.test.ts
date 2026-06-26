@@ -1430,6 +1430,16 @@ test("generateScaffoldZip with object ingest emits source boundary, connector de
   assert.match(applicationProperties, /Object source provider\/location\/polling settings are declared in config\/pipeline\.yaml/);
 });
 
+test("generateScaffoldZip rejects object ingest snapshot mapper collisions", async () => {
+  const config = buildObjectIngestConfig();
+  config.input!.object!.emits.mapper = "com.example.objectingest.common.mapper.RawDocumentMapper";
+
+  await assert.rejects(
+    () => generateScaffoldZip(config),
+    /Object ingest snapshot mapper 'RawDocumentMapper' conflicts with an existing generated common mapper class/
+  );
+});
+
 test("checkpoint handoff drafts emit pipeline boundaries and composition sidecar", async () => {
   const planner = {
     async planInitialBrief(): Promise<PlannerDraft> {
