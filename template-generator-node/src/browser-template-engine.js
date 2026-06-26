@@ -528,7 +528,7 @@ class BrowserTemplateEngine {
 
         await this.generateUnionClasses(unionDefinitions, basePackage, fileCallback);
 
-        await this.generateObjectSnapshotMapper(input, sources, basePackage, fileCallback);
+        await this.generateObjectSnapshotMapper(input, sources, basePackage, fileCallback, steps, unionDefinitions);
         await this.generateCommandSupportClasses(steps, basePackage, fileCallback);
 
         // Generate base entity
@@ -594,7 +594,12 @@ class BrowserTemplateEngine {
     }
 
     hasObjectIngest(input, sources) {
-        return Boolean(this.objectInputBoundary(input) && sources && Object.keys(sources).length > 0);
+        const objectInput = this.objectInputBoundary(input);
+        if (!objectInput) {
+            return false;
+        }
+        this.objectIngestSource(objectInput, sources);
+        return true;
     }
 
     objectInputBoundary(input) {
@@ -609,6 +614,41 @@ class BrowserTemplateEngine {
             return { source: input.from, emits: input.emits };
         }
         return null;
+    }
+
+    objectIngestSource(objectInput, sources) {
+        const sourceName = objectInput && objectInput.source;
+        if (!sourceName || !sources || !Object.prototype.hasOwnProperty.call(sources, sourceName)) {
+            throw new Error(`Object ingest input references unknown source '${sourceName || ''}'.`);
+        }
+        return sources[sourceName];
+    }
+
+    generatedCommonMapperClassNames(steps, unionDefinitions) {
+        const names = new Set(['CommonConverters']);
+        (steps || []).forEach((step, index) => {
+            if (!step) {
+                return;
+            }
+            if (index === 0 && !step.inputIsUnion && step.inputTypeName) {
+                names.add(`${step.inputTypeName}Mapper`);
+            }
+            if (!step.outputIsUnion && step.outputTypeName) {
+                names.add(`${step.outputTypeName}Mapper`);
+            }
+        });
+        (unionDefinitions || []).forEach(union => {
+            if (union && union.name) {
+                names.add(`${union.name}Mapper`);
+            }
+        });
+        return names;
+    }
+
+    assertObjectSnapshotMapperDoesNotConflict(mapperClassName, steps, unionDefinitions) {
+        if (this.generatedCommonMapperClassNames(steps, unionDefinitions).has(mapperClassName)) {
+            throw new Error(`Object ingest snapshot mapper '${mapperClassName}' conflicts with an existing generated common mapper class.`);
+        }
     }
 
     hasAwaitSteps(steps) {
@@ -937,17 +977,19 @@ class BrowserTemplateEngine {
         }
     }
 
-    async generateObjectSnapshotMapper(input, sources, basePackage, fileCallback) {
+    async generateObjectSnapshotMapper(input, sources, basePackage, fileCallback, steps = [], unionDefinitions = []) {
         const objectInput = this.objectInputBoundary(input);
-        if (!this.hasObjectIngest(input, sources)) {
+        if (!objectInput) {
             return;
         }
+        this.objectIngestSource(objectInput, sources);
         if (!objectInput.emits || !objectInput.emits.mapper || (!objectInput.emits.typeName && !objectInput.emits.type)) {
             throw new Error('Object ingest scaffold requires input.object.emits.mapper and input.object.emits.type or typeName.');
         }
         const mapperType = objectInput.emits.mapper;
         const mapperClassName = mapperType.split('.').pop();
         const outputTypeName = objectInput.emits.typeName || objectInput.emits.type.split('.').pop();
+        this.assertObjectSnapshotMapperDoesNotConflict(mapperClassName, steps, unionDefinitions);
         const context = {
             basePackage,
             className: mapperClassName,
