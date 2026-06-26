@@ -53,7 +53,7 @@
     "smoke:kafka-await": "node scripts/smoke-kafka-await-compile.mjs",
     "smoke:sqs-await": "node scripts/smoke-sqs-await-compile.mjs",
     "smoke:query-connector": "node scripts/smoke-query-connector-compile.mjs",
-    "smoke:command-step": "node scripts/smoke-command-step-compile.mjs",
+    "smoke:command-step": "npm run build && node scripts/smoke-command-step-compile.mjs",
     "smoke:object-ingest": "node scripts/smoke-object-ingest-compile.mjs",
     "smoke:checkpoint-composition": "node scripts/smoke-checkpoint-composition.mjs",
     "check:pipeline-schema": "node scripts/check-pipeline-schema.mjs",

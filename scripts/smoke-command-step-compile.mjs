@@ -36,14 +36,22 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--framework-dir") {
-      parsed.frameworkDir = argv[++index];
+      parsed.frameworkDir = readOptionValue(argv, ++index, arg);
     } else if (arg === "--smoke-name") {
-      parsed.smokeName = argv[++index];
+      parsed.smokeName = readOptionValue(argv, ++index, arg);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
   }
   return parsed;
+}
+
+function readOptionValue(argv, index, optionName) {
+  const value = argv[index];
+  if (!value || value.startsWith("--")) {
+    throw new Error(`${optionName} requires a non-empty value.`);
+  }
+  return value;
 }
 
 async function assertGeneratedFiles(rootDir) {

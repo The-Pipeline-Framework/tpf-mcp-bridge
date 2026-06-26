@@ -439,7 +439,12 @@ function validateQueryStep(
 
 function validateCommandStep(step: DerivedConfig["steps"][number]): void {
   if (step.kind !== "command") {
-    if (step.command || step.commandIdGenerator || step.duplicatePolicy || step.config) {
+    if (
+      step.command !== undefined
+      || step.commandIdGenerator !== undefined
+      || step.duplicatePolicy !== undefined
+      || step.config !== undefined
+    ) {
       throw new DerivedConfigValidationError(
         `Step '${step.name}' declares command-step fields but is not marked as kind 'command'.`
       );
@@ -459,19 +464,19 @@ function validateCommandStep(step: DerivedConfig["steps"][number]): void {
   if (!/^[a-zA-Z_$][a-zA-Z\d_$]*(\.[a-zA-Z_$][a-zA-Z\d_$]*)*\.[A-Z][a-zA-Z\d_$]*$/.test(step.commandIdGenerator)) {
     throw new DerivedConfigValidationError(`Command step '${step.name}' commandIdGenerator is not a valid Java FQCN.`);
   }
-  if (step.duplicatePolicy && step.duplicatePolicy !== "RETURN_RECORDED" && step.duplicatePolicy !== "FAIL") {
+  if (step.duplicatePolicy !== undefined && step.duplicatePolicy !== "RETURN_RECORDED" && step.duplicatePolicy !== "FAIL") {
     throw new DerivedConfigValidationError(`Command step '${step.name}' uses unsupported duplicatePolicy '${step.duplicatePolicy}'.`);
   }
-  if (step.config && (typeof step.config !== "object" || Array.isArray(step.config))) {
+  if (step.config !== undefined && (typeof step.config !== "object" || Array.isArray(step.config))) {
     throw new DerivedConfigValidationError(`Command step '${step.name}' config must be an object map.`);
   }
-  if (step.await || step.timeout || step.idempotencyKeyFields?.length) {
+  if (step.await !== undefined || step.timeout !== undefined || step.idempotencyKeyFields !== undefined) {
     throw new DerivedConfigValidationError(`Command step '${step.name}' must not declare await-step fields.`);
   }
-  if (step.query || step.capture) {
+  if (step.query !== undefined || step.capture !== undefined) {
     throw new DerivedConfigValidationError(`Command step '${step.name}' must not declare query connector fields.`);
   }
-  if (step.runOnVirtualThreads) {
+  if (step.runOnVirtualThreads !== undefined) {
     throw new DerivedConfigValidationError(`Command step '${step.name}' must not declare runOnVirtualThreads.`);
   }
 }

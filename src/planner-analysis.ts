@@ -724,6 +724,12 @@ function assertCoherentStepViews(
   ) {
     throw new Error(`Planner draft defines inconsistent command duplicate policies for business step '${businessStep.name}'.`);
   }
+  if (
+    commandConfigSignature(businessStep.config) !== commandConfigSignature(contract.config)
+    || commandConfigSignature(businessStep.config) !== commandConfigSignature(pipelineStep.config)
+  ) {
+    throw new Error(`Planner draft defines inconsistent command config metadata for business step '${businessStep.name}'.`);
+  }
   assertVirtualThreadSemantics(businessStep, contract, pipelineStep);
 }
 
@@ -779,42 +785,65 @@ function normalizeQueryCapture(capture: PipelineStep["capture"] | BusinessStep["
 }
 
 function normalizeCommandFields(
-  step: Pick<PipelineStep, "kind" | "inputTypeName" | "command" | "commandIdGenerator" | "duplicatePolicy" | "config">,
+  step: Pick<PipelineStep, "kind" | "inputTypeName" | "command" | "commandIdGenerator" | "duplicatePolicy"> & { config?: unknown },
   basePackage: string
 ): Pick<PipelineStep, "command" | "commandIdGenerator" | "duplicatePolicy" | "config"> {
   if (normalizeStepKind(step.kind) !== "command") {
     return {
       command: step.command?.trim() || undefined,
       commandIdGenerator: step.commandIdGenerator?.trim() || undefined,
-      duplicatePolicy: normalizeDuplicatePolicy(step.duplicatePolicy),
-      config: normalizeCommandConfig(step.config)
+      duplicatePolicy: normalizeDuplicatePolicy(step.duplicatePolicy) as PipelineStep["duplicatePolicy"],
+      config: normalizeCommandConfig(step.config) as PipelineStep["config"]
     };
   }
   return {
     command: step.command?.trim() || undefined,
     commandIdGenerator: step.commandIdGenerator?.trim() || defaultCommandIdGenerator(basePackage, step.inputTypeName),
-    duplicatePolicy: normalizeDuplicatePolicy(step.duplicatePolicy) || "RETURN_RECORDED",
-    config: normalizeCommandConfig(step.config)
+    duplicatePolicy: (step.duplicatePolicy === undefined ? "RETURN_RECORDED" : normalizeDuplicatePolicy(step.duplicatePolicy)) as PipelineStep["duplicatePolicy"],
+    config: normalizeCommandConfig(step.config) as PipelineStep["config"]
   };
 }
 
-function normalizeDuplicatePolicy(policy: CommandDuplicatePolicy | string | undefined): CommandDuplicatePolicy | undefined {
-  const normalized = policy?.trim().toUpperCase();
-  if (normalized === "RETURN_RECORDED" || normalized === "FAIL") {
-    return normalized;
+function normalizeDuplicatePolicy(policy: CommandDuplicatePolicy | string | undefined): CommandDuplicatePolicy | string | undefined {
+  if (policy === undefined) {
+    return undefined;
   }
-  return undefined;
+  const normalized = policy?.trim().toUpperCase();
+  return normalized;
 }
 
-function normalizeCommandConfig(config: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
-  if (!config || Array.isArray(config) || typeof config !== "object") {
+function normalizeCommandConfig(config: unknown): unknown {
+  if (config === undefined) {
     return undefined;
+  }
+  if (config === null || Array.isArray(config) || typeof config !== "object") {
+    return config;
   }
   return { ...config };
 }
 
 function defaultCommandIdGenerator(basePackage: string, inputTypeName: string): string {
   return `${basePackage}.common.command.${simpleTypeName(inputTypeName)}CommandIdGenerator`;
+}
+
+function commandConfigSignature(config: unknown): string {
+  if (config === undefined) {
+    return "";
+  }
+  return stableJson(config);
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJson).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "undefined";
 }
 
 function normalizeIdempotencyKeyFields(fields: string[] | undefined): string[] | undefined {
@@ -881,12 +910,20 @@ function assertCommandSemantics(
   contract: StepContract,
   pipelineStep: PipelineStep
 ): void {
-  const commandDeclared = Boolean(
-    businessStep.command || contract.command || pipelineStep.command
-      || businessStep.commandIdGenerator || contract.commandIdGenerator || pipelineStep.commandIdGenerator
-      || businessStep.duplicatePolicy || contract.duplicatePolicy || pipelineStep.duplicatePolicy
-      || businessStep.config || contract.config || pipelineStep.config
-  );
+  const commandDeclared = [
+    businessStep.command,
+    contract.command,
+    pipelineStep.command,
+    businessStep.commandIdGenerator,
+    contract.commandIdGenerator,
+    pipelineStep.commandIdGenerator,
+    businessStep.duplicatePolicy,
+    contract.duplicatePolicy,
+    pipelineStep.duplicatePolicy,
+    businessStep.config,
+    contract.config,
+    pipelineStep.config
+  ].some((value) => value !== undefined);
   if (kind !== "command" && commandDeclared) {
     throw new Error(`Planner draft violates TPF semantics: '${stepName}' declares command-step fields without kind 'command'.`);
   }
@@ -902,21 +939,29 @@ function assertCommandSemantics(
   if (!businessStep.commandIdGenerator?.trim() || !contract.commandIdGenerator?.trim() || !pipelineStep.commandIdGenerator?.trim()) {
     throw new Error(`Planner draft violates TPF semantics: command step '${stepName}' must declare commandIdGenerator in every step view.`);
   }
-  const policies = [businessStep.duplicatePolicy, contract.duplicatePolicy, pipelineStep.duplicatePolicy].filter(Boolean);
+  const policies = [businessStep.duplicatePolicy, contract.duplicatePolicy, pipelineStep.duplicatePolicy]
+    .filter((policy) => policy !== undefined);
   if (policies.some((policy) => policy !== "RETURN_RECORDED" && policy !== "FAIL")) {
     throw new Error(`Planner draft violates TPF semantics: command step '${stepName}' declares an invalid duplicatePolicy.`);
   }
   if (
-    businessStep.await || contract.await || pipelineStep.await
-    || businessStep.timeout || contract.timeout || pipelineStep.timeout
-    || businessStep.idempotencyKeyFields?.length || contract.idempotencyKeyFields?.length || pipelineStep.idempotencyKeyFields?.length
+    businessStep.await !== undefined || contract.await !== undefined || pipelineStep.await !== undefined
+    || businessStep.timeout !== undefined || contract.timeout !== undefined || pipelineStep.timeout !== undefined
+    || businessStep.idempotencyKeyFields !== undefined || contract.idempotencyKeyFields !== undefined || pipelineStep.idempotencyKeyFields !== undefined
   ) {
     throw new Error(`Planner draft violates TPF semantics: command step '${stepName}' must not declare await-step fields.`);
   }
-  if (businessStep.query || contract.query || pipelineStep.query || businessStep.capture || contract.capture || pipelineStep.capture) {
+  if (
+    businessStep.query !== undefined || contract.query !== undefined || pipelineStep.query !== undefined
+    || businessStep.capture !== undefined || contract.capture !== undefined || pipelineStep.capture !== undefined
+  ) {
     throw new Error(`Planner draft violates TPF semantics: command step '${stepName}' must not declare query connector fields.`);
   }
-  if (businessStep.runOnVirtualThreads || contract.runOnVirtualThreads || pipelineStep.runOnVirtualThreads) {
+  if (
+    businessStep.runOnVirtualThreads !== undefined
+    || contract.runOnVirtualThreads !== undefined
+    || pipelineStep.runOnVirtualThreads !== undefined
+  ) {
     throw new Error(`Planner draft violates TPF semantics: command step '${stepName}' must not declare runOnVirtualThreads.`);
   }
 }

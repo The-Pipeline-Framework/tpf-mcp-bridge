@@ -1242,23 +1242,27 @@ class HandlebarsTemplateEngine {
             return;
         }
 
-        const connectorDir = path.join(commonPath, 'src/main/java', this.toPath(basePackage + '.common.command'));
-        await fs.ensureDir(connectorDir);
         for (const step of commandSteps) {
             const inputTypeName = this.simpleTypeName(step.inputTypeName);
             const outputTypeName = this.simpleTypeName(step.outputTypeName);
             const command = typeof step.command === 'string' ? step.command.trim() : '';
-            const generatorFqcn = typeof step.commandIdGenerator === 'string' ? step.commandIdGenerator.trim() : '';
-            if (!inputTypeName || !outputTypeName || !command || !generatorFqcn) {
-                throw new Error(`Command step ${step.name || step.serviceName || '<unnamed>'} requires inputTypeName, outputTypeName, command, and commandIdGenerator.`);
+            const generatorFqcn = (typeof step.commandIdGenerator === 'string' ? step.commandIdGenerator.trim() : '')
+                || this.defaultCommandIdGenerator(basePackage, inputTypeName);
+            if (!inputTypeName || !outputTypeName || !command) {
+                throw new Error(`Command step ${step.name || step.serviceName || '<unnamed>'} requires inputTypeName, outputTypeName, and command.`);
+            }
+            if (!this.isJavaFqcn(generatorFqcn)) {
+                throw new Error(`Command step ${step.name || step.serviceName || '<unnamed>'} commandIdGenerator must be a Java fully qualified class name.`);
             }
 
             const generatorClassName = this.simpleTypeName(generatorFqcn);
             const generatorPackage = generatorFqcn.split('.').slice(0, -1).join('.') || `${basePackage}.common.command`;
-            const generatorDir = path.join(commonPath, 'src/main/java', this.toPath(generatorPackage));
-            await fs.ensureDir(generatorDir);
             const connectorClassName = `${this.toPascalIdentifier(command)}CommandConnector`;
             const connectorPackage = `${basePackage}.common.command`;
+            const generatorPath = this.javaSourceFilePath(commonPath, generatorPackage, generatorClassName);
+            const connectorPath = this.javaSourceFilePath(commonPath, connectorPackage, connectorClassName);
+            await fs.ensureDir(path.dirname(generatorPath));
+            await fs.ensureDir(path.dirname(connectorPath));
             const context = {
                 basePackage,
                 command,
@@ -1269,7 +1273,7 @@ class HandlebarsTemplateEngine {
             };
 
             await fs.writeFile(
-                path.join(generatorDir, `${generatorClassName}.java`),
+                generatorPath,
                 this.render('command-id-generator', {
                     ...context,
                     className: generatorClassName,
@@ -1277,7 +1281,7 @@ class HandlebarsTemplateEngine {
                 })
             );
             await fs.writeFile(
-                path.join(connectorDir, `${connectorClassName}.java`),
+                connectorPath,
                 this.render('command-connector', {
                     ...context,
                     className: connectorClassName,
@@ -2032,6 +2036,40 @@ wrapperUrl=https://repo.maven.apache.org/maven2/org/apache/maven/wrapper/maven-w
         }
         const trimmed = typeName.trim();
         return trimmed.includes('.') ? trimmed : `${basePackage}.common.domain.${trimmed}`;
+    }
+
+    defaultCommandIdGenerator(basePackage, inputTypeName) {
+        return `${basePackage}.common.command.${this.simpleTypeName(inputTypeName)}CommandIdGenerator`;
+    }
+
+    isJavaClassName(value) {
+        return typeof value === 'string' && /^[A-Z][A-Za-z\d_$]*$/.test(value);
+    }
+
+    isJavaPackageName(value) {
+        return typeof value === 'string' && /^[a-zA-Z_$][a-zA-Z\d_$]*(\.[a-zA-Z_$][a-zA-Z\d_$]*)*$/.test(value);
+    }
+
+    isJavaFqcn(value) {
+        if (typeof value !== 'string') {
+            return false;
+        }
+        const segments = value.split('.');
+        return segments.length >= 2
+            && this.isJavaClassName(segments[segments.length - 1])
+            && this.isJavaPackageName(segments.slice(0, -1).join('.'));
+    }
+
+    javaSourceFilePath(commonPath, packageName, className) {
+        if (!this.isJavaPackageName(packageName) || !this.isJavaClassName(className)) {
+            throw new Error(`Invalid Java source target '${packageName}.${className}'.`);
+        }
+        const sourceRoot = path.resolve(commonPath, 'src/main/java');
+        const target = path.resolve(sourceRoot, this.toPath(packageName), `${className}.java`);
+        if (target !== sourceRoot && !target.startsWith(sourceRoot + path.sep)) {
+            throw new Error(`Refusing to write Java source outside ${sourceRoot}: ${target}`);
+        }
+        return target;
     }
 
     toPascalIdentifier(value) {
