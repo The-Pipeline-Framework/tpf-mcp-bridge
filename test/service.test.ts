@@ -1297,6 +1297,94 @@ test("generateScaffoldZip with command step emits command support without comman
   assert.match(applicationProperties, /Keep command connectors idempotent over deterministic command ids/);
 });
 
+test("planner input-boundary normalization rejects ambiguous and partial boundaries", () => {
+  const mixed = buildObjectInputPlannerDraft();
+  mixed.inputBoundary = {
+    ...mixed.inputBoundary,
+    subscription: {
+      publication: "documents.ready"
+    }
+  };
+  assert.throws(
+    () => analyzePlannerDraft({ briefText: "ingest object input" }, mixed),
+    /cannot declare both subscription and object input/
+  );
+
+  const legacyFromOnly = buildObjectInputPlannerDraft();
+  legacyFromOnly.inputBoundary = { from: "documents" } as never;
+  assert.throws(
+    () => analyzePlannerDraft({ briefText: "ingest object input" }, legacyFromOnly),
+    /must include source\/from and emits/
+  );
+
+  const legacyEmitsOnly = buildObjectInputPlannerDraft();
+  legacyEmitsOnly.inputBoundary = {
+    emits: {
+      type: "com.example.objectplanner.common.domain.RawDocument",
+      typeName: "RawDocument",
+      mapper: "com.example.objectplanner.common.mapper.RawDocumentObjectSnapshotMapper"
+    }
+  } as never;
+  assert.throws(
+    () => analyzePlannerDraft({ briefText: "ingest object input" }, legacyEmitsOnly),
+    /must include source\/from and emits/
+  );
+
+  const objectMissingSource = buildObjectInputPlannerDraft();
+  objectMissingSource.inputBoundary = {
+    object: {
+      emits: {
+        type: "com.example.objectplanner.common.domain.RawDocument",
+        typeName: "RawDocument",
+        mapper: "com.example.objectplanner.common.mapper.RawDocumentObjectSnapshotMapper"
+      }
+    }
+  } as never;
+  assert.throws(
+    () => analyzePlannerDraft({ briefText: "ingest object input" }, objectMissingSource),
+    /must include source\/from and emits/
+  );
+
+  const objectMissingEmits = buildObjectInputPlannerDraft();
+  objectMissingEmits.inputBoundary = {
+    object: {
+      source: "documents"
+    }
+  } as never;
+  assert.throws(
+    () => analyzePlannerDraft({ briefText: "ingest object input" }, objectMissingEmits),
+    /must include source\/from and emits/
+  );
+
+  const subscriptionMissingPublication = buildObjectInputPlannerDraft();
+  subscriptionMissingPublication.inputBoundary = { subscription: { publication: "" } };
+  assert.throws(
+    () => analyzePlannerDraft({ briefText: "subscription input" }, subscriptionMissingPublication),
+    /subscription boundary must include a non-empty publication/
+  );
+});
+
+test("planner input-boundary normalization accepts valid object and subscription boundaries", () => {
+  const objectDraft = buildObjectInputPlannerDraft();
+  const objectAnalysis = analyzePlannerDraft({ briefText: "ingest object input" }, objectDraft);
+  assert.equal(objectAnalysis.status, "ready");
+  assert.equal(objectAnalysis.derivedConfig.input?.object?.source, "documents");
+  assert.equal(objectAnalysis.derivedConfig.input?.object?.emits.typeName, "RawDocument");
+
+  const subscriptionDraft = buildObjectInputPlannerDraft();
+  delete subscriptionDraft.sources;
+  subscriptionDraft.inputBoundary = {
+    subscription: {
+      publication: "documents.ready",
+      mapper: "com.example.objectplanner.common.mapper.DocumentCheckpointMapper"
+    }
+  };
+  const subscriptionAnalysis = analyzePlannerDraft({ briefText: "subscription input" }, subscriptionDraft);
+  assert.equal(subscriptionAnalysis.status, "ready");
+  assert.equal(subscriptionAnalysis.derivedConfig.input?.subscription?.publication, "documents.ready");
+  assert.equal(subscriptionAnalysis.derivedConfig.input?.subscription?.mapper, "com.example.objectplanner.common.mapper.DocumentCheckpointMapper");
+});
+
 test("object ingest DerivedConfig validates source and first step continuity", async () => {
   const config = buildObjectIngestConfig();
   delete config.sources!.documents;
@@ -2703,6 +2791,86 @@ function buildCommandPlannerDraft(overrides: Partial<{ duplicatePolicy: string; 
     transport: "REST",
     platform: "COMPUTE",
     runtimeLayout: "MODULAR"
+  };
+}
+
+function buildObjectInputPlannerDraft(): PlannerDraft {
+  const rawDocumentFields = [
+    { number: 1, name: "documentId", type: "uuid" },
+    { number: 2, name: "content", type: "string" }
+  ];
+  const parsedDocumentFields = [
+    { number: 1, name: "documentId", type: "uuid" },
+    { number: 2, name: "tokenCount", type: "int32" }
+  ];
+
+  return {
+    title: "Object Input Pipeline",
+    primaryGoal: "Consume documents from object storage and parse them.",
+    businessSteps: [
+      {
+        id: "parse-document",
+        name: "Parse Document",
+        purpose: "Parse the object payload into a normalized document record.",
+        kind: "internal",
+        inputTypeName: "RawDocument",
+        outputTypeName: "ParsedDocument",
+        inputFields: rawDocumentFields,
+        outputFields: parsedDocumentFields
+      }
+    ],
+    pipelineSteps: [
+      {
+        id: "parse-document",
+        name: "Parse Document",
+        kind: "internal",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "RawDocument",
+        outputTypeName: "ParsedDocument"
+      }
+    ],
+    messageCatalog: [
+      { id: "message.rawdocument", name: "RawDocument", fields: rawDocumentFields },
+      { id: "message.parseddocument", name: "ParsedDocument", fields: parsedDocumentFields }
+    ],
+    stepContracts: [
+      {
+        stepId: "parse-document",
+        stepName: "Parse Document",
+        kind: "internal",
+        inputTypeName: "RawDocument",
+        outputTypeName: "ParsedDocument",
+        inputFields: rawDocumentFields,
+        outputFields: parsedDocumentFields,
+        continuity: "coherent",
+        rationale: "Parse document."
+      }
+    ],
+    contractQuestions: [],
+    futureStepCandidates: [],
+    assumptions: [],
+    transport: "REST",
+    platform: "COMPUTE",
+    runtimeLayout: "MODULAR",
+    sources: {
+      documents: {
+        kind: "object",
+        provider: "filesystem",
+        location: {
+          root: "/tmp/tpf-object-planner"
+        }
+      }
+    },
+    inputBoundary: {
+      object: {
+        source: "documents",
+        emits: {
+          type: "com.example.objectplanner.common.domain.RawDocument",
+          typeName: "RawDocument",
+          mapper: "com.example.objectplanner.common.mapper.RawDocumentObjectSnapshotMapper"
+        }
+      }
+    }
   };
 }
 
