@@ -1,6 +1,6 @@
 {
   "name": "@pipelineframework/tpf-mcp-bridge",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Local MCP bridge for TPF brief-to-scaffold sessions with a local planner and optional hosted generation backend",
   "license": "Apache-2.0",
   "homepage": "https://github.com/The-Pipeline-Framework/tpf-mcp-bridge",
