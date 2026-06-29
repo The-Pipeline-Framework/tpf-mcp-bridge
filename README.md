@@ -13,7 +13,12 @@ Primary package:
 npx -y @pipelineframework/mcp
 ```
 
-The installed executable remains `tpf-mcp-bridge`, so configurations that invoke the binary directly still work.
+Installed executable:
+
+```bash
+mcp
+```
+
 If a host configuration installs or runs the package by name, update it to `@pipelineframework/mcp`.
 
 Common bridge environment:

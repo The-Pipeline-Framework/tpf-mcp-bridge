@@ -27,7 +27,7 @@
     ".": "./dist/src/bridge-runtime.js"
   },
   "bin": {
-    "tpf-mcp-bridge": "./dist/src/bridge.js"
+    "mcp": "./dist/src/bridge.js"
   },
   "files": [
     "dist/src/**/*",
@@ -62,6 +62,8 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
     "ajv": "^8.18.0",
+    "fs-extra": "^11.3.2",
+    "handlebars": "^4.7.9",
     "js-yaml": "4.1.0",
     "jszip": "^3.10.1",
     "zod": "4.4.3"
