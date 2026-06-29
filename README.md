@@ -10,8 +10,16 @@ Standalone repo for the TPF MCP bridge product:
 Primary package:
 
 ```bash
-npx -y @pipelineframework/tpf-mcp-bridge
+npx -y @pipelineframework/mcp
 ```
+
+Installed executable:
+
+```bash
+mcp
+```
+
+If a host configuration installs or runs the package by name, update it to `@pipelineframework/mcp`.
 
 Common bridge environment:
 

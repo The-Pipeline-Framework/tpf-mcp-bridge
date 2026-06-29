@@ -2300,6 +2300,7 @@ test("package metadata advertises the publishable bridge install surface", async
     await fs.readFile(path.resolve("package.json"), "utf8")
   ) as {
     name: string;
+    version: string;
     bin: Record<string, string>;
     scripts: Record<string, string>;
     files: string[];
@@ -2308,8 +2309,12 @@ test("package metadata advertises the publishable bridge install surface", async
     exports: Record<string, string>;
   };
 
-  assert.equal(packageJson.name, "@pipelineframework/tpf-mcp-bridge");
-  assert.equal(packageJson.bin["tpf-mcp-bridge"], "./dist/src/bridge.js");
+  assert.equal(packageJson.name, "@pipelineframework/mcp");
+  assert.equal(packageJson.version, "26.6.2");
+  assert.deepEqual(packageJson.bin, {
+    mcp: "./dist/src/bridge.js",
+    "tpf-mcp-bridge": "./dist/src/bridge.js"
+  });
   assert.equal(packageJson.scripts.start, "node dist/src/bridge.js");
   assert.equal(packageJson.main, "dist/src/bridge-runtime.js");
   assert.equal(packageJson.exports["."], "./dist/src/bridge-runtime.js");
@@ -2327,7 +2332,8 @@ test("package metadata advertises the publishable bridge install surface", async
 test("standalone readme documents host installs, provider modes, and schema sync", async () => {
   const readme = await fs.readFile(path.resolve("README.md"), "utf8");
   const developerGuide = await fs.readFile(path.resolve("DEVELOPING.md"), "utf8");
-  assert.match(readme, /@pipelineframework\/tpf-mcp-bridge/);
+  assert.match(readme, /@pipelineframework\/mcp/);
+  assert.match(readme, /Installed executable:\s*```bash\s*mcp\s*```/i);
   assert.match(readme, /TPF_LLM_PROFILE/);
   assert.match(readme, /default planner profile/i);
   assert.match(readme, /TPF_LLM_PROVIDER_MODE/);

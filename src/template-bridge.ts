@@ -141,14 +141,14 @@ function resolvePackageRoot(): string {
     const candidate = path.join(probeDir, "package.json");
     try {
       const packageJson = require(candidate) as { name?: string };
-      if (packageJson.name === "@pipelineframework/tpf-mcp-bridge") {
+      if (packageJson.name === "@pipelineframework/mcp") {
         return probeDir;
       }
     } catch (_error) {
     }
     probeDir = path.dirname(probeDir);
   }
-  throw new Error("Unable to locate the @pipelineframework/tpf-mcp-bridge package root.");
+  throw new Error("Unable to locate the @pipelineframework/mcp package root.");
 }
 
 function resolveVendoredModulePath(fileName: string): string {

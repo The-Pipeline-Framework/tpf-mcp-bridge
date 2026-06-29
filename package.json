@@ -1,6 +1,6 @@
 {
-  "name": "@pipelineframework/tpf-mcp-bridge",
-  "version": "0.1.5",
+  "name": "@pipelineframework/mcp",
+  "version": "26.6.2",
   "description": "Local MCP bridge for TPF brief-to-scaffold sessions with a local planner and optional hosted generation backend",
   "license": "Apache-2.0",
   "homepage": "https://github.com/The-Pipeline-Framework/tpf-mcp-bridge",
@@ -27,6 +27,7 @@
     ".": "./dist/src/bridge-runtime.js"
   },
   "bin": {
+    "mcp": "./dist/src/bridge.js",
     "tpf-mcp-bridge": "./dist/src/bridge.js"
   },
   "files": [
@@ -62,6 +63,8 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
     "ajv": "^8.18.0",
+    "fs-extra": "^11.3.2",
+    "handlebars": "^4.7.9",
     "js-yaml": "4.1.0",
     "jszip": "^3.10.1",
     "zod": "4.4.3"

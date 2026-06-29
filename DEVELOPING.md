@@ -22,6 +22,12 @@ npm --prefix template-generator-node test
 npm pack --dry-run
 ```
 
+Release tags for this standalone repo use the plain package-version form:
+
+```bash
+v<package.json version>
+```
+
 ## Run
 
 StdIO bridge:

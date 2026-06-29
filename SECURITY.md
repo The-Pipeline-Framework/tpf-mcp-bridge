@@ -4,7 +4,7 @@
 
 This repository includes:
 
-- the `@pipelineframework/tpf-mcp-bridge` npm package
+- the `@pipelineframework/mcp` npm package
 - the hosted Cloudflare Worker backend used for session persistence, scaffold generation, and artifact delivery
 
 To report a security vulnerability, contact:
@@ -28,4 +28,3 @@ Do not report security vulnerabilities through public GitHub issues.
 2. Initial response within 5 business days
 3. Progress updates toward a fix
 4. Public acknowledgment after resolution unless you prefer anonymity
-
