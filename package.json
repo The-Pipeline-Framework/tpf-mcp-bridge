@@ -27,7 +27,8 @@
     ".": "./dist/src/bridge-runtime.js"
   },
   "bin": {
-    "mcp": "./dist/src/bridge.js"
+    "mcp": "./dist/src/bridge.js",
+    "tpf-mcp-bridge": "./dist/src/bridge.js"
   },
   "files": [
     "dist/src/**/*",
