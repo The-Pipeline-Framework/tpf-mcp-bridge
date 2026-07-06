@@ -44,6 +44,7 @@ import type {
 
 export interface WorkflowServiceOptions {
   maxGenerationsPerWork?: number;
+  maxRetainedWorks?: number;
 }
 
 export class WorkflowService {
@@ -68,7 +69,7 @@ export class WorkflowService {
       updatedAt: now,
       generationCount: 0
     };
-    this.works.set(workId, state);
+    this.storeWork(state);
     return toInspectBriefResult(state, normalizeDetail(input.detail));
   }
 
@@ -115,11 +116,7 @@ export class WorkflowService {
         continue;
       }
 
-      mergedAnswers[answer.questionId] = {
-        questionId: answer.questionId,
-        ...(answer.fields ? { fields: answer.fields } : {}),
-        ...(answer.values ? { values: answer.values } : {})
-      };
+      mergedAnswers[answer.questionId] = rematerializeStoredAnswer(answer.questionId, mergedAnswers[answer.questionId]!, answer);
     }
 
     const plannerDraft = await this.requirePlanner().revisePlanWithAnswers(state.input, state.plannerDraft, mergedAnswers);
@@ -129,9 +126,10 @@ export class WorkflowService {
       answers: mergedAnswers,
       plannerDraft,
       analysis,
+      lastArtifact: undefined,
       updatedAt: new Date().toISOString()
     };
-    this.works.set(state.workId, updatedState);
+    this.storeWork(updatedState);
     return toResolveContractsResult(updatedState, [...updatedStepIds], normalizeDetail(input.detail));
   }
 
@@ -226,7 +224,7 @@ export class WorkflowService {
       lastArtifact: artifact,
       updatedAt: new Date().toISOString()
     };
-    this.works.set(state.workId, updatedState);
+    this.storeWork(updatedState);
     return toGenerateScaffoldResult(artifact, updatedState);
   }
 
@@ -235,7 +233,12 @@ export class WorkflowService {
     if (!state) {
       throw new Error(`Unknown work '${workId}'.`);
     }
-    return state;
+    const touched = {
+      ...state,
+      updatedAt: new Date().toISOString()
+    };
+    this.storeWork(touched);
+    return touched;
   }
 
   private requirePlanner(): PlannerClient {
@@ -258,8 +261,22 @@ export class WorkflowService {
       analysis,
       updatedAt: new Date().toISOString()
     };
-    this.works.set(state.workId, updatedState);
+    this.storeWork(updatedState);
     return updatedState;
+  }
+
+  private storeWork(state: WorkState): void {
+    this.works.delete(state.workId);
+    this.works.set(state.workId, state);
+
+    const maxRetainedWorks = this.options.maxRetainedWorks ?? 200;
+    while (this.works.size > maxRetainedWorks) {
+      const oldestWorkId = this.works.keys().next().value as string | undefined;
+      if (!oldestWorkId) {
+        break;
+      }
+      this.works.delete(oldestWorkId);
+    }
   }
 }
 
@@ -704,6 +721,56 @@ function selectMessagesForContracts(
 
 function isContractQuestion(question: Question | ContractQuestion): question is ContractQuestion {
   return question.key === "stepContracts";
+}
+
+function rematerializeStoredAnswer(
+  questionId: string,
+  previousAnswer: ContractAnswerRecord,
+  answer: ContractAnswerInput
+): ContractAnswerRecord {
+  if (isContractQuestionId(questionId)) {
+    return materializeContractAnswer(
+      {
+        id: questionId,
+        key: "stepContracts",
+        prompt: `Revise the stored contract answer for ${questionId}.`,
+        kind: previousAnswer.fields ? "fields" : "status-values",
+        messageTypeName: questionId,
+        expectedAnswerShape: previousAnswer.fields
+          ? {
+              type: "fields",
+              description: `Confirm or revise the fields for ${questionId}.`
+            }
+          : {
+              type: "string-list",
+              description: `Confirm or revise the values for ${questionId}.`
+            },
+        proposedAnswer: previousAnswer,
+        resolutionModes: ["confirm", "edit", "replace"]
+      },
+      answer
+    );
+  }
+
+  if (previousAnswer.fields && answer.values) {
+    throw new Error(`Workflow question '${questionId}' requires fields, not values.`);
+  }
+  if (previousAnswer.values && answer.fields) {
+    throw new Error(`Workflow question '${questionId}' requires values, not fields.`);
+  }
+
+  return materializeWorkflowAnswer(
+    {
+      id: questionId,
+      key: "businessFlow",
+      prompt: `Revise the stored workflow answer for ${questionId}.`
+    },
+    answer
+  );
+}
+
+function isContractQuestionId(questionId: string): boolean {
+  return questionId.startsWith("contract.");
 }
 
 function materializeWorkflowAnswer(question: Question, answer: ContractAnswerInput): ContractAnswerRecord {

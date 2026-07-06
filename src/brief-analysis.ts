@@ -348,9 +348,12 @@ function planProgressiveStructuredFlow(
     field("currentStatus", "string"),
     field("completedStage", "string", { optional: true })
   ];
-  const finalResultFields = responseFields.length > 0
-    ? responseFields
-    : mergeMessageFields(aggregateStateFields, [field("readyForNextState", "bool", { optional: true })]);
+  const finalResultFields = selectStageFields(
+    responseFields.length > 0
+      ? responseFields
+      : mergeMessageFields(aggregateStateFields, [field("readyForNextState", "bool", { optional: true })]),
+    contractAnswers[GENERIC_RESPONSE_FIELDS_QUESTION]
+  );
 
   const initialCommand = messageSeed("InitialCommand", withImplicitId(initialCommandFields));
   const validatedInitialCommand = messageSeed("ValidatedInitialCommand", initialCommand.fields);
