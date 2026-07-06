@@ -128,6 +128,7 @@ export class WorkflowService {
       answers: mergedAnswers,
       plannerDraft,
       analysis,
+      lastArtifact: undefined,
       updatedAt: new Date().toISOString()
     };
     this.works.set(state.workId, updatedState);
