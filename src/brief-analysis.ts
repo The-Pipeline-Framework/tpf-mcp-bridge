@@ -84,7 +84,7 @@ const MAX_APP_NAME_TOKENS = 6;
 const MAX_BASE_PACKAGE_SEGMENTS = 5;
 const MAX_BASE_PACKAGE_SEGMENT_LENGTH = 20;
 const MAX_BASE_PACKAGE_LENGTH = 80;
-const TITLE_STOP_PATTERN = /\b(?:User Persona|Value Proposition|High-Level Requirements|Acceptance Criteria|Potential Follow-up Stories|Future Sprints|As a|Registration|State Management|Data Persistence|Resume Functionality|Data Validation|Secure Storage|AC\d+)\b/i;
+const TITLE_STOP_PATTERN = /\b(?:User Persona|Value Proposition|High-Level Requirements|Acceptance Criteria|Potential Follow-up Stories|Future Sprints|As a|State Management|Data Persistence|Resume Functionality|Data Validation|Secure Storage|AC\d+)\b/i;
 const NAMING_STOP_WORDS = new Set([
   "a",
   "an",
@@ -101,19 +101,15 @@ const NAMING_STOP_WORDS = new Set([
   "new",
   "of",
   "on",
-  "profile",
-  "secure",
   "story",
   "system",
   "the",
   "to",
-  "user",
   "with"
 ]);
 
-const PERSONAL_INFO_FIELDS_QUESTION = "contract.personal-info.fields";
-const ADDRESS_FIELDS_QUESTION = "contract.address.fields";
-const SECURITY_FIELDS_QUESTION = "contract.security-credentials.fields";
+const INITIAL_COMMAND_FIELDS_QUESTION = "contract.initial-command.fields";
+const PROGRESS_UPDATE_FIELDS_QUESTION = "contract.progress-update.fields";
 const GENERIC_REQUEST_FIELDS_QUESTION = "contract.generic-request.fields";
 const GENERIC_RESPONSE_FIELDS_QUESTION = "contract.generic-response.fields";
 
@@ -322,13 +318,13 @@ function planBusinessFlow(
   contractAnswers: Record<string, ContractAnswerRecord>
 ): PlannedFlow {
   const lower = briefText.toLowerCase();
-  if (isOnboardingBrief(lower)) {
-    return planOnboardingFlow(briefText, title, contractAnswers);
+  if (isProgressiveStatefulBrief(lower)) {
+    return planProgressiveStructuredFlow(briefText, title, contractAnswers);
   }
   return planGenericStructuredFlow(briefText, title, contractAnswers);
 }
 
-function planOnboardingFlow(
+function planProgressiveStructuredFlow(
   briefText: string,
   title: string,
   contractAnswers: Record<string, ContractAnswerRecord>
@@ -336,164 +332,100 @@ function planOnboardingFlow(
   const questions: Question[] = [];
   const contractQuestions: ContractQuestion[] = [];
   const futureStepCandidates = extractFutureStepCandidates(briefText);
+  const requestFields = extractParameterFields(briefText, /API Call Parameters/i);
+  const responseFields = extractParameterFields(briefText, /API Response/i);
 
-  const personalInfoFields = selectStageFields(
-    inferPersonalInfoFields(briefText),
-    contractAnswers[PERSONAL_INFO_FIELDS_QUESTION]
+  const initialCommandFields = selectStageFields(
+    requestFields.length > 0 ? requestFields : defaultRequestFields(),
+    contractAnswers[INITIAL_COMMAND_FIELDS_QUESTION]
   );
-  const addressFields = selectStageFields(
-    [field("addressPayload", "string")],
-    contractAnswers[ADDRESS_FIELDS_QUESTION]
+  const progressUpdateFields = selectStageFields(
+    [field("updatePayload", "string")],
+    contractAnswers[PROGRESS_UPDATE_FIELDS_QUESTION]
   );
-  const securityFields = selectStageFields(
-    [field("credentialPayload", "string")],
-    contractAnswers[SECURITY_FIELDS_QUESTION]
+  const aggregateStateFields = [
+    field("aggregateId", "uuid"),
+    field("currentStatus", "string"),
+    field("completedStage", "string", { optional: true })
+  ];
+  const finalResultFields = selectStageFields(
+    responseFields.length > 0
+      ? responseFields
+      : mergeMessageFields(aggregateStateFields, [field("readyForNextState", "bool", { optional: true })]),
+    contractAnswers[GENERIC_RESPONSE_FIELDS_QUESTION]
   );
 
-  const registrationRequest = messageSeed("RegistrationRequest", [
-    field("email", "string", { optional: true }),
-    field("mobile", "string", { optional: true }),
-    field("password", "string")
+  const initialCommand = messageSeed("InitialCommand", withImplicitId(initialCommandFields));
+  const validatedInitialCommand = messageSeed("ValidatedInitialCommand", initialCommand.fields);
+  const aggregateState = messageSeed("AggregateState", aggregateStateFields);
+  const progressUpdate = messageSeed("ProgressUpdate", progressUpdateFields);
+  const validatedProgressUpdate = composeMessageSeed("ValidatedProgressUpdate", aggregateState.fields, [
+    referencedField("update", progressUpdate.name)
   ]);
-  const registrationValidated = messageSeed("RegistrationValidated", registrationRequest.fields);
-  const onboardingDraftState = messageSeed("OnboardingDraftState", [
-    field("userId", "uuid"),
-    field("onboardingStatus", "string"),
-    field("completedStage", "string", { optional: true }),
-    field("email", "string", { optional: true }),
-    field("mobile", "string", { optional: true })
+  const advancedState = composeMessageSeed("AdvancedAggregateState", aggregateState.fields, progressUpdate.fields, [
+    field("currentStatus", "string"),
+    field("completedStage", "string", { optional: true })
   ]);
-  const personalInfoStage = messageSeed("PersonalInfoStage", personalInfoFields);
-  const personalInfoStageReady = composeMessageSeed("PersonalInfoStageReady", onboardingDraftState.fields, [
-    referencedField("personalInfo", "PersonalInfoStage")
-  ]);
-  const personalInfoStageSaved = composeMessageSeed("PersonalInfoStageSaved", personalInfoStageReady.fields, [
-    field("personalInfoSaved", "bool"),
-    field("completedStage", "string")
-  ]);
-  const addressStage = messageSeed("AddressStage", addressFields);
-  const addressStageReady = composeMessageSeed("AddressStageReady", personalInfoStageSaved.fields, [
-    referencedField("address", "AddressStage")
-  ]);
-  const addressStageSaved = composeMessageSeed("AddressStageSaved", addressStageReady.fields, [
-    field("addressSaved", "bool"),
-    field("completedStage", "string")
-  ]);
-  const securityCredentialsStage = messageSeed("SecurityCredentialsStage", securityFields);
-  const securityCredentialsStageReady = composeMessageSeed("SecurityCredentialsStageReady", addressStageSaved.fields, [
-    referencedField("securityCredentials", "SecurityCredentialsStage")
-  ]);
-  const securityCredentialsStageSaved = composeMessageSeed("SecurityCredentialsStageSaved", securityCredentialsStageReady.fields, [
-    field("securityCredentialsSaved", "bool"),
-    field("completedStage", "string")
-  ]);
-  const onboardingResumeRequest = messageSeed("OnboardingResumeRequest", [field("userId", "uuid")]);
-  const currentOnboardingState = composeMessageSeed("CurrentOnboardingState", securityCredentialsStageSaved.fields);
-  const finalizationRequest = messageSeed("FinalizeOnboardingRequest", [field("userId", "uuid")]);
-  const finalizedOnboardingState = composeMessageSeed("FinalizedOnboardingState", securityCredentialsStageSaved.fields, [
-    field("readyForVerification", "bool")
-  ]);
-  const pendingVerificationAccount = messageSeed("PendingVerificationAccount", [
-    field("userId", "uuid"),
-    field("onboardingStatus", "string"),
-    field("completedStage", "string"),
-    field("readyForVerification", "bool")
-  ]);
+  const finalResult = messageSeed("FinalResult", finalResultFields);
 
   const businessSteps: BusinessStep[] = [
     businessStep(
-      "Validate Registration Input",
-      "Check that the initial identifier and password are present before creating any draft account.",
-      registrationRequest,
-      registrationValidated
+      "Validate Initial Command",
+      "Check that the initial command contains the fields needed to create the first durable aggregate state.",
+      initialCommand,
+      validatedInitialCommand
     ),
     businessStep(
-      "Create Draft Account",
-      "Create the initial onboarding account and assign a durable user identifier in Draft state.",
-      registrationValidated,
-      onboardingDraftState
+      "Create Aggregate State",
+      "Create the initial aggregate state for the staged workflow and return the durable state handle.",
+      validatedInitialCommand,
+      aggregateState
     ),
     businessStep(
-      "Validate Personal Info Stage",
-      "Confirm the personal-information segment is usable before persisting it.",
-      onboardingDraftState,
-      personalInfoStageReady
+      "Validate Progress Update",
+      "Validate the next incremental update against the current aggregate state before advancing progress.",
+      aggregateState,
+      validatedProgressUpdate
     ),
     businessStep(
-      "Save Personal Info Stage",
-      "Persist the personal-information stage and mark that part of onboarding as completed.",
-      personalInfoStageReady,
-      personalInfoStageSaved
+      "Advance Aggregate State",
+      "Advance the aggregate state monotonically using the validated incremental update.",
+      validatedProgressUpdate,
+      advancedState
     ),
     businessStep(
-      "Validate Address Stage",
-      "Check the address segment before advancing to the next onboarding stage.",
-      personalInfoStageSaved,
-      addressStageReady
-    ),
-    businessStep(
-      "Save Address Stage",
-      "Persist the address stage and update onboarding progress.",
-      addressStageReady,
-      addressStageSaved
-    ),
-    businessStep(
-      "Validate Security Credentials Stage",
-      "Confirm the credential stage is acceptable before it is committed to durable state.",
-      addressStageSaved,
-      securityCredentialsStageReady
-    ),
-    businessStep(
-      "Save Security Credentials Stage",
-      "Persist the credential stage and keep the onboarding draft resumable.",
-      securityCredentialsStageReady,
-      securityCredentialsStageSaved
-    ),
-    businessStep(
-      "Resume Onboarding State",
-      "Load the latest persisted draft so the user can continue from the last completed stage.",
-      onboardingResumeRequest,
-      currentOnboardingState
-    ),
-    businessStep(
-      "Finalize Onboarding",
-      "Perform final completion checks across all captured onboarding segments.",
-      finalizationRequest,
-      finalizedOnboardingState
-    ),
-    businessStep(
-      "Transition Status To Pending Verification",
-      "Move the onboarding record from Draft to Pending Verification once required data is complete.",
-      finalizedOnboardingState,
-      pendingVerificationAccount
+      "Finalize Aggregate State",
+      "Finalize the current aggregate state once staged completion criteria are satisfied.",
+      advancedState,
+      finalResult
     )
   ];
 
-  if (isGenericPayload(addressStage.fields, "addressPayload")) {
+  if (requestFields.length === 0 && !contractAnswers[INITIAL_COMMAND_FIELDS_QUESTION]) {
     contractQuestions.push(contractQuestion(
-      ADDRESS_FIELDS_QUESTION,
-      "Save Address Stage",
-      "AddressStage",
-      "Clarify the address fields that should be captured and validated before the address stage is saved.",
-      "List the address-stage fields with names and types, for example streetLine1/string and postalCode/string."
+      INITIAL_COMMAND_FIELDS_QUESTION,
+      "Validate Initial Command",
+      initialCommand.name,
+      "The brief implies a staged workflow, but it does not define the initial command contract clearly enough.",
+      "List the initial command fields with names and types that create the first aggregate state."
     ));
   }
-  if (isGenericPayload(securityCredentialsStage.fields, "credentialPayload")) {
+  if (isGenericPayload(progressUpdate.fields, "updatePayload")) {
     contractQuestions.push(contractQuestion(
-      SECURITY_FIELDS_QUESTION,
-      "Save Security Credentials Stage",
-      "SecurityCredentialsStage",
-      "Clarify the security-credentials fields that should be captured before the credentials stage is saved.",
-      "List the credential-stage fields with names and types, for example password/string and passwordSalt/string."
+      PROGRESS_UPDATE_FIELDS_QUESTION,
+      "Validate Progress Update",
+      progressUpdate.name,
+      "The brief implies repeated staged submissions, but it does not define the incremental update contract clearly enough.",
+      "List the incremental update fields with names and types that advance the aggregate state."
     ));
   }
-  if (!contractAnswers[PERSONAL_INFO_FIELDS_QUESTION] && personalInfoStage.fields.length <= 2) {
+  if (responseFields.length === 0 && !contractAnswers[GENERIC_RESPONSE_FIELDS_QUESTION]) {
     contractQuestions.push(contractQuestion(
-      PERSONAL_INFO_FIELDS_QUESTION,
-      "Validate Personal Info Stage",
-      "PersonalInfoStage",
-      "The brief only makes the personal-info stage partially explicit. Clarify whether personal info includes additional fields beyond the inferred ones.",
-      "List the personal-info fields with names and types, or confirm that the inferred fields are sufficient."
+      GENERIC_RESPONSE_FIELDS_QUESTION,
+      "Finalize Aggregate State",
+      finalResult.name,
+      "The brief does not define the final result or returned aggregate-state contract clearly enough.",
+      "List the fields returned after staged completion or finalization."
     ));
   }
 
@@ -502,39 +434,42 @@ function planOnboardingFlow(
     {
       concern: "validation",
       appliesToSteps: businessSteps.filter((step) => step.name.startsWith("Validate ")).map((step) => step.id),
-      details: "Validation is attached to each onboarding stage rather than deferred to final submission."
+      details: "Validation is attached to the command boundary and staged progress updates rather than deferred until the end."
     },
     {
-      concern: "encryption",
+      concern: "persistence",
+      appliesToSteps: businessSteps.filter((step) => /\baggregate state\b/i.test(step.name)).map((step) => step.id),
+      details: "Durable aggregate state is handled by persistence aspects/plugins rather than explicit save steps."
+    },
+    {
+      concern: "replayability",
       appliesToSteps: [
-        stepId("Create Draft Account"),
-        stepId("Save Personal Info Stage"),
-        stepId("Save Address Stage"),
-        stepId("Save Security Credentials Stage")
+        stepId("Advance Aggregate State"),
+        stepId("Finalize Aggregate State")
       ],
-      details: "PII and credential-bearing state should be treated as encrypted-at-rest concerns across persisted onboarding stages."
+      details: "Staged progression should be modeled as replay-safe repeated invocations over the current aggregate state."
+    },
+    {
+      concern: "idempotency",
+      appliesToSteps: [
+        stepId("Advance Aggregate State"),
+        stepId("Finalize Aggregate State")
+      ],
+      details: "Repeated submissions of the same staged update should not corrupt monotonic state progression."
     },
     {
       concern: "state-transition",
-      appliesToSteps: [
-        stepId("Create Draft Account"),
-        stepId("Save Personal Info Stage"),
-        stepId("Save Address Stage"),
-        stepId("Save Security Credentials Stage"),
-        stepId("Transition Status To Pending Verification")
-      ],
-      details: "Onboarding state advances through Draft progress markers before the final Pending Verification transition."
+      appliesToSteps: businessSteps.filter((step) => /\baggregate state\b/i.test(step.name)).map((step) => step.id),
+      details: "Each invocation advances the aggregate state monotonically toward the next required stage or terminal result."
     }
   ];
 
   return {
     title,
-    primaryGoal: "Create an onboarding profile over multiple resumable stages without losing progress.",
-    outputArtifact: "Pending verification onboarding account",
+    primaryGoal: inferPrimaryGoal(briefText, title),
+    outputArtifact: inferOutputArtifact(briefText, []),
     businessSteps,
-    pipelineSteps: businessSteps
-      .filter((step) => step.name !== "Resume Onboarding State")
-      .map((step) => ({
+    pipelineSteps: businessSteps.map((step) => ({
         id: step.id,
         name: step.name,
         cardinality: "ONE_TO_ONE",
@@ -543,23 +478,13 @@ function planOnboardingFlow(
         parallel: false
       })),
     pipelineMessages: buildMessageCatalog([
-      registrationRequest,
-      registrationValidated,
-      onboardingDraftState,
-      personalInfoStage,
-      personalInfoStageReady,
-      personalInfoStageSaved,
-      addressStage,
-      addressStageReady,
-      addressStageSaved,
-      securityCredentialsStage,
-      securityCredentialsStageReady,
-      securityCredentialsStageSaved,
-      onboardingResumeRequest,
-      currentOnboardingState,
-      finalizationRequest,
-      finalizedOnboardingState,
-      pendingVerificationAccount
+      initialCommand,
+      validatedInitialCommand,
+      aggregateState,
+      progressUpdate,
+      validatedProgressUpdate,
+      advancedState,
+      finalResult
     ]),
     stepBreakdownRationale: businessSteps.map((step) => `${step.name}: ${step.purpose}`),
     futureStepCandidates,
@@ -575,7 +500,6 @@ function planGenericStructuredFlow(
   title: string,
   contractAnswers: Record<string, ContractAnswerRecord>
 ): PlannedFlow {
-  const domain = inferDomain(briefText, title);
   const questions: Question[] = [];
   const contractQuestions: ContractQuestion[] = [];
   const requestFields = extractParameterFields(briefText, /API Call Parameters/i);
@@ -591,7 +515,7 @@ function planGenericStructuredFlow(
   const technicalConcerns: TechnicalConcern[] = [];
 
   const requestContract = selectStageFields(
-    requestFields.length > 0 ? requestFields : defaultRequestFields(domain, briefText),
+    requestFields.length > 0 ? requestFields : defaultRequestFields(),
     contractAnswers[GENERIC_REQUEST_FIELDS_QUESTION]
   );
   const responseContract = selectStageFields(
@@ -602,51 +526,51 @@ function planGenericStructuredFlow(
   if (usesCsvInput) {
     const csvFolder = messageSeed("CsvFolder", [field("path", "path")]);
     const csvInputFile = messageSeed("CsvInputFile", [field("id", "uuid"), field("path", "path")]);
-    const requestMessage = messageSeed(`${domain}Request`, withImplicitId(requestContract));
-    const statusMessage = messageSeed(`${domain}Status`, withImplicitId(responseContract));
-    const outputMessage = messageSeed(`${domain}Output`, statusMessage.fields);
+    const requestMessage = messageSeed("PipelineRequest", withImplicitId(requestContract));
+    const statusMessage = messageSeed("PipelineResult", withImplicitId(responseContract));
+    const outputMessage = messageSeed("OutputPayload", statusMessage.fields);
     const csvOutputFile = messageSeed("CsvOutputFile", [field("id", "uuid"), field("path", "path"), field("recordCount", "int32")]);
 
     messageSeeds.push(csvFolder, csvInputFile, requestMessage, statusMessage, outputMessage, csvOutputFile);
     businessSteps.push(
       businessStep("Process Input Folder", "Expand an input folder into individual CSV files for downstream processing.", csvFolder, csvInputFile),
-      businessStep(`Extract ${domain} Records`, "Turn each CSV file into domain requests before the main business flow begins.", csvInputFile, requestMessage),
-      businessStep(`Validate ${domain} Request`, "Check that the inbound request shape is suitable for processing.", requestMessage, requestMessage),
-      businessStep(`Process ${domain} Request`, "Perform the main domain processing for each request.", requestMessage, statusMessage),
+      businessStep("Extract Pipeline Requests", "Turn each CSV file into pipeline requests before the main business flow begins.", csvInputFile, requestMessage),
+      businessStep("Validate Request", "Check that the inbound request shape is suitable for processing.", requestMessage, requestMessage),
+      businessStep("Process Request", "Perform the main business processing for each request.", requestMessage, statusMessage),
       businessStep("Write Output File", "Reduce processed records into the generated CSV output artifact.", outputMessage, csvOutputFile)
     );
     pipelineSteps.push(
       { id: stepId("Process Input Folder"), name: "Process Input Folder", cardinality: "EXPANSION", inputTypeName: "CsvFolder", outputTypeName: "CsvInputFile", parallel: false },
-      { id: stepId(`Extract ${domain} Records`), name: `Extract ${domain} Records`, cardinality: "EXPANSION", inputTypeName: "CsvInputFile", outputTypeName: `${domain}Request`, parallel: false },
-      { id: stepId(`Validate ${domain} Request`), name: `Validate ${domain} Request`, cardinality: "ONE_TO_ONE", inputTypeName: `${domain}Request`, outputTypeName: `${domain}Request`, parallel: false },
-      { id: stepId(`Process ${domain} Request`), name: `Process ${domain} Request`, cardinality: "ONE_TO_ONE", inputTypeName: `${domain}Request`, outputTypeName: `${domain}Status`, parallel: false },
-      { id: stepId("Build Output Payload"), name: "Build Output Payload", cardinality: "ONE_TO_ONE", inputTypeName: `${domain}Status`, outputTypeName: `${domain}Output`, parallel: false },
-      { id: stepId("Write Output File"), name: "Write Output File", cardinality: "REDUCTION", inputTypeName: `${domain}Output`, outputTypeName: "CsvOutputFile", parallel: false, batchSize: 50, batchTimeoutMs: 1000 }
+      { id: stepId("Extract Pipeline Requests"), name: "Extract Pipeline Requests", cardinality: "EXPANSION", inputTypeName: "CsvInputFile", outputTypeName: "PipelineRequest", parallel: false },
+      { id: stepId("Validate Request"), name: "Validate Request", cardinality: "ONE_TO_ONE", inputTypeName: "PipelineRequest", outputTypeName: "PipelineRequest", parallel: false },
+      { id: stepId("Process Request"), name: "Process Request", cardinality: "ONE_TO_ONE", inputTypeName: "PipelineRequest", outputTypeName: "PipelineResult", parallel: false },
+      { id: stepId("Build Output Payload"), name: "Build Output Payload", cardinality: "ONE_TO_ONE", inputTypeName: "PipelineResult", outputTypeName: "OutputPayload", parallel: false },
+      { id: stepId("Write Output File"), name: "Write Output File", cardinality: "REDUCTION", inputTypeName: "OutputPayload", outputTypeName: "CsvOutputFile", parallel: false, batchSize: 50, batchTimeoutMs: 1000 }
     );
   } else {
-    const requestTypeName = `${domain}Request`;
-    const validatedTypeName = `${domain}ValidatedRequest`;
-    const resultTypeName = `${domain}Result`;
+    const requestTypeName = "Request";
+    const validatedTypeName = "ValidatedRequest";
+    const resultTypeName = "Result";
     const requestMessage = messageSeed(requestTypeName, withImplicitId(requestContract));
     const validatedMessage = messageSeed(validatedTypeName, requestMessage.fields);
     const resultMessage = messageSeed(resultTypeName, withImplicitId(responseContract));
     messageSeeds.push(requestMessage, validatedMessage, resultMessage);
 
     businessSteps.push(
-      businessStep(`Validate ${domain} Request`, "Check that the request contains the fields needed by the backend capability.", requestMessage, validatedMessage),
-      businessStep(`Process ${domain} Request`, "Execute the main business capability described by the brief.", validatedMessage, resultMessage)
+      businessStep("Validate Request", "Check that the request contains the fields needed by the backend capability.", requestMessage, validatedMessage),
+      businessStep("Process Request", "Execute the main business capability described by the brief.", validatedMessage, resultMessage)
     );
     pipelineSteps.push(
-      { id: stepId(`Validate ${domain} Request`), name: `Validate ${domain} Request`, cardinality: "ONE_TO_ONE", inputTypeName: requestTypeName, outputTypeName: validatedTypeName, parallel: false },
-      { id: stepId(`Process ${domain} Request`), name: `Process ${domain} Request`, cardinality: "ONE_TO_ONE", inputTypeName: validatedTypeName, outputTypeName: resultTypeName, parallel: false }
+      { id: stepId("Validate Request"), name: "Validate Request", cardinality: "ONE_TO_ONE", inputTypeName: requestTypeName, outputTypeName: validatedTypeName, parallel: false },
+      { id: stepId("Process Request"), name: "Process Request", cardinality: "ONE_TO_ONE", inputTypeName: validatedTypeName, outputTypeName: resultTypeName, parallel: false }
     );
   }
 
   if (requestFields.length === 0 && !contractAnswers[GENERIC_REQUEST_FIELDS_QUESTION]) {
     contractQuestions.push(contractQuestion(
       GENERIC_REQUEST_FIELDS_QUESTION,
-      businessSteps[0]?.name || `Validate ${domain} Request`,
-      `${domain}Request`,
+      businessSteps[0]?.name || "Validate Request",
+      usesCsvInput ? "PipelineRequest" : "Request",
       "The brief identifies the business flow, but it does not specify the request contract clearly enough to scaffold the pipeline.",
       "List the request fields with names and types that enter the pipeline."
     ));
@@ -654,8 +578,8 @@ function planGenericStructuredFlow(
   if (responseFields.length === 0 && outputColumns.length === 0 && !contractAnswers[GENERIC_RESPONSE_FIELDS_QUESTION]) {
     contractQuestions.push(contractQuestion(
       GENERIC_RESPONSE_FIELDS_QUESTION,
-      businessSteps[businessSteps.length - 1]?.name || `Process ${domain} Request`,
-      `${domain}Result`,
+      businessSteps[businessSteps.length - 1]?.name || "Process Request",
+      usesCsvInput ? "PipelineResult" : "Result",
       "The brief does not specify the result contract clearly enough to scaffold the pipeline outputs.",
       "List the response or result fields with names and types produced by the main business flow."
     ));
@@ -713,8 +637,8 @@ function synthesizeInfrastructure(
   if (lower.includes("encrypted") || lower.includes("secure storage") || lower.includes("pii")) {
     technicalConcerns.push({
       concern: "encryption",
-      appliesToSteps: businessSteps.filter((step) => /\bcreate\b|\bsave\b|\btransition\b/i.test(step.name)).map((step) => step.id),
-      details: "The brief requires secure-at-rest handling for stored user or business data."
+      appliesToSteps: businessSteps.filter((step) => /\bcreate\b|\badvance\b|\bfinalize\b|\btransition\b/i.test(step.name)).map((step) => step.id),
+      details: "The brief requires secure-at-rest handling for durable aggregate data."
     });
   }
 
@@ -898,10 +822,10 @@ function inferCacheDecision(
 }
 
 function shouldEnablePersistence(lower: string, businessSteps: BusinessStep[], asyncMode: AsyncMode): boolean {
-  if (lower.includes("resume") || lower.includes("draft") || lower.includes("data persistence") || lower.includes("save progress")) {
+  if (lower.includes("resume") || lower.includes("data persistence") || lower.includes("save progress")) {
     return true;
   }
-  if (businessSteps.some((step) => /\bsave\b|\bresume\b|\bdraft\b|\btransition status\b/i.test(step.name))) {
+  if (businessSteps.some((step) => /\bresume\b|\baggregate state\b|\btransition status\b/i.test(step.name))) {
     return true;
   }
   return asyncMode !== "SIMPLIFIED" && /\bstatus tracking\b|\bdurable\b|\bretain\b/.test(lower);
@@ -1024,21 +948,6 @@ function extractMarkdownTableRows(briefText: string, headingPattern: RegExp): st
   return rows;
 }
 
-function inferPersonalInfoFields(briefText: string): MessageField[] {
-  const lower = briefText.toLowerCase();
-  const fields: MessageField[] = [];
-  if (lower.includes("first name")) {
-    fields.push(field("firstName", "string"));
-  }
-  if (lower.includes("last name")) {
-    fields.push(field("lastName", "string"));
-  }
-  if (fields.length === 0) {
-    fields.push(field("personalInfoPayload", "string"));
-  }
-  return fields;
-}
-
 function businessStep(name: string, purpose: string, input: MessageSeed, output: MessageSeed): BusinessStep {
   return {
     id: stepId(name),
@@ -1157,25 +1066,13 @@ function inferOutputArtifact(briefText: string, outputColumns: string[]): string
     return "CSV output file";
   }
   const lower = briefText.toLowerCase();
-  if (lower.includes("pending verification")) {
-    return "Pending verification onboarding account";
-  }
   if (lower.includes("output file")) {
     return "Generated output file";
   }
   return undefined;
 }
 
-function defaultRequestFields(domain: string, briefText: string): MessageField[] {
-  if (domain === "Payment" && /\bcsv\b/.test(briefText.toLowerCase())) {
-    return [
-      field("csvId", "string"),
-      field("recipient", "string"),
-      field("amount", "decimal"),
-      field("currency", "currency"),
-      field("reference", "string", { optional: true })
-    ];
-  }
+function defaultRequestFields(): MessageField[] {
   return [field("payload", "string")];
 }
 
@@ -1252,30 +1149,6 @@ function extractTitle(briefText: string, sourceLabel: string): string {
     return "";
   }
   return toTitleCase(base.replace(/[-_]+/g, " "));
-}
-
-function inferDomain(briefText: string, title: string): string {
-  const lower = briefText.toLowerCase();
-  if (lower.includes("payment")) {
-    return "Payment";
-  }
-  if (lower.includes("onboarding")) {
-    return "Onboarding";
-  }
-  if (lower.includes("customer")) {
-    return "Customer";
-  }
-  if (lower.includes("order")) {
-    return "Order";
-  }
-  if (lower.includes("document")) {
-    return "Document";
-  }
-  const significant = title
-    .split(/[^A-Za-z0-9]+/)
-    .filter(Boolean)
-    .find((part) => !["csv", "processing", "application", "pipeline", "system", "backend"].includes(part.toLowerCase()));
-  return significant ? toPascalCase(significant) : "Business";
 }
 
 function inferPrimaryGoal(briefText: string, title: string): string {
@@ -1384,12 +1257,12 @@ function runtimeLayoutToConfig(layout: RuntimeLayout): "modular" | "pipeline-run
   }
 }
 
-function isOnboardingBrief(lower: string): boolean {
-  return lower.includes("onboarding") || lower.includes("draft account") || lower.includes("pending verification");
+function isProgressiveStatefulBrief(lower: string): boolean {
+  return /\b(resume|resumable|save progress|partial|incremental|multi-stage|multiple stages|continue later|return later|repeated submissions?|staged completion|state management|current status)\b/.test(lower);
 }
 
 function isBackendApiBrief(lower: string): boolean {
-  return /\bbackend\b|\bapi\b|\buser story\b|\bregister\b|\bform\b|\bonboarding\b/.test(lower);
+  return /\bbackend\b|\bapi\b|\bservice\b|\buser story\b/.test(lower);
 }
 
 function toPascalCase(value: string): string {

@@ -7,8 +7,20 @@ import type {
   AnalyzeResult,
   AnswerQuestionsInput,
   BriefInput,
+  CompileScaffoldPlanInput,
+  CompileScaffoldPlanResult,
+  DraftContractsInput,
+  DraftContractsResult,
+  DraftProtocolInput,
+  DraftProtocolResult,
+  GenerateScaffoldInput,
+  GenerateScaffoldResult,
   GenerateSessionInput,
   GetSessionInput,
+  InspectBriefInput,
+  InspectBriefResult,
+  ResolveContractsInput,
+  ResolveContractsResult,
   ScaffoldResult,
   SessionResult,
   SessionState
@@ -101,6 +113,30 @@ export async function handleWorkerRequest(request: Request, env: WorkerEnv): Pro
   const baseUrl = resolveBaseUrl(request, env);
 
   const server = createTpfMcpServer({
+    inspectBrief: async (_input: InspectBriefInput): Promise<InspectBriefResult> => {
+      await consumeRequestQuota(quotaStore, clientIp);
+      throw new PlannerError("Hosted remote MCP planning is no longer supported. Use the local TPF bridge so planning can run on your machine.", 410);
+    },
+    draftProtocol: async (_input: DraftProtocolInput): Promise<DraftProtocolResult> => {
+      await consumeRequestQuota(quotaStore, clientIp);
+      throw new PlannerError("Hosted remote MCP planning is no longer supported. Use the local TPF bridge so planning can run on your machine.", 410);
+    },
+    draftContracts: async (_input: DraftContractsInput): Promise<DraftContractsResult> => {
+      await consumeRequestQuota(quotaStore, clientIp);
+      throw new PlannerError("Hosted remote MCP planning is no longer supported. Use the local TPF bridge so planning can run on your machine.", 410);
+    },
+    resolveContracts: async (_input: ResolveContractsInput): Promise<ResolveContractsResult> => {
+      await consumeRequestQuota(quotaStore, clientIp);
+      throw new PlannerError("Hosted remote MCP planning is no longer supported. Use the local TPF bridge so planning can run on your machine.", 410);
+    },
+    compileScaffoldPlan: async (_input: CompileScaffoldPlanInput): Promise<CompileScaffoldPlanResult> => {
+      await consumeRequestQuota(quotaStore, clientIp);
+      throw new PlannerError("Hosted remote MCP planning is no longer supported. Use the local TPF bridge so planning can run on your machine.", 410);
+    },
+    generateScaffold: async (_input: GenerateScaffoldInput): Promise<GenerateScaffoldResult> => {
+      await consumeGenerationQuota(quotaStore, clientIp);
+      throw new PlannerError("Hosted remote MCP work generation is no longer supported. Use the local TPF bridge.", 410);
+    },
     analyzeBrief: async (_input: BriefInput): Promise<AnalyzeResult> => {
       await consumeRequestQuota(quotaStore, clientIp);
       throw new PlannerError("Hosted remote MCP planning is no longer supported. Use the local TPF bridge so the planner can run on your machine.", 410);
@@ -118,7 +154,7 @@ export async function handleWorkerRequest(request: Request, env: WorkerEnv): Pro
       throw new PlannerError("Hosted remote MCP planning is no longer supported. Use the local TPF bridge so the planner can run on your machine.", 410);
     },
     getBriefSession: async (input: GetSessionInput) => sessionClient.getSessionResult(input),
-    generateScaffold: async (input: GenerateSessionInput) => {
+    generateScaffoldSession: async (input: GenerateSessionInput) => {
       await consumeGenerationQuota(quotaStore, clientIp);
       return sessionClient.generateScaffold(input, baseUrl);
     }

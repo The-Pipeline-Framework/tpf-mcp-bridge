@@ -1233,7 +1233,7 @@ function defaultBasePackage(title: string): string {
 }
 
 function namingTokens(title: string, limit: number): string[] {
-  const stopWords = new Set(["a", "an", "and", "as", "backend", "brief", "by", "core", "for", "in", "incremental", "mvp", "new", "of", "on", "profile", "secure", "story", "system", "the", "to", "user", "with"]);
+  const stopWords = new Set(["a", "an", "and", "as", "backend", "brief", "by", "core", "for", "in", "incremental", "mvp", "new", "of", "on", "story", "system", "the", "to", "with"]);
   const rawTokens = title.toLowerCase().replace(/['’]/g, "").split(/[^a-z0-9]+/).filter(Boolean);
   const tokens = rawTokens.filter((token) => !stopWords.has(token));
   return (tokens.length > 0 ? tokens : rawTokens)

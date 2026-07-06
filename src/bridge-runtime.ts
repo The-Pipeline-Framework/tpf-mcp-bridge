@@ -2,14 +2,21 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { createTpfMcpServer, type TpfMcpHandlers } from "./mcp-server.js";
-import { createMcpSamplingPlannerClient, createOpenAiPlannerClient } from "./planner-client.js";
+import { createMcpSamplingPlannerClient, createOpenAiPlannerClient, type PlannerClient } from "./planner-client.js";
 import { resolvePlannerCredential, type PlannerCredentialSource } from "./credential-resolution.js";
 import { BriefSessionService } from "./session-service.js";
+import { WorkflowService } from "./workflow-service.js";
 import { InMemoryArtifactStore, InMemorySessionStore, LocalFileArtifactStore, type SessionStore } from "./storage.js";
 import type {
   AnalyzeResult,
   BriefInput,
+  CompileScaffoldPlanResult,
+  DraftContractsResult,
+  DraftProtocolResult,
+  GenerateScaffoldResult,
   GenerateSessionInput,
+  InspectBriefResult,
+  ResolveContractsResult,
   PlannerProfile,
   PlannerProviderMode,
   PlannerTransportMode,
@@ -74,19 +81,27 @@ export function createLocalBridgeHandlers(
 ): TpfMcpHandlers {
   const sessionStore = new InMemorySessionStore();
   const artifactStore = new LocalFileArtifactStore();
+  const plannerClient = createLazyBridgePlannerClient(config, getServer);
+  const workflowService = new WorkflowService(artifactStore, plannerClient);
   const service = () => new BriefSessionService(
     sessionStore,
     artifactStore,
-    resolveBridgePlannerClient(config, getServer)
+    plannerClient
   );
 
   return {
+    inspectBrief: (input) => workflowService.inspectBrief(input),
+    draftProtocol: (input) => workflowService.draftProtocol(input),
+    draftContracts: (input) => workflowService.draftContracts(input),
+    resolveContracts: (input) => workflowService.resolveContracts(input),
+    compileScaffoldPlan: (input) => workflowService.compileScaffoldPlan(input),
+    generateScaffold: (input) => workflowService.generateScaffold(input),
     analyzeBrief: unsupportedAnalyzeBriefTool,
     scaffoldFromBrief: unsupportedScaffoldTool,
     startBriefSession: (input) => service().startSession(input),
     answerContractQuestions: (input) => service().answerQuestions(input),
     getBriefSession: (input) => service().getSession(input),
-    generateScaffold: (input) => service().generateScaffold(input)
+    generateScaffoldSession: (input) => service().generateScaffold(input)
   };
 }
 
@@ -100,13 +115,22 @@ export function createHostedBridgeHandlers(
 
   const sessionStore = new HostedSessionStore(config);
   const artifactStore = new InMemoryArtifactStore();
+  const workflowArtifactStore = new LocalFileArtifactStore();
+  const plannerClient = createLazyBridgePlannerClient(config, getServer);
+  const workflowService = new WorkflowService(workflowArtifactStore, plannerClient);
   const service = () => new BriefSessionService(
     sessionStore,
     artifactStore,
-    resolveBridgePlannerClient(config, getServer)
+    plannerClient
   );
 
   return {
+    inspectBrief: (input) => workflowService.inspectBrief(input),
+    draftProtocol: (input) => workflowService.draftProtocol(input),
+    draftContracts: (input) => workflowService.draftContracts(input),
+    resolveContracts: (input) => workflowService.resolveContracts(input),
+    compileScaffoldPlan: (input) => workflowService.compileScaffoldPlan(input),
+    generateScaffold: (input) => workflowService.generateScaffold(input),
     analyzeBrief: unsupportedAnalyzeBriefTool,
     scaffoldFromBrief: unsupportedScaffoldTool,
     startBriefSession: (input) => service().startSession(input),
@@ -118,7 +142,7 @@ export function createHostedBridgeHandlers(
       }
       return sessionToResult(session);
     },
-    generateScaffold: async (input) => requestBackend<SessionResult>(config, "generate-scaffold", {
+    generateScaffoldSession: async (input) => requestBackend<SessionResult>(config, "generate-scaffold", {
       method: "POST",
       body: JSON.stringify(input)
     })
@@ -290,7 +314,7 @@ function resolveOptionalPlannerCredential(
 function resolveBridgePlannerClient(
   config: BridgeConfig,
   getServer?: () => McpServer | undefined
-) {
+): PlannerClient {
   const transport = selectPlannerTransport(config, getServer?.());
   if (transport === "mcp-sampling") {
     const server = getServer?.();
@@ -318,6 +342,29 @@ function resolveBridgePlannerClient(
     providerMode: config.llmProviderMode ?? "openai-compatible",
     fetchImpl: config.providerFetchImpl
   });
+}
+
+function createLazyBridgePlannerClient(
+  config: BridgeConfig,
+  getServer?: () => McpServer | undefined
+): PlannerClient {
+  let plannerClient: PlannerClient | undefined;
+
+  const getPlannerClient = (): PlannerClient => {
+    if (!plannerClient) {
+      plannerClient = resolveBridgePlannerClient(config, getServer);
+    }
+    return plannerClient;
+  };
+
+  return {
+    async planInitialBrief(input) {
+      return getPlannerClient().planInitialBrief(input);
+    },
+    async revisePlanWithAnswers(input, previousDraft, answers) {
+      return getPlannerClient().revisePlanWithAnswers(input, previousDraft, answers);
+    }
+  };
 }
 
 function selectPlannerTransport(
@@ -350,15 +397,15 @@ function ensureTrailingSlash(value: string): string {
 
 async function unsupportedAnalyzeBriefTool(_input: BriefInput): Promise<AnalyzeResult> {
   throw new Error(
-    "The local TPF bridge only exposes the session workflow tools: " +
-    "start_brief_session, answer_contract_questions, get_brief_session, and generate_scaffold."
+    "The local TPF bridge now exposes the work-oriented workflow tools: " +
+    "inspect_brief, draft_protocol, draft_contracts, resolve_contracts, compile_scaffold_plan, and generate_scaffold."
   );
 }
 
 async function unsupportedScaffoldTool(_input: BriefInput): Promise<ScaffoldResult> {
   throw new Error(
-    "The local TPF bridge only exposes the session workflow tools: " +
-    "start_brief_session, answer_contract_questions, get_brief_session, and generate_scaffold."
+    "The local TPF bridge now exposes the work-oriented workflow tools: " +
+    "inspect_brief, draft_protocol, draft_contracts, resolve_contracts, compile_scaffold_plan, and generate_scaffold."
   );
 }
 

@@ -5,6 +5,7 @@ export type PlannerProfile = "full" | "compact";
 export type PlannerProviderMode = "openai-compatible" | "ollama-native";
 export type PlannerTransportMode = "auto" | "direct-http" | "mcp-sampling";
 export type ToolStatus = "needs_input" | "ready" | "generated";
+export type DetailLevel = "summary" | "full";
 export type AsyncMode = "POLL_ONLY" | "CALLBACK_CAPABLE" | "SIMPLIFIED" | "UNSPECIFIED";
 export type StepCardinality =
   | "ONE_TO_ONE"
@@ -72,6 +73,47 @@ export interface GetSessionInput {
 
 export interface GenerateSessionInput {
   sessionId: string;
+}
+
+export interface WorkflowBriefInput {
+  briefText: string;
+  appName?: string;
+  basePackage?: string;
+  transport?: Transport;
+  platform?: Platform;
+  runtimeLayout?: RuntimeLayout;
+  aspects?: string[] | Record<string, boolean | AspectConfig>;
+}
+
+export interface InspectBriefInput extends WorkflowBriefInput {
+  detail?: DetailLevel;
+}
+
+export interface DraftProtocolInput {
+  workId: string;
+  detail?: DetailLevel;
+}
+
+export interface DraftContractsInput {
+  workId: string;
+  stepIds?: string[];
+  detail?: DetailLevel;
+}
+
+export interface ResolveContractsInput {
+  workId: string;
+  answers: ContractAnswerInput[];
+  detail?: DetailLevel;
+}
+
+export interface CompileScaffoldPlanInput {
+  workId: string;
+  detail?: DetailLevel;
+}
+
+export interface GenerateScaffoldInput {
+  workId: string;
+  detail?: DetailLevel;
 }
 
 export interface AspectConfig {
@@ -517,6 +559,184 @@ export interface AnalyzeResult {
 export interface ScaffoldResult extends AnalyzeResult {
   generatedPath?: string;
   artifact?: ArtifactReference;
+}
+
+export interface WorkflowConfigSummary {
+  transport?: Transport;
+  platform?: Platform;
+  runtimeLayout?: RuntimeLayout | LowercaseRuntimeLayout;
+  stepNames: string[];
+  aspects: string[];
+}
+
+export type WorkflowBoundaryType = "await" | "query" | "checkpoint" | "object-input";
+export type WorkflowBoundaryStatus = "resolved" | "needs_input";
+
+export interface WorkflowContractScope {
+  targetId: string;
+  targetKind: "step" | "boundary";
+  boundaryType?: WorkflowBoundaryType;
+  stepId: string;
+  stepName: string;
+  inputTypeName: string;
+  outputTypeName: string;
+  continuity: StepContract["continuity"];
+}
+
+export interface WorkflowBoundary {
+  id: string;
+  type: WorkflowBoundaryType;
+  status: WorkflowBoundaryStatus;
+  name: string;
+  rationale: string;
+  stepId?: string;
+  stepName?: string;
+  inputTypeName?: string;
+  outputTypeName?: string;
+  timeout?: string;
+  transportType?: AwaitTransportType;
+  correlationStrategy?: AwaitCorrelationStrategy;
+  publication?: string;
+  source?: string;
+  emitsTypeName?: string;
+  questionIds?: string[];
+}
+
+export interface WorkflowResumeSurface {
+  enabled: boolean;
+  mode?: "load-state-before-next-invocation";
+  rationale: string;
+}
+
+export interface WorkflowInputSurface {
+  enabled: boolean;
+  type?: "request" | "object-input" | "subscription";
+  rationale: string;
+  source?: string;
+  publication?: string;
+  emitsTypeName?: string;
+}
+
+export interface WorkflowOutputSurface {
+  enabled: boolean;
+  type?: "response" | "checkpoint";
+  rationale: string;
+  publication?: string;
+}
+
+export interface InspectBriefResult {
+  status: ToolStatus;
+  workId: string;
+  title: string;
+  pattern: string;
+  primaryGoal: string;
+  detectedConcerns: TechnicalConcern["concern"][];
+  recommendedNextTool: string;
+  normalizedFacts?: {
+    transport?: Transport;
+    platform?: Platform;
+    runtimeLayout?: RuntimeLayout;
+    asyncMode: AsyncMode;
+    questionCount: number;
+    contractQuestionCount: number;
+  };
+  extractedEntities?: {
+    messageTypes: string[];
+    stepIds: string[];
+    aspectKeys: string[];
+  };
+  inferredWorkflowPattern?: {
+    kind: string;
+    rationale: string;
+  };
+  cachedAnalysis?: {
+    createdAt: string;
+    updatedAt: string;
+  };
+}
+
+export interface DraftProtocolResult {
+  status: ToolStatus;
+  workId: string;
+  protocolKind: string;
+  businessSteps: BusinessStep[];
+  boundaries: WorkflowBoundary[];
+  resumeSurface: WorkflowResumeSurface;
+  inputSurface: WorkflowInputSurface;
+  outputSurface: WorkflowOutputSurface;
+  technicalConcerns: TechnicalConcern[];
+  futureStepCandidates: string[];
+  remainingQuestionsCount: number;
+  recommendedNextTool: string;
+  semanticQuestions?: Question[];
+  stepRationales?: string[];
+  aggregateTransitions?: Array<{
+    stepId: string;
+    inputTypeName: string;
+    outputTypeName: string;
+    kind?: StepKind;
+    cardinality: StepCardinality;
+  }>;
+}
+
+export interface DraftContractsResult {
+  status: ToolStatus;
+  workId: string;
+  scopedSteps: WorkflowContractScope[];
+  scopedBoundaries?: WorkflowBoundary[];
+  contractQuestions: ContractQuestion[];
+  semanticQuestions?: Question[];
+  proposedContracts: StepContract[];
+  remainingQuestionsCount: number;
+  recommendedNextTool: string;
+  proposedMessages?: MessageCatalogEntry[];
+}
+
+export interface ResolveContractsResult {
+  status: ToolStatus;
+  workId: string;
+  updatedSteps: string[];
+  remainingQuestionsCount: number;
+  recommendedNextTool: string;
+  proposedContracts?: StepContract[];
+  unresolvedContractQuestions?: ContractQuestion[];
+  unresolvedSemanticQuestions?: Question[];
+}
+
+export interface CompileScaffoldPlanResult {
+  status: ToolStatus;
+  workId: string;
+  ready: boolean;
+  appName: string;
+  basePackage: string;
+  stepCount: number;
+  questionCount: number;
+  derivedConfigSummary: WorkflowConfigSummary;
+  recommendedNextTool: string;
+  derivedConfig?: DerivedConfig;
+  derivedConfigYaml?: string;
+  validationFindings?: string[];
+}
+
+export interface GenerateScaffoldResult {
+  status: ToolStatus;
+  workId: string;
+  artifact?: ArtifactReference;
+  generatedPath?: string;
+  generatedConfigSummary?: WorkflowConfigSummary;
+}
+
+export interface WorkState {
+  workId: string;
+  input: WorkflowBriefInput;
+  answers: Record<string, ContractAnswerRecord>;
+  inspection: AnalyzeResult;
+  plannerDraft?: PlannerDraft;
+  analysis?: AnalyzeResult;
+  createdAt: string;
+  updatedAt: string;
+  generationCount: number;
+  lastArtifact?: ArtifactReference;
 }
 
 export interface SessionState {
