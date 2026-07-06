@@ -10,6 +10,7 @@ import {
   analyzeBriefTool,
   BriefSessionService,
   createLocalBridgeHandlers,
+  createTpfMcpServer,
   createMcpSamplingPlannerClient,
   createHeuristicPlannerClient,
   createOpenAiPlannerClient,
@@ -17,6 +18,7 @@ import {
   formatBridgeConfigSummary,
   readBridgeConfig,
   scaffoldFromBriefTool,
+  WorkflowService,
 } from "../src/index.js";
 import { InMemoryArtifactStore, InMemorySessionStore, LocalFileArtifactStore } from "../src/storage.js";
 import { generateScaffoldZip, validateDerivedConfig } from "../src/template-bridge.js";
@@ -94,9 +96,210 @@ test("analyze_brief defaults deployment choices and returns topology alternative
     ["MONOLITH", "PIPELINE_RUNTIME", "MODULAR"]
   );
   assert.equal(result.contractQuestions.length, 0);
-  assert.equal(result.businessSteps[0].id, "validate-customer-request");
-  assert.equal(result.stepContracts[0].inputTypeName, "CustomerRequest");
-  assert.equal(result.messageCatalog[0].id, "message.customerrequest");
+  assert.equal(result.businessSteps[0].id, "validate-request");
+  assert.equal(result.stepContracts[0].inputTypeName, "Request");
+  assert.equal(result.messageCatalog[0].id, "message.request");
+});
+
+test("createTpfMcpServer exposes the small-model-first workflow by default", async () => {
+  const server = createTpfMcpServer({
+    inspectBrief: async () => ({
+      status: "needs_input",
+      workId: "work-1",
+      title: "Example",
+      pattern: "progression-protocol",
+      primaryGoal: "Draft a workflow",
+      detectedConcerns: [],
+      recommendedNextTool: "draft_protocol"
+    }),
+    draftProtocol: async () => ({
+      status: "needs_input",
+      workId: "work-1",
+      protocolKind: "progression-protocol",
+      businessSteps: [],
+      boundaries: [],
+      resumeSurface: { enabled: true, rationale: "Repeated invocations over durable state." },
+      inputSurface: { enabled: true, type: "request", rationale: "Direct request input." },
+      outputSurface: { enabled: true, type: "response", rationale: "Direct response output." },
+      technicalConcerns: [],
+      futureStepCandidates: [],
+      remainingQuestionsCount: 1,
+      recommendedNextTool: "draft_contracts"
+    }),
+    draftContracts: async () => ({
+      status: "needs_input",
+      workId: "work-1",
+      scopedSteps: [],
+      contractQuestions: [],
+      proposedContracts: [],
+      remainingQuestionsCount: 1,
+      recommendedNextTool: "resolve_contracts"
+    }),
+    resolveContracts: async () => ({
+      status: "ready",
+      workId: "work-1",
+      updatedSteps: [],
+      remainingQuestionsCount: 0,
+      recommendedNextTool: "compile_scaffold_plan"
+    }),
+    compileScaffoldPlan: async () => ({
+      status: "ready",
+      workId: "work-1",
+      ready: true,
+      appName: "Example",
+      basePackage: "com.example",
+      stepCount: 0,
+      questionCount: 0,
+      derivedConfigSummary: {
+        stepNames: [],
+        aspects: []
+      },
+      recommendedNextTool: "generate_scaffold"
+    }),
+    generateScaffold: async () => ({
+      status: "generated",
+      workId: "work-1"
+    }),
+    analyzeBrief: async () => {
+      throw new Error("unused");
+    },
+    scaffoldFromBrief: async () => {
+      throw new Error("unused");
+    },
+    startBriefSession: async () => {
+      throw new Error("unused");
+    },
+    answerContractQuestions: async () => {
+      throw new Error("unused");
+    },
+    getBriefSession: async () => {
+      throw new Error("unused");
+    },
+    generateScaffoldSession: async () => {
+      throw new Error("unused");
+    }
+  });
+
+  const toolNames = Object.keys((server as unknown as { _registeredTools: Record<string, unknown> })._registeredTools).sort();
+  assert.deepEqual(toolNames, [
+    "compile_scaffold_plan",
+    "draft_contracts",
+    "draft_protocol",
+    "generate_scaffold",
+    "inspect_brief",
+    "resolve_contracts"
+  ]);
+  assert.equal(toolNames.includes("start_brief_session"), false);
+  assert.equal(toolNames.includes("answer_contract_questions"), false);
+  assert.equal(toolNames.includes("get_brief_session"), false);
+  assert.equal(toolNames.includes("analyze_brief"), false);
+});
+
+test("workflow service drafts explicit await and checkpoint boundaries before compilation", async () => {
+  const planner = {
+    async planInitialBrief() {
+      return buildCheckpointPlannerDraft();
+    },
+    async revisePlanWithAnswers() {
+      return buildCheckpointPlannerDraft();
+    }
+  };
+  const service = new WorkflowService(new LocalFileArtifactStore(), planner);
+
+  const inspected = await service.inspectBrief({
+    briefText: "Validate a transfer, await an external fraud decision, finalize it, and publish a downstream checkpoint."
+  });
+  assert.equal(inspected.recommendedNextTool, "draft_protocol");
+
+  const protocol = await service.draftProtocol({ workId: inspected.workId, detail: "full" });
+  assert.equal(protocol.protocolKind, "boundary-oriented");
+  assert.deepEqual(protocol.boundaries.map((boundary) => boundary.type).sort(), ["await", "checkpoint"]);
+  assert.equal(protocol.inputSurface.type, "request");
+  assert.equal(protocol.outputSurface.type, "checkpoint");
+  assert.equal(protocol.resumeSurface.enabled, false);
+  assert.ok(protocol.businessSteps.some((step) => step.kind === "await"));
+
+  const compiled = await service.compileScaffoldPlan({ workId: inspected.workId, detail: "full" });
+  assert.equal(compiled.ready, true);
+  assert.equal(compiled.recommendedNextTool, "generate_scaffold");
+  assert.equal(compiled.derivedConfig?.output?.checkpoint?.publication, "transfer.finalized");
+
+  const generated = await service.generateScaffold({ workId: inspected.workId });
+  assert.equal(generated.status, "generated");
+  assert.ok(generated.generatedPath);
+});
+
+test("workflow service surfaces scoped semantic questions and blocks compile until answered", async () => {
+  const ambiguousDraft = buildAwaitPlannerDraft();
+  ambiguousDraft.questions = [
+    {
+      id: "question.await-transport",
+      key: "asyncMode",
+      prompt: "Choose the await transport for Await Fraud Decision.",
+      stepId: "await-fraud-decision",
+      stepName: "Await Fraud Decision"
+    }
+  ];
+  const planner = {
+    async planInitialBrief() {
+      return ambiguousDraft;
+    },
+    async revisePlanWithAnswers() {
+      return buildAwaitPlannerDraft();
+    }
+  };
+  const service = new WorkflowService(new LocalFileArtifactStore(), planner);
+
+  const inspected = await service.inspectBrief({
+    briefText: "Validate a transfer, wait for an external fraud decision, then finalize it."
+  });
+
+  const protocol = await service.draftProtocol({ workId: inspected.workId });
+  assert.equal(protocol.remainingQuestionsCount, 1);
+  assert.equal(protocol.semanticQuestions?.map((question) => question.id)[0], "question.await-transport");
+
+  const contracts = await service.draftContracts({ workId: inspected.workId });
+  assert.equal(contracts.scopedBoundaries?.map((boundary) => boundary.type)[0], "await");
+  assert.equal(contracts.semanticQuestions?.map((question) => question.id)[0], "question.await-transport");
+  assert.equal(contracts.recommendedNextTool, "resolve_contracts");
+
+  const blockedCompile = await service.compileScaffoldPlan({ workId: inspected.workId, detail: "full" });
+  assert.equal(blockedCompile.ready, false);
+  assert.equal(blockedCompile.recommendedNextTool, "draft_contracts");
+
+  const resolved = await service.resolveContracts({
+    workId: inspected.workId,
+    answers: [
+      {
+        questionId: "question.await-transport",
+        values: ["webhook"]
+      }
+    ],
+    detail: "full"
+  });
+  assert.equal(resolved.remainingQuestionsCount, 0);
+
+  const compiled = await service.compileScaffoldPlan({ workId: inspected.workId });
+  assert.equal(compiled.ready, true);
+});
+
+test("workflow service exposes object input as a first-class boundary surface", async () => {
+  const planner = {
+    async planInitialBrief() {
+      return buildObjectInputPlannerDraft();
+    },
+    async revisePlanWithAnswers() {
+      return buildObjectInputPlannerDraft();
+    }
+  };
+  const service = new WorkflowService(new LocalFileArtifactStore(), planner);
+
+  const inspected = await service.inspectBrief({
+    briefText: "Consume documents from object storage and parse them."
+  });
+  const protocol = await service.draftProtocol({ workId: inspected.workId });
+  assert.equal(protocol.inputSurface.type, "object-input");
+  assert.equal(protocol.boundaries.map((boundary) => boundary.type)[0], "object-input");
 });
 
 test("start_brief_session returns structured contract questions for onboarding briefs", async () => {
@@ -161,7 +364,7 @@ test("openai-compatible planner adapter parses structured planner drafts", async
 
   const draft = await planner.planInitialBrief({ briefText: structuredBackendBrief });
   assert.equal(draft.title, initialDraft.title);
-  assert.equal(draft.pipelineSteps[0]?.name, "Validate Customer Request");
+  assert.equal(draft.pipelineSteps[0]?.name, "Validate Request");
   assert.deepEqual(draft.queries?.["recent-customer-by-id"].jpa.where.status, { in: ["ACTIVE", "PENDING"] });
   assert.deepEqual(draft.queries?.["recent-customer-by-id"].jpa.orderBy, { createdAt: "DESC" });
   assert.equal(draft.queries?.["recent-customer-by-id"].jpa.limit, 1);
@@ -388,8 +591,8 @@ test("planner analysis rejects trimmed duplicate query and object source ids", a
   );
 });
 
-test("ollama-native planner adapter uses /api/chat structured outputs and parses planner drafts", async () => {
-  const initialDraft = await createHeuristicPlannerClient().planInitialBrief({ briefText: structuredBackendBrief });
+test("ollama-native planner adapter uses /api/chat streaming semantic-intent prompting and compiles planner drafts", async () => {
+  const semanticIntent = buildSemanticIntentDraft();
   let requestUrl = "";
   let requestHeaders: Record<string, string> = {};
   let requestBody = "";
@@ -397,6 +600,7 @@ test("ollama-native planner adapter uses /api/chat structured outputs and parses
     endpoint: "http://192.168.50.201:11434/v1",
     model: "qwen3:4b",
     token: "ollama",
+    profile: "compact",
     providerMode: "ollama-native",
     fetchImpl: async (input, init) => {
       const request = new Request(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url, init);
@@ -407,7 +611,7 @@ test("ollama-native planner adapter uses /api/chat structured outputs and parses
         model: "qwen3:4b",
         message: {
           role: "assistant",
-          content: JSON.stringify(initialDraft)
+          content: JSON.stringify(semanticIntent)
         },
         done: true
       }), {
@@ -418,17 +622,433 @@ test("ollama-native planner adapter uses /api/chat structured outputs and parses
   });
 
   const draft = await planner.planInitialBrief({ briefText: structuredBackendBrief });
-  assert.equal(draft.title, initialDraft.title);
+  assert.equal(draft.title, semanticIntent.title);
   assert.equal(requestUrl, "http://192.168.50.201:11434/api/chat");
   assert.equal("authorization" in requestHeaders, false);
   const payload = JSON.parse(requestBody) as {
     stream: boolean;
-    format: Record<string, unknown>;
+    options: { num_predict: number };
     messages: Array<{ role: string; content: string }>;
   };
-  assert.equal(payload.stream, false);
-  assert.equal(payload.format.type, "object");
-  assert.ok(payload.messages[1]?.content.includes("Return JSON matching this schema exactly:"));
+  assert.equal(payload.stream, true);
+  assert.equal("format" in payload, false);
+  assert.equal(payload.options.num_predict, 4096);
+  assert.match(payload.messages[1]?.content || "", /Return JSON only\./);
+  assert.match(payload.messages[1]?.content || "", /single-pass/i);
+  assert.match(payload.messages[1]?.content || "", /next state or status/i);
+  assert.doesNotMatch(payload.messages[1]?.content || "", /Return JSON matching this schema exactly:/);
+});
+
+test("ollama-native planner adapter concatenates streamed semantic-intent chunks", async () => {
+  const semanticIntent = buildSemanticIntentDraft();
+  const serialized = JSON.stringify(semanticIntent);
+  const midpoint = Math.floor(serialized.length / 2);
+  const planner = createOpenAiPlannerClient({
+    endpoint: "http://localhost:11434",
+    model: "qwen3.5:4b",
+    token: "ollama",
+    providerMode: "ollama-native",
+    fetchImpl: async () => new Response(
+      [
+        JSON.stringify({ message: { role: "assistant", content: serialized.slice(0, midpoint) }, done: false }),
+        JSON.stringify({ message: { role: "assistant", content: serialized.slice(midpoint) }, done: false }),
+        JSON.stringify({ message: { role: "assistant", content: "" }, done: true })
+      ].join("\n"),
+      {
+        status: 200,
+        headers: { "content-type": "application/x-ndjson" }
+      }
+    )
+  });
+
+  const draft = await planner.planInitialBrief({ briefText: structuredBackendBrief });
+  assert.equal(draft.title, semanticIntent.title);
+});
+
+test("ollama-native planner adapter extracts embedded semantic-intent JSON from reasoning text", async () => {
+  const semanticIntent = buildSemanticIntentDraft();
+  const planner = createOpenAiPlannerClient({
+    endpoint: "http://localhost:11434",
+    model: "qwen3.5:4b",
+    token: "ollama",
+    providerMode: "ollama-native",
+    fetchImpl: async () => new Response(JSON.stringify({
+      model: "qwen3.5:4b",
+      message: {
+        role: "assistant",
+        content: `Here is my reasoning before the final answer.\n\n${JSON.stringify(semanticIntent, null, 2)}\n`
+      },
+      done: true
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    })
+  });
+
+  const draft = await planner.planInitialBrief({ briefText: structuredBackendBrief });
+  assert.equal(draft.title, semanticIntent.title);
+});
+
+test("ollama-native planner adapter strips fenced semantic-intent json wrappers", async () => {
+  const semanticIntent = buildSemanticIntentDraft();
+  const planner = createOpenAiPlannerClient({
+    endpoint: "http://localhost:11434",
+    model: "qwen3.5:4b",
+    token: "ollama",
+    providerMode: "ollama-native",
+    fetchImpl: async () => new Response(JSON.stringify({
+      model: "qwen3.5:4b",
+      message: {
+        role: "assistant",
+        content: `\\\`\\\`\\\`json\n${JSON.stringify(semanticIntent, null, 2)}\n\\\`\\\`\\\``
+      },
+      done: true
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    })
+  });
+
+  const draft = await planner.planInitialBrief({ briefText: structuredBackendBrief });
+  assert.equal(draft.title, semanticIntent.title);
+});
+
+test("ollama-native planner adapter compiles semantic intent into coherent internal planner steps", async () => {
+  const planner = createOpenAiPlannerClient({
+    endpoint: "http://localhost:11434",
+    model: "qwen3.5:4b",
+    token: "ollama",
+    providerMode: "ollama-native",
+    fetchImpl: async () => new Response(JSON.stringify({
+      model: "qwen3.5:4b",
+      message: {
+        role: "assistant",
+        content: JSON.stringify(buildSemanticIntentDraft())
+      },
+      done: true
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    })
+  });
+
+  const draft = await planner.planInitialBrief({ briefText: structuredBackendBrief });
+  assert.equal(draft.businessSteps[0]?.name, "Validate Registration");
+  assert.equal(draft.pipelineSteps[0]?.name, "Validate Registration");
+  assert.equal(draft.stepContracts[0]?.stepName, "Validate Registration");
+  assert.equal(draft.stepContracts[0]?.continuity, "coherent");
+});
+
+test("ollama-native planner adapter keeps expansion flow roles coherent across compiled step views", async () => {
+  const planner = createOpenAiPlannerClient({
+    endpoint: "http://localhost:11434",
+    model: "qwen3.5:4b",
+    token: "ollama",
+    providerMode: "ollama-native",
+    fetchImpl: async () => new Response(JSON.stringify({
+      model: "qwen3.5:4b",
+      message: {
+        role: "assistant",
+        content: JSON.stringify(buildSemanticIntentDraft({
+          steps: [
+            {
+              id: "profile-information-collection",
+              name: "Profile Information Collection",
+              purpose: "Expand the current profile aggregate into per-segment records for downstream handling.",
+              input: "CurrentProfileState",
+              output: "ProfileSegmentRecord",
+              cardinality: "EXPANSION",
+              kind: "internal"
+            }
+          ],
+          messages: [
+            { name: "CurrentProfileState", fields: [{ name: "userId", type: "uuid" }] },
+            { name: "ProfileSegmentRecord", fields: [{ name: "segmentId", type: "uuid" }] }
+          ]
+        }))
+      },
+      done: true
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    })
+  });
+
+  const draft = await planner.planInitialBrief({ briefText: structuredBackendBrief });
+  assert.equal(draft.businessSteps[0]?.flowRole, "expansion");
+  assert.equal(draft.pipelineSteps[0]?.flowRole, "expansion");
+  assert.equal(draft.stepContracts[0]?.flowRole, "expansion");
+  assert.doesNotThrow(() => analyzePlannerDraft({ briefText: structuredBackendBrief }, draft));
+});
+
+test("ollama-native planner adapter compiles progression-protocol workflows into linear state advancement plus resume surface", async () => {
+  const planner = createOpenAiPlannerClient({
+    endpoint: "http://localhost:11434",
+    model: "qwen3.5:4b",
+    token: "ollama",
+    providerMode: "ollama-native",
+    fetchImpl: async () => new Response(JSON.stringify({
+      model: "qwen3.5:4b",
+      message: {
+        role: "assistant",
+        content: JSON.stringify(buildSemanticIntentDraft({
+          title: "Incremental Onboarding Protocol",
+          primaryGoal: "Advance onboarding state through repeated resumable submissions.",
+          steps: [
+            {
+              id: "register-account",
+              name: "Register Account",
+              purpose: "Create the initial draft account and return the draft state.",
+              input: "RegisterCommand",
+              output: "DraftAccountState",
+              cardinality: "ONE_TO_ONE",
+              kind: "command"
+            },
+            {
+              id: "resume-onboarding-state",
+              name: "Resume Onboarding State",
+              purpose: "Load the current onboarding state when the user returns later.",
+              input: "ResumeOnboardingRequest",
+              output: "CurrentOnboardingState",
+              cardinality: "ONE_TO_ONE",
+              kind: "internal"
+            },
+            {
+              id: "submit-onboarding-segment",
+              name: "Submit Onboarding Segment",
+              purpose: "Apply a partial onboarding command to the current state and return the updated state.",
+              input: "CurrentOnboardingState",
+              output: "UpdatedOnboardingState",
+              cardinality: "ONE_TO_ONE",
+              kind: "command"
+            },
+            {
+              id: "finalize-onboarding",
+              name: "Finalize Onboarding",
+              purpose: "Advance the current onboarding state to pending verification once all required fields are complete.",
+              input: "UpdatedOnboardingState",
+              output: "PendingVerificationState",
+              cardinality: "ONE_TO_ONE",
+              kind: "command"
+            }
+          ],
+          messages: [
+            { name: "RegisterCommand", fields: [{ name: "email", type: "string" }, { name: "password", type: "string" }] },
+            { name: "DraftAccountState", fields: [{ name: "draftAccountId", type: "uuid" }, { name: "status", type: "string" }] },
+            { name: "ResumeOnboardingRequest", fields: [{ name: "userId", type: "uuid" }] },
+            { name: "CurrentOnboardingState", fields: [{ name: "draftAccountId", type: "uuid" }, { name: "status", type: "string" }] },
+            { name: "UpdatedOnboardingState", fields: [{ name: "draftAccountId", type: "uuid" }, { name: "status", type: "string" }, { name: "firstName", type: "string" }] },
+            { name: "PendingVerificationState", fields: [{ name: "draftAccountId", type: "uuid" }, { name: "status", type: "string" }] }
+          ]
+        }))
+      },
+      done: true
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    })
+  });
+
+  const draft = await planner.planInitialBrief({ briefText: onboardingBrief });
+  assert.equal(draft.pipelineSteps.some((step) => step.id === "resume-onboarding-state"), false);
+  assert.equal(draft.businessSteps.find((step) => step.id === "resume-onboarding-state")?.flowRole, "resume");
+  assert.equal(draft.stepContracts.find((contract) => contract.stepId === "resume-onboarding-state")?.flowRole, "resume");
+  assert.ok(draft.technicalConcerns?.some((concern) => concern.concern === "replayability"));
+  assert.ok(draft.technicalConcerns?.some((concern) => concern.concern === "idempotency"));
+  assert.ok(draft.technicalConcerns?.some((concern) => concern.concern === "persistence"));
+  assert.ok(draft.technicalConcerns?.some((concern) => concern.concern === "state-transition"));
+  assert.match(draft.assumptions.join("\n"), /replayable state-advancing invocations/i);
+  assert.doesNotThrow(() => analyzePlannerDraft({ briefText: onboardingBrief }, draft));
+});
+
+test("ollama-native planner adapter realigns loop-like partial submissions into monotonic state progression", async () => {
+  const planner = createOpenAiPlannerClient({
+    endpoint: "http://localhost:11434",
+    model: "qwen3.5:4b",
+    token: "ollama",
+    providerMode: "ollama-native",
+    fetchImpl: async () => new Response(JSON.stringify({
+      model: "qwen3.5:4b",
+      message: {
+        role: "assistant",
+        content: JSON.stringify(buildSemanticIntentDraft({
+          title: "Profile Completion Protocol",
+          primaryGoal: "Advance profile completion across multiple partial submissions.",
+          steps: [
+            {
+              id: "register-account",
+              name: "Register Account",
+              purpose: "Create the draft account.",
+              input: "RegisterCommand",
+              output: "DraftAccountState",
+              cardinality: "ONE_TO_ONE",
+              kind: "command"
+            },
+            {
+              id: "submit-personal-profile",
+              name: "Submit Personal Profile",
+              purpose: "Apply the next partial onboarding command and return the updated aggregate state.",
+              input: "FirstNameLastNameAddress",
+              output: "UpdatedOnboardingState",
+              cardinality: "ONE_TO_ONE",
+              kind: "command"
+            }
+          ],
+          messages: [
+            { name: "RegisterCommand", fields: [{ name: "email", type: "string" }] },
+            { name: "DraftAccountState", fields: [{ name: "draftAccountId", type: "uuid" }, { name: "status", type: "string" }] },
+            {
+              name: "FirstNameLastNameAddress",
+              fields: [
+                { name: "firstName", type: "string" },
+                { name: "lastName", type: "string" },
+                { name: "address", type: "string" }
+              ]
+            },
+            { name: "UpdatedOnboardingState", fields: [{ name: "draftAccountId", type: "uuid" }, { name: "status", type: "string" }] }
+          ]
+        }))
+      },
+      done: true
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    })
+  });
+
+  const draft = await planner.planInitialBrief({ briefText: onboardingBrief });
+  assert.equal(draft.businessSteps[1]?.inputTypeName, "DraftAccountState");
+  assert.equal(draft.pipelineSteps[1]?.inputTypeName, "DraftAccountState");
+  assert.equal(draft.stepContracts[1]?.inputTypeName, "DraftAccountState");
+  assert.equal(draft.stepContracts[1]?.continuity, "clarification_needed");
+  assert.equal(draft.contractQuestions.some((question) => question.id === "contract.submitpersonalprofile.progression"), true);
+  assert.match(draft.assumptions.join("\n"), /progression-protocol continuity/i);
+  assert.doesNotThrow(() => analyzePlannerDraft({ briefText: onboardingBrief }, draft));
+});
+
+test("ollama-native planner adapter compiles query, command, and await kinds into valid downstream planner structures", async () => {
+  const planner = createOpenAiPlannerClient({
+    endpoint: "http://localhost:11434",
+    model: "gemma4:12b-it-qat",
+    token: "ollama",
+    providerMode: "ollama-native",
+    fetchImpl: async () => new Response(JSON.stringify({
+      model: "gemma4:12b-it-qat",
+      message: {
+        role: "assistant",
+        content: JSON.stringify(buildSemanticIntentDraft({
+          steps: [
+            {
+              id: "lookup-status",
+              name: "Lookup Status",
+              purpose: "Load the current onboarding state.",
+              input: "LookupStatusRequest",
+              output: "LookupStatusResult",
+              cardinality: "ONE_TO_ONE",
+              kind: "query"
+            },
+            {
+              id: "dispatch-welcome",
+              name: "Dispatch Welcome",
+              purpose: "Send the welcome flow to the external provider.",
+              input: "LookupStatusResult",
+              output: "WelcomeDispatchResult",
+              cardinality: "SIDE_EFFECT",
+              kind: "command"
+            },
+            {
+              id: "await-verification",
+              name: "Await Verification",
+              purpose: "Pause until verification completes.",
+              input: "WelcomeDispatchResult",
+              output: "VerificationCompleted",
+              cardinality: "SIDE_EFFECT",
+              kind: "await"
+            }
+          ],
+          messages: [
+            { name: "LookupStatusRequest", fields: [{ name: "userId", type: "uuid" }] },
+            { name: "LookupStatusResult", fields: [{ name: "status", type: "string" }] },
+            { name: "WelcomeDispatchResult", fields: [{ name: "requestId", type: "string" }] },
+            { name: "VerificationCompleted", fields: [{ name: "verified", type: "boolean" }] }
+          ]
+        }))
+      },
+      done: true
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    })
+  });
+
+  const draft = await planner.planInitialBrief({ briefText: structuredBackendBrief });
+  assert.equal(draft.queries?.["lookup-status"]?.inputType, "LookupStatusRequest");
+  assert.equal(draft.pipelineSteps.find((step) => step.id === "dispatch-welcome")?.cardinality, "ONE_TO_ONE");
+  assert.equal(draft.businessSteps[1]?.command, "dispatchwelcome.execute");
+  assert.equal(draft.businessSteps[1]?.commandIdGenerator, "LookupStatusResultCommandIdGenerator");
+  assert.equal(draft.pipelineSteps.find((step) => step.id === "await-verification")?.cardinality, "SIDE_EFFECT");
+  assert.equal(draft.businessSteps[2]?.timeout, "PT15M");
+  assert.deepEqual(draft.businessSteps[2]?.idempotencyKeyFields, ["requestId"]);
+  assert.ok(draft.businessSteps[2]?.await);
+  assert.doesNotThrow(() => analyzePlannerDraft({ briefText: structuredBackendBrief }, draft));
+});
+
+test("ollama-native planner adapter converts free-form semantic questions into contract questions", async () => {
+  const planner = createOpenAiPlannerClient({
+    endpoint: "http://localhost:11434",
+    model: "gemma4:12b-it-qat",
+    token: "ollama",
+    providerMode: "ollama-native",
+    fetchImpl: async () => new Response(JSON.stringify({
+      model: "gemma4:12b-it-qat",
+      message: {
+        role: "assistant",
+        content: JSON.stringify(buildSemanticIntentDraft({
+          questions: [
+            "Which profile fields are mandatory for the registration draft?"
+          ]
+        }))
+      },
+      done: true
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    })
+  });
+
+  const draft = await planner.planInitialBrief({ briefText: structuredBackendBrief });
+  assert.equal(draft.contractQuestions[0]?.key, "stepContracts");
+  assert.equal(draft.contractQuestions[0]?.kind, "fields");
+  assert.match(draft.contractQuestions[0]?.prompt || "", /mandatory/i);
+});
+
+test("ollama-native planner adapter synthesizes missing messages and adds fallback contract questions", async () => {
+  const planner = createOpenAiPlannerClient({
+    endpoint: "http://localhost:11434",
+    model: "gemma4:12b-it-qat",
+    token: "ollama",
+    providerMode: "ollama-native",
+    fetchImpl: async () => new Response(JSON.stringify({
+      model: "gemma4:12b-it-qat",
+      message: {
+        role: "assistant",
+        content: JSON.stringify(buildSemanticIntentDraft({
+          messages: []
+        }))
+      },
+      done: true
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    })
+  });
+
+  const draft = await planner.planInitialBrief({ briefText: structuredBackendBrief });
+  assert.equal(draft.messageCatalog.some((message) => message.name === "RegistrationRequest"), true);
+  assert.equal(draft.messageCatalog.some((message) => message.name === "RegistrationValidated"), true);
+  assert.equal(draft.contractQuestions.some((question) => question.messageTypeName === "RegistrationRequest"), true);
+  assert.equal(draft.contractQuestions.some((question) => question.messageTypeName === "RegistrationValidated"), true);
+  assert.equal(draft.stepContracts[0]?.continuity, "clarification_needed");
 });
 
 test("mcp-sampling planner adapter uses client sampling and parses planner drafts", async () => {
@@ -498,7 +1118,9 @@ test("openai-compatible planner prompt encodes TPF semantic guardrails", async (
   assert.match(body, /Persistence belongs to aspects\/plugins/i);
   assert.match(body, /step N\+1 input must equal step N output/i);
   assert.match(body, /resume or re-entry as a separate query\/resumption surface/i);
-  assert.match(body, /replayability, idempotency, and checkpoint hand-offs/i);
+  assert.match(body, /replayability, idempotency, persistence, encryption, and checkpoint hand-offs/i);
+  assert.match(body, /single-pass/i);
+  assert.match(body, /replayable state-advancing invocations/i);
   assert.match(body, /await steps/i);
 });
 
@@ -554,6 +1176,7 @@ test("compact planner profile uses a materially smaller prompt while preserving 
   const compactBody = requests[1] || "";
   assert.ok(compactBody.length < fullBody.length);
   assert.match(compactBody, /await/i);
+  assert.match(compactBody, /durable state/i);
   assert.doesNotMatch(compactBody, /checkpoint hand-offs/i);
 });
 
@@ -724,8 +1347,8 @@ test("analyze_brief extracts a bounded title, appName, and basePackage from sing
   });
 
   assert.equal(result.pipelineSummary.title, "Secure & Incremental User Onboarding Profile Creation");
-  assert.equal(result.derivedConfig.appName, "OnboardingCreation");
-  assert.equal(result.derivedConfig.basePackage, "com.example.onboarding.creation");
+  assert.equal(result.derivedConfig.appName, "SecureUserOnboardingProfileCreation");
+  assert.equal(result.derivedConfig.basePackage, "com.example.secure.user.onboarding.profile.creation");
   assert.ok(result.derivedConfig.basePackage.length <= 80);
 });
 
@@ -778,7 +1401,7 @@ test("answer_contract_questions resolves onboarding contract ambiguity and enabl
   assert.ok(answered.messageCatalog.some((message) =>
     message.name === "AddressStageState" && message.fields.some((field) => field.name === "postalCode")));
 
-  const generated = await handlers.generateScaffold({
+  const generated = await handlers.generateScaffoldSession({
     sessionId: session.sessionId
   });
   assert.equal(generated.status, "generated");
@@ -798,7 +1421,7 @@ test("answer_contract_questions resolves onboarding contract ambiguity and enabl
   const runtimeMappingYaml = await zip.file("config/pipeline.runtime.yaml")!.async("string");
   const runtimeMapping = YAML.load(runtimeMappingYaml) as { layout?: string };
   assertNoDuplicateMessageFields(pipelineConfig);
-  assert.equal(pipelineConfig.basePackage, "com.example.onboarding.creation");
+  assert.equal(pipelineConfig.basePackage, "com.example.secure.user.onboarding.profile.creation");
   assert.equal(runtimeMapping.layout, "monolith");
   assert.ok(pipelineConfig.steps.every((step) => !/^save\b/i.test(step.name)));
 });
@@ -1489,7 +2112,7 @@ test("get_brief_session returns persisted session state after answers are merged
   const reloaded = await handlers.getBriefSession({ sessionId: session.sessionId });
   assert.equal(reloaded.sessionId, session.sessionId);
   assert.equal(reloaded.status, "ready");
-  assert.equal(reloaded.businessSteps[0].name, "Validate Customer Request");
+  assert.equal(reloaded.businessSteps[0].name, "Validate Request");
 });
 
 test("scaffold_from_brief dry-run uses default deployment choices without writing files", async () => {
@@ -2259,7 +2882,7 @@ test("local bridge fails clearly when mcp-sampling is forced but the client lack
     }) as never
   );
 
-  assert.throws(
+  await assert.rejects(
     () => handlers.startBriefSession({ briefText: structuredBackendBrief }),
     /experimental mcp planner transport mcp-sampling is not supported/i
   );
@@ -2496,6 +3119,81 @@ function createPlannerProviderFetch(drafts: PlannerDraft[]): typeof fetch {
       status: 200,
       headers: { "content-type": "application/json" }
     });
+  };
+}
+
+function buildSemanticIntentDraft(
+  overrides: Partial<{
+    title: string;
+    primaryGoal: string;
+    steps: Array<{
+      id: string;
+      name: string;
+      purpose: string;
+      input: string;
+      output: string;
+      cardinality: "ONE_TO_ONE" | "EXPANSION" | "REDUCTION" | "SIDE_EFFECT";
+      kind: "internal" | "query" | "command" | "await";
+    }>;
+    messages: Array<{
+      name: string;
+      fields: Array<{ name: string; type: string }>;
+    }>;
+    assumptions: string[];
+    questions: string[];
+  }> = {}
+): {
+  title: string;
+  primaryGoal: string;
+  steps: Array<{
+    id: string;
+    name: string;
+    purpose: string;
+    input: string;
+    output: string;
+    cardinality: "ONE_TO_ONE" | "EXPANSION" | "REDUCTION" | "SIDE_EFFECT";
+    kind: "internal" | "query" | "command" | "await";
+  }>;
+  messages: Array<{
+    name: string;
+    fields: Array<{ name: string; type: string }>;
+  }>;
+  assumptions: string[];
+  questions: string[];
+} {
+  return {
+    title: overrides.title || "Secure User Onboarding Backend",
+    primaryGoal: overrides.primaryGoal || "Orchestrate secure user onboarding.",
+    steps: overrides.steps || [
+      {
+        id: "validate-registration",
+        name: "Validate Registration",
+        purpose: "Validate the incoming registration payload.",
+        input: "RegistrationRequest",
+        output: "RegistrationValidated",
+        cardinality: "ONE_TO_ONE",
+        kind: "internal"
+      }
+    ],
+    messages: overrides.messages || [
+      {
+        name: "RegistrationRequest",
+        fields: [
+          { name: "userId", type: "uuid" },
+          { name: "email", type: "string" }
+        ]
+      },
+      {
+        name: "RegistrationValidated",
+        fields: [
+          { name: "userId", type: "uuid" },
+          { name: "email", type: "string" },
+          { name: "validationPassed", type: "boolean" }
+        ]
+      }
+    ],
+    assumptions: overrides.assumptions || [],
+    questions: overrides.questions || []
   };
 }
 
