@@ -867,6 +867,100 @@ steps:
     expect(fs.existsSync(path.join(javaRoot, 'domain', 'RestaurantOrderAccepted.java'))).toBe(true);
   });
 
+  test('loadConfig accepts branch-aware union routing metadata', async () => {
+    const generator = new PipelineGenerator();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));
+    const configPath = path.join(tempDir, 'branch-routing.yaml');
+    fs.writeFileSync(configPath, `version: 2
+appName: OrderRouting
+basePackage: com.example.orderrouting
+transport: REST
+platform: COMPUTE
+runtimeLayout: MONOLITH
+messages:
+  OrderRequest:
+    fields:
+      - number: 1
+        name: orderId
+        type: uuid
+  PhysicalOrder:
+    fields:
+      - number: 1
+        name: orderId
+        type: uuid
+  DigitalOrder:
+    fields:
+      - number: 1
+        name: orderId
+        type: uuid
+  StockReserved:
+    fields:
+      - number: 1
+        name: orderId
+        type: uuid
+  LicenseProvisioned:
+    fields:
+      - number: 1
+        name: orderId
+        type: uuid
+  FinalizedOrder:
+    fields:
+      - number: 1
+        name: orderId
+        type: uuid
+unions:
+  OrderDecision:
+    variants:
+      physical:
+        number: 1
+        type: PhysicalOrder
+      digital:
+        number: 2
+        type: DigitalOrder
+  OrderCompletion:
+    variants:
+      stockReserved:
+        number: 1
+        type: StockReserved
+      licenseProvisioned:
+        number: 2
+        type: LicenseProvisioned
+steps:
+  - name: Classify Order
+    cardinality: ONE_TO_ONE
+    inputTypeName: OrderRequest
+    outputTypeName: OrderDecision
+  - name: Reserve Stock
+    cardinality: ONE_TO_ONE
+    inputTypeName: OrderDecision
+    outputTypeName: StockReserved
+    accepts:
+      - PhysicalOrder
+  - name: Provision License
+    cardinality: ONE_TO_ONE
+    inputTypeName: OrderDecision
+    outputTypeName: LicenseProvisioned
+    accepts:
+      - DigitalOrder
+  - name: Finalize Order
+    cardinality: ONE_TO_ONE
+    inputTypeName: OrderCompletion
+    outputTypeName: FinalizedOrder
+    accepts:
+      - StockReserved
+      - LicenseProvisioned
+    terminal: true
+`);
+
+    const loaded = generator.loadConfig(configPath);
+    const scaffold = generator.toScaffoldConfig(loaded);
+
+    expect(loaded.steps[1].accepts).toEqual(['PhysicalOrder']);
+    expect(loaded.steps[3].terminal).toBe(true);
+    expect(scaffold.steps[1].accepts).toEqual(['PhysicalOrder']);
+    expect(scaffold.steps[3].terminal).toBe(true);
+  });
+
   test('generateFromConfig scaffolds Quarkus Kafka await runtime wiring', async () => {
     const generator = new PipelineGenerator();
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-generator-'));

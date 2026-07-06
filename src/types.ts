@@ -282,6 +282,8 @@ export interface PipelineStep {
   cardinality: StepCardinality;
   inputTypeName: string;
   outputTypeName: string;
+  accepts?: string[];
+  terminal?: boolean;
   inboundMapper?: string;
   outboundMapper?: string;
   query?: string;
@@ -388,6 +390,8 @@ export interface BusinessStep {
   kind?: StepKind;
   inputTypeName: string;
   outputTypeName: string;
+  accepts?: string[];
+  terminal?: boolean;
   query?: string;
   capture?: QueryCapture;
   command?: string;
@@ -410,6 +414,8 @@ export interface StepContract {
   kind?: StepKind;
   inputTypeName: string;
   outputTypeName: string;
+  accepts?: string[];
+  terminal?: boolean;
   query?: string;
   capture?: QueryCapture;
   command?: string;
@@ -502,6 +508,7 @@ export interface PlannerDraft {
   businessSteps: BusinessStep[];
   pipelineSteps: PipelineStep[];
   messageCatalog: MessageCatalogEntry[];
+  unions?: Record<string, UnionDefinition>;
   stepContracts: StepContract[];
   contractQuestions: ContractQuestion[];
   futureStepCandidates: string[];
@@ -567,6 +574,24 @@ export interface WorkflowConfigSummary {
   runtimeLayout?: RuntimeLayout | LowercaseRuntimeLayout;
   stepNames: string[];
   aspects: string[];
+  unionNames?: string[];
+  branchingEnabled?: boolean;
+  terminalStepName?: string;
+}
+
+export interface PipelineBranchingMetadataStep {
+  index: number;
+  step: string;
+  inputTypeName: string;
+  outputTypeName: string;
+  acceptedContracts: string[];
+  producedContracts: string[];
+  terminal: boolean;
+}
+
+export interface PipelineBranchingMetadata {
+  terminalStepIndex: number;
+  steps: PipelineBranchingMetadataStep[];
 }
 
 export type WorkflowBoundaryType = "await" | "query" | "checkpoint" | "object-input";
@@ -600,6 +625,33 @@ export interface WorkflowBoundary {
   source?: string;
   emitsTypeName?: string;
   questionIds?: string[];
+}
+
+export interface WorkflowUnionDefinition {
+  name: string;
+  variants: Array<{
+    name: string;
+    type: string;
+    number: number;
+  }>;
+}
+
+export interface WorkflowBranchRoute {
+  stepId: string;
+  stepName: string;
+  inputTypeName: string;
+  outputTypeName: string;
+  accepts: string[];
+  producedContracts: string[];
+  terminal: boolean;
+}
+
+export interface WorkflowBranchingTopology {
+  enabled: boolean;
+  terminalStepId?: string;
+  terminalStepName?: string;
+  unions: WorkflowUnionDefinition[];
+  routes: WorkflowBranchRoute[];
 }
 
 export interface WorkflowResumeSurface {
@@ -660,6 +712,8 @@ export interface DraftProtocolResult {
   workId: string;
   protocolKind: string;
   businessSteps: BusinessStep[];
+  unions?: Record<string, UnionDefinition>;
+  branching?: WorkflowBranchingTopology;
   boundaries: WorkflowBoundary[];
   resumeSurface: WorkflowResumeSurface;
   inputSurface: WorkflowInputSurface;
@@ -687,6 +741,8 @@ export interface DraftContractsResult {
   contractQuestions: ContractQuestion[];
   semanticQuestions?: Question[];
   proposedContracts: StepContract[];
+  proposedUnions?: Record<string, UnionDefinition>;
+  branching?: WorkflowBranchingTopology;
   remainingQuestionsCount: number;
   recommendedNextTool: string;
   proposedMessages?: MessageCatalogEntry[];
@@ -715,6 +771,7 @@ export interface CompileScaffoldPlanResult {
   recommendedNextTool: string;
   derivedConfig?: DerivedConfig;
   derivedConfigYaml?: string;
+  branchingMetadata?: PipelineBranchingMetadata;
   validationFindings?: string[];
 }
 

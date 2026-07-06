@@ -302,6 +302,37 @@ test("workflow service exposes object input as a first-class boundary surface", 
   assert.equal(protocol.boundaries.map((boundary) => boundary.type)[0], "object-input");
 });
 
+test("workflow service exposes typed union branch topology for branch-aware protocols", async () => {
+  const planner = {
+    async planInitialBrief() {
+      return buildBranchAwarePlannerDraft();
+    },
+    async revisePlanWithAnswers() {
+      return buildBranchAwarePlannerDraft();
+    }
+  };
+  const service = new WorkflowService(new LocalFileArtifactStore(), planner);
+
+  const inspected = await service.inspectBrief({
+    briefText: "Classify an order, route physical and digital outcomes through different steps, then merge them."
+  });
+  const protocol = await service.draftProtocol({ workId: inspected.workId, detail: "full" });
+
+  assert.equal(protocol.branching?.enabled, true);
+  assert.deepEqual(protocol.branching?.unions.map((union) => union.name), ["OrderDecision", "OrderCompletion"]);
+  assert.deepEqual(protocol.branching?.routes[1]?.accepts, ["PhysicalOrder"]);
+  assert.equal(protocol.branching?.terminalStepName, "Finalize Order");
+
+  const contracts = await service.draftContracts({ workId: inspected.workId, detail: "full" });
+  assert.deepEqual(Object.keys(contracts.proposedUnions || {}), ["OrderDecision", "OrderCompletion"]);
+  assert.equal(contracts.branching?.routes.at(-1)?.terminal, true);
+
+  const compiled = await service.compileScaffoldPlan({ workId: inspected.workId, detail: "full" });
+  assert.equal(compiled.ready, true);
+  assert.equal(compiled.branchingMetadata?.terminalStepIndex, 4);
+  assert.equal(compiled.derivedConfigSummary.branchingEnabled, true);
+});
+
 test("start_brief_session returns structured contract questions for onboarding briefs", async () => {
   const { initialDraft } = buildOnboardingPlannerDrafts();
   const handlers = createLocalBridgeHandlers({
@@ -2289,6 +2320,24 @@ test("shared scaffold ZIP includes REST await union DTO and mapper helpers", asy
   assert.match(acceptedDomain, /import java\.util\.Map;/);
   assert.equal(pipelineConfig.steps[0].kind, "await");
   assert.ok(!fileNames.some((name) => name.startsWith("await-restaurant-decision-svc/")));
+});
+
+test("shared scaffold ZIP emits branching metadata for branch-aware union routing", async () => {
+  const config: DerivedConfig = buildBranchAwareConfig();
+  const validated = await validateDerivedConfig(config);
+  const zipBytes = await generateScaffoldZip(validated);
+  const zip = await JSZip.loadAsync(zipBytes);
+
+  assert.ok(zip.file("config/branching.json"));
+  const branching = JSON.parse(await zip.file("config/branching.json")!.async("string")) as {
+    terminalStepIndex: number;
+    steps: Array<{ step: string; acceptedContracts: string[]; terminal: boolean }>;
+  };
+
+  assert.equal(branching.terminalStepIndex, 4);
+  assert.equal(branching.steps[1]?.step, "Reserve Stock");
+  assert.deepEqual(branching.steps[1]?.acceptedContracts, ["PhysicalOrder"]);
+  assert.equal(branching.steps[4]?.terminal, true);
 });
 
 test("planner drafts that materialize persistence as business steps are rejected", async () => {
@@ -4356,6 +4405,215 @@ function buildRestaurantApprovalUnionConfig(): DerivedConfig {
         cardinality: "ONE_TO_ONE",
         inputTypeName: "RestaurantDecision",
         outputTypeName: "TerminalOrderState"
+      }
+    ]
+  };
+}
+
+function buildBranchAwarePlannerDraft(): PlannerDraft {
+  const config = buildBranchAwareConfig();
+  const messageCatalog = Object.entries(config.messages).map(([name, definition]) => ({
+    id: `message.${name.toLowerCase()}`,
+    name,
+    fields: definition.fields
+  }));
+
+  const businessSteps = [
+    {
+      id: "classify-order",
+      name: "Classify Order",
+      purpose: "Classify the order into a concrete business outcome.",
+      inputTypeName: "OrderRequest",
+      outputTypeName: "OrderDecision",
+      inputFields: config.messages.OrderRequest.fields,
+      outputFields: []
+    },
+    {
+      id: "reserve-stock",
+      name: "Reserve Stock",
+      purpose: "Reserve stock for physical orders.",
+      inputTypeName: "OrderDecision",
+      outputTypeName: "StockReserved",
+      accepts: ["PhysicalOrder"],
+      inputFields: [],
+      outputFields: config.messages.StockReserved.fields
+    },
+    {
+      id: "provision-license",
+      name: "Provision License",
+      purpose: "Provision a license for digital orders.",
+      inputTypeName: "OrderDecision",
+      outputTypeName: "LicenseProvisioned",
+      accepts: ["DigitalOrder"],
+      inputFields: [],
+      outputFields: config.messages.LicenseProvisioned.fields
+    },
+    {
+      id: "request-manual-review",
+      name: "Request Manual Review",
+      purpose: "Route flagged orders to manual review.",
+      inputTypeName: "OrderDecision",
+      outputTypeName: "ManualReviewRequested",
+      accepts: ["ManualReviewOrder"],
+      inputFields: [],
+      outputFields: config.messages.ManualReviewRequested.fields
+    },
+    {
+      id: "finalize-order",
+      name: "Finalize Order",
+      purpose: "Merge the branch outcomes into a finalized order result.",
+      inputTypeName: "OrderCompletion",
+      outputTypeName: "FinalizedOrder",
+      accepts: ["StockReserved", "LicenseProvisioned", "ManualReviewRequested"],
+      terminal: true,
+      inputFields: [],
+      outputFields: config.messages.FinalizedOrder.fields
+    }
+  ] satisfies PlannerDraft["businessSteps"];
+
+  const pipelineSteps = config.steps.map((step, index) => ({
+    id: businessSteps[index]!.id,
+    ...step
+  }));
+  const stepContracts = businessSteps.map((step) => ({
+    stepId: step.id,
+    stepName: step.name,
+    inputTypeName: step.inputTypeName,
+    outputTypeName: step.outputTypeName,
+    ...(step.accepts ? { accepts: step.accepts } : {}),
+    ...(step.terminal ? { terminal: true } : {}),
+    inputFields: step.inputFields,
+    outputFields: step.outputFields,
+    continuity: "coherent" as const,
+    rationale: `Contract for ${step.name}.`
+  }));
+
+  return {
+    title: "Order Routing",
+    primaryGoal: "Classify an order, route each concrete outcome through its branch, and merge the result linearly.",
+    businessSteps,
+    pipelineSteps,
+    messageCatalog,
+    unions: config.unions,
+    stepContracts,
+    contractQuestions: [],
+    futureStepCandidates: [],
+    assumptions: [],
+    transport: "REST",
+    platform: "COMPUTE",
+    runtimeLayout: "MONOLITH"
+  };
+}
+
+function buildBranchAwareConfig(): DerivedConfig {
+  return {
+    version: 2,
+    appName: "OrderRouting",
+    basePackage: "com.example.orderrouting",
+    transport: "REST",
+    platform: "COMPUTE",
+    runtimeLayout: "MONOLITH",
+    messages: {
+      OrderRequest: {
+        fields: [
+          { number: 1, name: "orderId", type: "uuid" },
+          { number: 2, name: "channel", type: "string" }
+        ]
+      },
+      PhysicalOrder: {
+        fields: [
+          { number: 1, name: "orderId", type: "uuid" },
+          { number: 2, name: "sku", type: "string" }
+        ]
+      },
+      DigitalOrder: {
+        fields: [
+          { number: 1, name: "orderId", type: "uuid" },
+          { number: 2, name: "licenseType", type: "string" }
+        ]
+      },
+      ManualReviewOrder: {
+        fields: [
+          { number: 1, name: "orderId", type: "uuid" },
+          { number: 2, name: "reviewReason", type: "string" }
+        ]
+      },
+      StockReserved: {
+        fields: [
+          { number: 1, name: "orderId", type: "uuid" },
+          { number: 2, name: "reservationId", type: "uuid" }
+        ]
+      },
+      LicenseProvisioned: {
+        fields: [
+          { number: 1, name: "orderId", type: "uuid" },
+          { number: 2, name: "licenseId", type: "uuid" }
+        ]
+      },
+      ManualReviewRequested: {
+        fields: [
+          { number: 1, name: "orderId", type: "uuid" },
+          { number: 2, name: "ticketId", type: "uuid" }
+        ]
+      },
+      FinalizedOrder: {
+        fields: [
+          { number: 1, name: "orderId", type: "uuid" },
+          { number: 2, name: "status", type: "string" }
+        ]
+      }
+    },
+    unions: {
+      OrderDecision: {
+        variants: {
+          physical: { number: 1, type: "PhysicalOrder" },
+          digital: { number: 2, type: "DigitalOrder" },
+          manualReview: { number: 3, type: "ManualReviewOrder" }
+        }
+      },
+      OrderCompletion: {
+        variants: {
+          stockReserved: { number: 1, type: "StockReserved" },
+          licenseProvisioned: { number: 2, type: "LicenseProvisioned" },
+          manualReviewRequested: { number: 3, type: "ManualReviewRequested" }
+        }
+      }
+    },
+    steps: [
+      {
+        name: "Classify Order",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "OrderRequest",
+        outputTypeName: "OrderDecision"
+      },
+      {
+        name: "Reserve Stock",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "OrderDecision",
+        outputTypeName: "StockReserved",
+        accepts: ["PhysicalOrder"]
+      },
+      {
+        name: "Provision License",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "OrderDecision",
+        outputTypeName: "LicenseProvisioned",
+        accepts: ["DigitalOrder"]
+      },
+      {
+        name: "Request Manual Review",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "OrderDecision",
+        outputTypeName: "ManualReviewRequested",
+        accepts: ["ManualReviewOrder"]
+      },
+      {
+        name: "Finalize Order",
+        cardinality: "ONE_TO_ONE",
+        inputTypeName: "OrderCompletion",
+        outputTypeName: "FinalizedOrder",
+        accepts: ["StockReserved", "LicenseProvisioned", "ManualReviewRequested"],
+        terminal: true
       }
     ]
   };

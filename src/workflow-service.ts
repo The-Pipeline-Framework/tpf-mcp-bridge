@@ -1,5 +1,6 @@
 import { materializeContractAnswer } from "./contract-answers.js";
 import { analyzeBrief } from "./brief-analysis.js";
+import { buildBranchingMetadata, buildWorkflowBranchingTopology } from "./branching.js";
 import { analyzePlannerDraft } from "./planner-analysis.js";
 import type { PlannerClient } from "./planner-client.js";
 import { validateDerivedConfig } from "./template-bridge.js";
@@ -185,6 +186,7 @@ export class WorkflowService {
       ...(detail === "full" ? {
         derivedConfig: compiledConfig,
         derivedConfigYaml: state.analysis.derivedConfigYaml,
+        branchingMetadata: buildBranchingMetadata(compiledConfig),
         validationFindings
       } : {})
     };
@@ -281,11 +283,18 @@ function inferWorkflowPattern(analysis: AnalyzeResult): { kind: string; rational
   const concerns = new Set(analysis.technicalConcerns.map((concern) => concern.concern));
   const hasBoundarySemantics = analysis.inferredSteps.some((step) => step.kind === "await" || step.kind === "query")
     || Boolean(analysis.derivedConfig.input?.object || analysis.derivedConfig.input?.subscription || analysis.derivedConfig.output?.checkpoint);
+  const branching = buildBranchingMetadata(analysis.derivedConfig);
 
   if (concerns.has("replayability") || concerns.has("state-transition") || concerns.has("persistence")) {
     return {
       kind: "progression-protocol",
       rationale: "The brief implies repeatable state advancement over durable aggregate state."
+    };
+  }
+  if (branching) {
+    return {
+      kind: "union-routed-branching",
+      rationale: "The protocol keeps a linear pipeline while routing typed business outcomes through explicit accepts contracts."
     };
   }
   if (hasBoundarySemantics) {
@@ -337,6 +346,7 @@ function toDraftProtocolResult(state: WorkState, detail: DetailLevel): DraftProt
   const analysis = state.analysis!;
   const protocol = inferWorkflowPattern(analysis);
   const boundaries = collectWorkflowBoundaries(analysis);
+  const branching = buildWorkflowBranchingTopology(analysis.inferredSteps, analysis.derivedConfig.unions || {});
   const remainingQuestionsCount = analysis.questions.length + analysis.contractQuestions.length;
   const resumeSurface = inferResumeSurface(analysis, protocol.kind);
   const inputSurface = inferInputSurface(analysis);
@@ -347,6 +357,8 @@ function toDraftProtocolResult(state: WorkState, detail: DetailLevel): DraftProt
     workId: state.workId,
     protocolKind: protocol.kind,
     businessSteps: analysis.businessSteps,
+    ...(analysis.derivedConfig.unions ? { unions: analysis.derivedConfig.unions } : {}),
+    ...(branching ? { branching } : {}),
     boundaries,
     resumeSurface,
     inputSurface,
@@ -506,6 +518,7 @@ function toDraftContractsResult(
   detail: DetailLevel
 ): DraftContractsResult {
   const analysis = state.analysis!;
+  const branching = buildWorkflowBranchingTopology(analysis.inferredSteps, analysis.derivedConfig.unions || {});
   const remainingQuestionsCount = analysis.questions.length + analysis.contractQuestions.length;
   const hasOpenQuestions = scope.contractQuestions.length > 0 || scope.semanticQuestions.length > 0;
 
@@ -517,6 +530,8 @@ function toDraftContractsResult(
     contractQuestions: scope.contractQuestions,
     ...(scope.semanticQuestions.length > 0 ? { semanticQuestions: scope.semanticQuestions } : {}),
     proposedContracts: scope.stepContracts,
+    ...(analysis.derivedConfig.unions ? { proposedUnions: analysis.derivedConfig.unions } : {}),
+    ...(branching ? { branching } : {}),
     remainingQuestionsCount,
     recommendedNextTool: hasOpenQuestions ? "resolve_contracts" : "compile_scaffold_plan",
     ...(detail === "full" ? {
@@ -573,12 +588,16 @@ function toGenerateScaffoldResult(artifact: ArtifactReference, state: WorkState)
 }
 
 function summarizeConfig(config: DerivedConfig): WorkflowConfigSummary {
+  const branching = buildBranchingMetadata(config);
   return {
     transport: config.transport,
     platform: config.platform,
     runtimeLayout: config.runtimeLayout,
     stepNames: config.steps.map((step) => step.name),
-    aspects: Object.keys(config.aspects || {})
+    aspects: Object.keys(config.aspects || {}),
+    unionNames: Object.keys(config.unions || {}),
+    branchingEnabled: Boolean(branching),
+    terminalStepName: branching ? branching.steps[branching.terminalStepIndex]?.step : undefined
   };
 }
 
@@ -676,6 +695,9 @@ function selectMessagesForContracts(
   for (const contract of contracts) {
     messageNames.add(contract.inputTypeName);
     messageNames.add(contract.outputTypeName);
+    for (const accepted of contract.accepts || []) {
+      messageNames.add(accepted);
+    }
   }
   return messageCatalog.filter((message) => messageNames.has(message.name));
 }

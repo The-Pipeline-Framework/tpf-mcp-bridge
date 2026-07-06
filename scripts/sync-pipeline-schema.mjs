@@ -35,6 +35,10 @@ if (schema.$schema !== "https://json-schema.org/draft/2020-12/schema") {
 if (!schema.$defs?.awaitTemplateStep) {
   throw new Error(`Schema from ${source} does not include $defs.awaitTemplateStep`);
 }
+const v2TemplateStepProperties = schema.$defs?.v2TemplateStep?.properties || {};
+if (!v2TemplateStepProperties.accepts || !v2TemplateStepProperties.terminal) {
+  throw new Error(`Schema from ${source} does not include branch-aware v2 step fields 'accepts' and 'terminal'`);
+}
 
 fs.mkdirSync(path.dirname(destination), { recursive: true });
 fs.writeFileSync(destination, schemaText.endsWith("\n") ? schemaText : `${schemaText}\n`);

@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import YAML from "js-yaml";
 import JSZip from "jszip";
+import { buildBranchingMetadata } from "./branching.js";
 import { assertCompositionManifestInvariants, assertDerivedConfigInvariants } from "./derived-config-validation.js";
 import type { DerivedConfig, PipelineCompositionManifest } from "./types.js";
 
@@ -126,6 +127,10 @@ export async function generateScaffoldFiles(
       fileCallback
     });
     await fileCallback("config/pipeline.yaml", YAML.dump(loaded, { lineWidth: -1 }));
+    const branching = buildBranchingMetadata(loaded);
+    if (branching) {
+      await fileCallback("config/branching.json", `${JSON.stringify(branching, null, 2)}\n`);
+    }
     if (compositionManifest) {
       await fileCallback("config/pipeline-composition.yaml", YAML.dump(compositionManifest, { lineWidth: -1 }));
     }

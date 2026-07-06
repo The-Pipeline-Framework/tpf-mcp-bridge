@@ -16,7 +16,8 @@ import type {
   PlannerDraft,
   SessionStartInput,
   StepCardinality,
-  StepKind
+  StepKind,
+  UnionDefinition
 } from "./types.js";
 
 export interface PlannerClient {
@@ -277,6 +278,8 @@ const stepDraftCommonSchema = z.object({
   kind: z.enum(["internal", "delegated", "remote", "await", "query", "command"]).optional(),
   inputTypeName: z.string(),
   outputTypeName: z.string(),
+  accepts: z.array(z.string().trim().min(1)).optional(),
+  terminal: z.boolean().optional(),
   query: z.string().optional(),
   capture: queryCaptureSchema.optional(),
   command: z.string().optional(),
@@ -321,6 +324,16 @@ const compositionManifestSchema = z.object({
   })).min(1)
 });
 
+const plannerUnionVariantSchema = z.object({
+  number: z.number().int().positive(),
+  type: z.string().trim().min(1),
+  name: z.string().trim().min(1).optional()
+});
+
+const plannerUnionDefinitionSchema = z.object({
+  variants: z.record(z.string().trim().min(1), plannerUnionVariantSchema)
+});
+
 const plannerDraftSchema = z.object({
   title: z.string(),
   primaryGoal: z.string(),
@@ -345,6 +358,7 @@ const plannerDraftSchema = z.object({
     name: z.string(),
     fields: z.array(messageFieldSchema)
   })),
+  unions: z.record(z.string().trim().min(1), plannerUnionDefinitionSchema).optional(),
   stepContracts: z.array(stepDraftCommonSchema.extend({
     stepId: z.string(),
     stepName: z.string(),
@@ -417,14 +431,26 @@ const semanticIntentStepSchema = z.object({
   purpose: z.string(),
   input: z.string(),
   output: z.string(),
+  accepts: z.array(z.string()).optional(),
+  terminal: z.boolean().optional(),
   cardinality: z.enum(["ONE_TO_ONE", "EXPANSION", "REDUCTION", "SIDE_EFFECT"]),
   kind: z.enum(["internal", "query", "command", "await"])
+});
+
+const semanticIntentUnionSchema = z.object({
+  name: z.string(),
+  variants: z.array(z.object({
+    name: z.string(),
+    type: z.string(),
+    number: z.number().int().positive().optional()
+  })).min(1)
 });
 
 const semanticIntentSchema = z.object({
   title: z.string(),
   primaryGoal: z.string(),
   steps: z.array(semanticIntentStepSchema),
+  unions: z.array(semanticIntentUnionSchema).optional(),
   messages: z.array(z.object({
     name: z.string(),
     fields: z.array(semanticIntentMessageFieldSchema)
@@ -800,6 +826,10 @@ function normalizeParsedStepDraft<T extends { duplicatePolicy?: string }>(
   const duplicatePolicy = step.duplicatePolicy?.trim().toUpperCase();
   return {
     ...step,
+    ...("accepts" in step && Array.isArray((step as { accepts?: unknown }).accepts)
+      ? { accepts: [...new Set(((step as { accepts?: string[] }).accepts || []).map((value) => String(value).trim()).filter(Boolean))] }
+      : {}),
+    ...("terminal" in step ? { terminal: Boolean((step as { terminal?: unknown }).terminal) } : {}),
     ...(duplicatePolicy === "RETURN_RECORDED" || duplicatePolicy === "FAIL"
       ? { duplicatePolicy: duplicatePolicy as CommandDuplicatePolicy }
       : {})
@@ -1349,6 +1379,7 @@ function plannerDraftFromAnalysis(analysis: Awaited<ReturnType<typeof analyzeBri
     businessSteps: analysis.businessSteps,
     pipelineSteps: analysis.inferredSteps,
     messageCatalog: analysis.messageCatalog,
+    unions: analysis.derivedConfig.unions,
     stepContracts: analysis.stepContracts,
     contractQuestions: analysis.contractQuestions.map((question) => ({
       ...question,
@@ -1368,6 +1399,7 @@ function plannerDraftFromAnalysis(analysis: Awaited<ReturnType<typeof analyzeBri
 
 function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): PlannerDraft {
   const messageIndex = new Map<string, MessageCatalogEntry>();
+  const unionIndex: Record<string, UnionDefinition> = {};
   const contractQuestions: PlannerDraft["contractQuestions"] = [];
   const contractQuestionIds = new Set<string>();
   const technicalConcerns: NonNullable<PlannerDraft["technicalConcerns"]> = [];
@@ -1405,9 +1437,30 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
     });
   }
 
+  for (const union of intent.unions || []) {
+    const unionName = normalizeTypeName(union.name);
+    if (!unionName) {
+      continue;
+    }
+    unionIndex[unionName] = {
+      variants: Object.fromEntries(
+        union.variants.map((variant, index) => [
+          normalizeIdentifier(variant.name),
+          {
+            type: normalizeTypeName(variant.type) || `Variant${index + 1}`,
+            number: variant.number ?? index + 1
+          }
+        ])
+      )
+    };
+  }
+
   const synthesizedQuestionKeys = new Set<string>();
   const ensureMessage = (name: string, step: SemanticIntentDraft["steps"][number], direction: "input" | "output"): MessageCatalogEntry => {
     const normalizedName = normalizeTypeName(name) || `${direction === "input" ? "Input" : "Output"}Message`;
+    if (unionIndex[normalizedName]) {
+      throw new Error(`Semantic intent ${direction} '${normalizedName}' is a union and cannot be materialized as a message.`);
+    }
     const existing = messageIndex.get(normalizedName);
     if (existing) {
       return existing;
@@ -1445,13 +1498,23 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
   intent.steps.forEach((step, index) => {
     const stepId = normalizeStepId(step.id, index);
     const stepName = step.name.trim() || titleCaseFromIdentifier(stepId);
-    const inputMessage = ensureMessage(step.input, step, "input");
-    const outputMessage = ensureMessage(step.output, step, "output");
-    const continuity = inputMessage.fields.length > 0 && outputMessage.fields.length > 0
+    const inputTypeName = normalizeTypeName(step.input) || "InputMessage";
+    const outputTypeName = normalizeTypeName(step.output) || "OutputMessage";
+    const inputIsUnion = Boolean(unionIndex[inputTypeName]);
+    const outputIsUnion = Boolean(unionIndex[outputTypeName]);
+    const inputMessage = inputIsUnion
+      ? { id: `union.${normalizeIdentifier(inputTypeName)}`, name: inputTypeName, fields: [] }
+      : ensureMessage(inputTypeName, step, "input");
+    const outputMessage = outputIsUnion
+      ? { id: `union.${normalizeIdentifier(outputTypeName)}`, name: outputTypeName, fields: [] }
+      : ensureMessage(outputTypeName, step, "output");
+    const continuity = (inputIsUnion || inputMessage.fields.length > 0) && (outputIsUnion || outputMessage.fields.length > 0)
       ? "coherent"
       : "clarification_needed";
     const kind = step.kind as StepKind;
     const cardinality = normalizeCompiledSemanticCardinality(kind, step.cardinality as StepCardinality);
+    const acceptedContracts = [...new Set((step.accepts || []).map((value) => normalizeTypeName(value)).filter(Boolean))];
+    const terminal = Boolean(step.terminal);
     const sharedFields = buildCompiledStepMetadata(stepId, stepName, kind, inputMessage.name, outputMessage.name, cardinality);
     const resumeSurface = progressionProtocol && kind !== "query" && isResumeBoundarySemanticStep(step);
 
@@ -1461,9 +1524,11 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
       purpose: step.purpose.trim() || `Implement ${stepName}.`,
       kind,
       inputTypeName: inputMessage.name,
-      outputTypeName: outputMessage.name,
+      outputTypeName,
+      ...(acceptedContracts.length > 0 ? { accepts: acceptedContracts } : {}),
+      ...(terminal ? { terminal: true } : {}),
       inputFields: inputMessage.fields,
-      outputFields: outputMessage.fields,
+      outputFields: unionIndex[outputTypeName] ? [] : outputMessage.fields,
       ...(resumeSurface
         ? {
             flowRole: "resume" as const,
@@ -1481,7 +1546,9 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
         kind,
         cardinality,
         inputTypeName: inputMessage.name,
-        outputTypeName: outputMessage.name,
+        outputTypeName,
+        ...(acceptedContracts.length > 0 ? { accepts: acceptedContracts } : {}),
+        ...(terminal ? { terminal: true } : {}),
         ...sharedFields.pipeline
       });
     } else {
@@ -1495,9 +1562,11 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
       stepName,
       kind,
       inputTypeName: inputMessage.name,
-      outputTypeName: outputMessage.name,
+      outputTypeName,
+      ...(acceptedContracts.length > 0 ? { accepts: acceptedContracts } : {}),
+      ...(terminal ? { terminal: true } : {}),
       inputFields: inputMessage.fields,
-      outputFields: outputMessage.fields,
+      outputFields: unionIndex[outputTypeName] ? [] : outputMessage.fields,
       continuity,
       rationale: continuity === "coherent"
         ? `Compiled from Ollama semantic intent for ${stepName}.`
@@ -1516,9 +1585,9 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
       queries[queryId] = {
         connector: "jpa",
         inputType: inputMessage.name,
-        outputType: outputMessage.name,
+        outputType: outputTypeName,
         jpa: {
-          entity: `${simpleTypeName(outputMessage.name)}Entity`,
+          entity: `${simpleTypeName(outputTypeName)}Entity`,
           where: {
             id: "input.id"
           }
@@ -1530,7 +1599,7 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
         stepId,
         stepName,
         kind: "fields",
-        messageTypeName: outputMessage.name,
+        messageTypeName: outputTypeName,
         prompt: `Confirm the query criteria and result fields for ${stepName}.`,
         expectedAnswerShape: {
           type: "fields",
@@ -1547,7 +1616,7 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
         stepId,
         stepName,
         kind: "fields",
-        messageTypeName: outputMessage.name,
+        messageTypeName: outputTypeName,
         prompt: `Confirm the external command contract for ${stepName}.`,
         expectedAnswerShape: {
           type: "fields",
@@ -1564,7 +1633,7 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
         stepId,
         stepName,
         kind: "fields",
-        messageTypeName: outputMessage.name,
+        messageTypeName: outputTypeName,
         prompt: `Confirm the resume contract for ${stepName}.`,
         expectedAnswerShape: {
           type: "fields",
@@ -1609,6 +1678,7 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
     businessSteps,
     pipelineSteps,
     messageCatalog: [...messageIndex.values()],
+    ...(Object.keys(unionIndex).length > 0 ? { unions: unionIndex } : {}),
     stepContracts,
     contractQuestions,
     futureStepCandidates: [],
@@ -1967,7 +2037,8 @@ function buildOllamaSemanticIntentPrompt(
       "Loop-like workflows are modeled as replayable state-advancing invocations.",
       "The pipeline execution is single-pass; the application protocol may invoke it repeatedly over durable state.",
       "Use only these step kinds: internal, query, command, await.",
-      "Do not model persistence as a step."
+      "Do not model persistence as a step.",
+      "When one step can complete with different business outcomes, use unions plus typed branch routing instead of a status string."
     ].join("\n"),
     userContent: [
       "Return JSON only.",
@@ -1978,6 +2049,9 @@ function buildOllamaSemanticIntentPrompt(
       "Rules:",
       "- steps[].cardinality must be one of ONE_TO_ONE, EXPANSION, REDUCTION, SIDE_EFFECT",
       "- steps[].kind must be one of internal, query, command, await",
+      "- when needed, unions[] defines closed outcome unions with typed variants",
+      "- steps[].accepts may list only concrete contract types, never union names",
+      "- if any step uses accepts, exactly one final step should set terminal=true",
       "- messages[].fields must contain only name and type",
       "- assumptions and questions must be arrays of strings",
       "- the pipeline execution is single-pass; the application protocol may invoke it repeatedly over durable state",
@@ -2022,6 +2096,8 @@ function buildPlanPrompt(input: SessionStartInput, profile: PlannerProfile): Pla
           "If the brief implies await behavior, use kind \"await\" with timeout, idempotencyKeyFields, and await config.",
           "If the brief implies a framework-owned read from JPA inside the pipeline, use kind \"query\" with a top-level queries entry; do not generate a fake service step.",
           "If the brief implies a replay-safe external write/effect, use kind \"command\" with command, commandIdGenerator, and optional duplicatePolicy/config; do not generate a fake service step.",
+          "If one step can complete with several distinct business outcomes, model the output as a closed union in top-level unions and use the union name as outputTypeName.",
+          "For union-routed branching, keep the authored pipeline linear, use accepts with concrete contract types on downstream steps, and mark exactly one final merge step with terminal: true.",
           "For JPA queries, prefer simple equality where bindings by default. Use eq/in/gt/gte/lt/lte/between/like/isNull predicates, orderBy, or limit: 1 only when the brief implies that filtering.",
           "If the brief starts from filesystem/S3/object storage input, use top-level sources plus inputBoundary.object; do not generate a fake read-file step.",
           "",
@@ -2041,6 +2117,8 @@ function buildPlanPrompt(input: SessionStartInput, profile: PlannerProfile): Pla
           "A framework connector query is different from a resume/read surface: use kind \"query\" only for an in-pipeline read boundary, cardinality ONE_TO_ONE, query id, optional capture.keyFields, and a top-level queries entry. In this slice, supported connector is jpa.",
           "For JPA query where clauses, use simple equality shorthand by default, for example entityId: \"input.entityId\". Use predicate objects only when the brief explicitly implies them: eq, in, gt, gte, lt, lte, between, like, or isNull. Use orderBy plus limit: 1 only for latest/top-one style reads. Do not invent database tuning or query semantics beyond the brief.",
           "Use kind \"command\" for replay-safe external writes/effects with deterministic command identity. Command steps require cardinality ONE_TO_ONE, command, commandIdGenerator, optional duplicatePolicy RETURN_RECORDED or FAIL, and optional config. Use replay-safe command/update semantics when an effect or durable state transition must be idempotent. Keep provider endpoints, credentials, and tuning outside the planner output unless the brief explicitly provides them.",
+          "If one step can complete with several distinct business outcomes, model the output as a closed union in top-level unions and use the union name as the step output type.",
+          "For union-routed branching, keep the pipeline linear, use accepts only with concrete contract types, and require exactly one terminal: true merge step as the last authored step.",
           "Do not use command for async callback or human approval; that is await. Do not use command for downstream ownership transfer; that is checkpoint handoff. Do not use command for ordinary internal business logic.",
           "Filesystem/S3 object ingestion is an input boundary, not a business step: use top-level sources and inputBoundary.object with emits.type/typeName/mapper. The first forward step must consume the emitted type.",
           "Use await steps only when the brief implies a real suspend/resume external boundary. Distinguish await steps from checkpoint hand-off and from ordinary forward steps.",
@@ -2076,6 +2154,7 @@ function buildRevisionPrompt(
           "Keep framework connector queries as kind \"query\" steps with top-level queries definitions; keep resume/read surfaces outside the main pipeline.",
           "For JPA queries, keep equality shorthand unless the answer explicitly requires range/list/prefix/null/latest filtering.",
           "Keep replay-safe external writes as kind \"command\" steps, not fake service modules. Use command for deterministic external effects, await for callbacks/human approval, and checkpoint for downstream ownership transfer.",
+          "Preserve typed union outputs, accepts routing, and one final terminal: true merge step when the brief has multiple business outcomes.",
           "Keep filesystem/S3 object ingest as top-level sources plus inputBoundary.object, not a read-file service step.",
           "",
           "Brief:",
@@ -2098,6 +2177,7 @@ function buildRevisionPrompt(
           "If the brief implies a JPA-backed in-pipeline lookup or load-state boundary, model it as kind \"query\" with a referenced top-level queries entry when it feeds the next step, not as an internal service.",
           "For JPA lookups, preserve simple equality unless the brief or answer explicitly requires richer predicates. Use orderBy with limit: 1 only for latest/top-one reads.",
           "If the brief implies a replay-safe external write/effect or idempotent state update, model it as kind \"command\" with command, commandIdGenerator, optional duplicatePolicy, and optional config. Do not invent provider endpoint, credential, or tuning details.",
+          "If the brief has multiple business outcomes with different contracts, keep a top-level unions section, use the union name as the output type, and preserve accepts plus one final terminal: true merge step.",
           "If the brief starts from filesystem/S3/object storage input, model it with top-level sources and inputBoundary.object; the first forward step consumes inputBoundary.object.emits.typeName.",
           "If ownership transfers to another pipeline after this one completes, model checkpoint handoff with outputBoundary.checkpoint and optional compositionManifest instead of await.",
           "If ambiguity remains, keep only the unresolved contractQuestions.",
@@ -2129,6 +2209,7 @@ Rules:
 - Keep future or non-MVP items out of the active pipeline and place them in futureStepCandidates.
 - Use step ids and message names consistently across the draft.
 - Keep message field names unique inside each message.
+- When one step can complete with several distinct business outcomes, use a closed union in top-level unions.
 - Keep cardinality honest: EXPANSION for fan-out, REDUCTION for aggregate/writeout, ONE_TO_ONE otherwise.
 - Treat persistence as an aspect/plugin concern. Do not emit save, persist, store, or commit business steps.
 - In the main forward-processing pipeline, each step must consume the previous forward step's output type.
@@ -2139,6 +2220,7 @@ Rules:
 - Framework connector queries are different from resume/query surfaces: use kind "query" only for in-pipeline JPA reads that feed the next step. They require cardinality ONE_TO_ONE, a query id, and a matching top-level queries entry with connector "jpa", input or inputType, output or outputType, and jpa.entity / jpa.where.
 - In JPA where clauses, use equality shorthand by default. Use predicate objects only when explicit filtering is implied: eq, in, gt, gte, lt, lte, between, like, isNull. Use orderBy plus limit: 1 only for latest/top-one semantics. Do not invent database tuning or hidden query behavior.
 - Use kind "command" for replay-safe external writes/effects owned by the TPF command runtime. Command steps require cardinality ONE_TO_ONE, command, commandIdGenerator, optional duplicatePolicy RETURN_RECORDED or FAIL, and optional config. Use replay-safe command/update semantics when a durable state transition must be idempotent.
+- For union-routed branching, keep the authored pipeline linear. Downstream routing uses accepts with concrete contract types, and exactly one final merge step must set terminal: true.
 - Do not use command for async callbacks/human approval, downstream pipeline ownership transfer, or ordinary internal business logic.
 - Keep provider endpoint, credential, and tuning details out of command steps unless the brief explicitly provides them; prefer runtime configuration guidance.
 - Filesystem/S3 object ingestion is an input boundary: use top-level sources and inputBoundary.object with emits.type/typeName/mapper, and make the first forward step consume the emitted type.

@@ -1,4 +1,5 @@
 import type { DerivedConfig, PipelineCompositionManifest, PipelineQueryDefinition } from "./types.js";
+import { buildBranchingPlan } from "./branching.js";
 import { legacyObjectInputBoundary, simpleTypeName, typeNamesMatch } from "./type-name-utils.js";
 
 const MAX_BASE_PACKAGE_LENGTH = 80;
@@ -45,14 +46,32 @@ export function assertDerivedConfigInvariants(config: DerivedConfig): void {
   const unionEntries = Object.entries(config.unions || {});
   const knownUnions = new Set(unionEntries.map(([name]) => name));
   for (const [unionName, definition] of unionEntries) {
+    if (knownMessages.has(unionName)) {
+      throw new DerivedConfigValidationError(`Union '${unionName}' must not collide with a top-level message name.`);
+    }
     const variants = Object.entries(definition?.variants || {});
     if (variants.length === 0) {
       throw new DerivedConfigValidationError(`Union '${unionName}' must define at least one variant.`);
     }
+    const seenVariantNumbers = new Set<number>();
     for (const [variantName, variant] of variants) {
       if (!knownMessages.has(variant.type)) {
         throw new DerivedConfigValidationError(
           `Union '${unionName}' variant '${variantName}' references unknown message type '${variant.type}'.`
+        );
+      }
+      if (seenVariantNumbers.has(variant.number)) {
+        throw new DerivedConfigValidationError(`Union '${unionName}' reuses variant number '${variant.number}'.`);
+      }
+      seenVariantNumbers.add(variant.number);
+    }
+  }
+  for (const [messageName, definition] of messageEntries) {
+    for (const field of definition.fields) {
+      const fieldType = simpleTypeName(field.type);
+      if (knownUnions.has(fieldType)) {
+        throw new DerivedConfigValidationError(
+          `Message '${messageName}' field '${field.name}' references union '${fieldType}', which is not supported as a normal message field.`
         );
       }
     }
@@ -72,6 +91,11 @@ export function assertDerivedConfigInvariants(config: DerivedConfig): void {
     validateAwaitStep(config, step);
     validateQueryStep(config, step, knownMessages);
     validateCommandStep(step);
+  }
+  try {
+    buildBranchingPlan(config.steps || [], config.unions || {});
+  } catch (error) {
+    throw new DerivedConfigValidationError(error instanceof Error ? error.message : "Invalid branch-aware routing metadata.");
   }
 }
 
