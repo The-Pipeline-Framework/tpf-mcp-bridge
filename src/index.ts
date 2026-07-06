@@ -45,6 +45,7 @@ export type {
   DraftProtocolInput,
   DraftProtocolResult,
   DerivedConfig,
+  DetailLevel,
   GenerateScaffoldInput,
   GenerateScaffoldResult,
   GenerateSessionInput,
@@ -61,8 +62,13 @@ export type {
   ScaffoldResult,
   SessionResult,
   SessionStartInput,
+  WorkflowBriefInput,
   WorkflowBoundary,
   WorkflowBoundaryType,
+  WorkflowConfigSummary,
+  WorkflowContractScope,
   WorkflowInputSurface,
-  WorkflowOutputSurface
+  WorkflowOutputSurface,
+  WorkflowResumeSurface,
+  WorkState
 } from "./types.js";

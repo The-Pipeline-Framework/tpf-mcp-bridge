@@ -302,6 +302,77 @@ test("workflow service exposes object input as a first-class boundary surface", 
   assert.equal(protocol.boundaries.map((boundary) => boundary.type)[0], "object-input");
 });
 
+test("workflow service rejects empty re-answers for inactive resolved workflow questions", async () => {
+  const ambiguousDraft = buildAwaitPlannerDraft();
+  ambiguousDraft.questions = [
+    {
+      id: "question.await-transport",
+      key: "asyncMode",
+      prompt: "Choose the await transport for Await Fraud Decision.",
+      stepId: "await-fraud-decision",
+      stepName: "Await Fraud Decision"
+    }
+  ];
+  const resolvedDraft = buildAwaitPlannerDraft();
+  const planner = {
+    async planInitialBrief() {
+      return ambiguousDraft;
+    },
+    async revisePlanWithAnswers(_input: SessionStartInput, _previousDraft: PlannerDraft | undefined, answers: Record<string, { values?: string[] }>) {
+      return answers["question.await-transport"]?.values?.length ? resolvedDraft : ambiguousDraft;
+    }
+  };
+  const service = new WorkflowService(new LocalFileArtifactStore(), planner);
+
+  const inspected = await service.inspectBrief({
+    briefText: "Validate a transfer, wait for an external fraud decision, then finalize it."
+  });
+
+  await service.draftProtocol({ workId: inspected.workId });
+  await service.resolveContracts({
+    workId: inspected.workId,
+    answers: [
+      {
+        questionId: "question.await-transport",
+        values: ["webhook"]
+      }
+    ]
+  });
+
+  await assert.rejects(
+    () => service.resolveContracts({
+      workId: inspected.workId,
+      answers: [
+        {
+          questionId: "question.await-transport"
+        }
+      ]
+    }),
+    /requires fields or values/
+  );
+});
+
+test("workflow service evicts least-recently-used work entries when capped", async () => {
+  const service = new WorkflowService(new LocalFileArtifactStore(), undefined, {
+    maxRetainedWorks: 1
+  });
+
+  const first = await service.inspectBrief({
+    briefText: "Build a customer registration backend."
+  });
+  const second = await service.inspectBrief({
+    briefText: "Build an order processing backend."
+  });
+
+  await assert.rejects(
+    () => service.draftContracts({ workId: first.workId }),
+    /Unknown work/
+  );
+
+  const current = await service.draftContracts({ workId: second.workId });
+  assert.equal(current.workId, second.workId);
+});
+
 test("start_brief_session returns structured contract questions for onboarding briefs", async () => {
   const { initialDraft } = buildOnboardingPlannerDrafts();
   const handlers = createLocalBridgeHandlers({
