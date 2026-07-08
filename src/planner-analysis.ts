@@ -168,6 +168,12 @@ function normalizeUnions(
         throw new Error(`Planner draft union '${normalizedName}' variant '${variant.name}' references unknown message '${variant.type}'.`);
       }
     }
+    if (normalized[normalizedName]) {
+      throw new Error(`Planner draft defines unions that normalize to the same name '${normalizedName}': '${unionName}' collides with an earlier union.`);
+    }
+    if (messages[normalizedName]) {
+      throw new Error(`Planner draft union '${normalizedName}' (from '${unionName}') collides with an existing message key.`);
+    }
     normalized[normalizedName] = {
       variants: Object.fromEntries(variants.map((variant) => [variant.name, {
         number: variant.number,
@@ -636,7 +642,7 @@ function normalizeContractQuestions(questions: ContractQuestion[]): ContractQues
 }
 
 function normalizeAcceptedContracts(values: string[] | undefined): string[] | undefined {
-  const normalized = (values || []).map((value) => simpleTypeName(value)).filter(Boolean);
+  const normalized = (values || []).map((value) => simpleTypeName(value.trim())).filter(Boolean);
   return normalized.length > 0 ? [...new Set(normalized)] : undefined;
 }
 
@@ -811,12 +817,13 @@ function assertCoherentStepViews(
   if ((businessStep.command || "") !== (contract.command || "") || (businessStep.command || "") !== (pipelineStep.command || "")) {
     throw new Error(`Planner draft defines inconsistent command names for business step '${businessStep.name}'.`);
   }
-  const commandIdGenerators = [
-    businessStep.commandIdGenerator,
-    contract.commandIdGenerator,
-    pipelineStep.commandIdGenerator
-  ].map((value) => value?.trim()).filter((value): value is string => Boolean(value));
-  if (new Set(commandIdGenerators).size > 1) {
+  const commandIdGeneratorValues = [
+    businessStep.commandIdGenerator?.trim() || null,
+    contract.commandIdGenerator?.trim() || null,
+    pipelineStep.commandIdGenerator?.trim() || null
+  ];
+  const commandIdGenerators = commandIdGeneratorValues.filter((value): value is string => Boolean(value));
+  if (new Set(commandIdGenerators).size > 1 || (commandIdGenerators.length > 0 && commandIdGeneratorValues.some((value) => value === null))) {
     throw new Error(`Planner draft defines inconsistent command id generators for business step '${businessStep.name}'.`);
   }
   if (

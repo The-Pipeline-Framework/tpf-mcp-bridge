@@ -661,6 +661,8 @@ Options:
   --transport <value>         GRPC, REST, or LOCAL
   --platform <value>          COMPUTE or FUNCTION
   --runtime-layout <value>    MODULAR, PIPELINE_RUNTIME, or MONOLITH
+  --profile <value>           full or compact
+  --detail <value>            summary or full
   --answers <file>            JSON answers for unresolved questions
   --non-interactive=true      Fail with question JSON instead of prompting
 `;

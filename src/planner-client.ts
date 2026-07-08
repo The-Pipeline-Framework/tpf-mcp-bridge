@@ -809,13 +809,21 @@ async function requestLocalCliPlannerContent(
       ? { ...(config.environment ?? process.env), OPENCODE_CONFIG_CONTENT: OPENCODE_READONLY_CONFIG }
       : config.environment ?? process.env
   });
+  if (result.exitCode !== 0) {
+    throw new PlannerError(
+      `${providerMode} failed with exit code ${result.exitCode}.${result.stderr ? ` ${truncateProviderMessage(result.stderr)}` : ""}`,
+      502,
+      undefined,
+      result.exitCode
+    );
+  }
   const content = providerMode === "codex_cli"
     ? extractCodexCliJsonlContent(result.stdout)
     : extractOpenCodeJsonContent(result.stdout);
   if (!content) {
     throw new PlannerError(
       `${providerMode} completed but did not return planner content.${result.stderr ? ` ${truncateProviderMessage(result.stderr)}` : ""}`,
-      result.exitCode === 0 ? 502 : 502,
+      502,
       undefined,
       result.exitCode || undefined
     );
@@ -1801,14 +1809,15 @@ function applyAnsweredFieldsToBusinessSteps(
   fields: MessageField[]
 ): void {
   for (const step of steps) {
-    if (question.stepId && step.id !== question.stepId) {
-      continue;
-    }
     if (step.inputTypeName === question.messageTypeName) {
-      step.inputFields = fields;
+      if (!question.stepId || step.id === question.stepId) {
+        step.inputFields = fields;
+      }
     }
     if (step.outputTypeName === question.messageTypeName) {
-      step.outputFields = fields;
+      if (!question.stepId || step.id === question.stepId) {
+        step.outputFields = fields;
+      }
     }
   }
 }
@@ -1819,14 +1828,15 @@ function applyAnsweredFieldsToContracts(
   fields: MessageField[]
 ): void {
   for (const contract of contracts) {
-    if (question.stepId && contract.stepId !== question.stepId) {
-      continue;
-    }
     if (contract.inputTypeName === question.messageTypeName) {
-      contract.inputFields = fields;
+      if (!question.stepId || contract.stepId === question.stepId) {
+        contract.inputFields = fields;
+      }
     }
     if (contract.outputTypeName === question.messageTypeName) {
-      contract.outputFields = fields;
+      if (!question.stepId || contract.stepId === question.stepId) {
+        contract.outputFields = fields;
+      }
     }
   }
 }
@@ -1946,16 +1956,26 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
     if (!unionName) {
       continue;
     }
+    const variantKeys = new Set<string>();
+    const variantEntries = union.variants.map((variant, index) => {
+      const key = normalizeIdentifier(variant.name);
+      if (!key) {
+        throw new Error(`Semantic intent union '${unionName}' has a variant with an invalid name '${variant.name}'.`);
+      }
+      if (variantKeys.has(key)) {
+        throw new Error(`Semantic intent union '${unionName}' has duplicate variant key '${key}'.`);
+      }
+      variantKeys.add(key);
+      return [
+        key,
+        {
+          type: normalizeTypeName(variant.type) || `Variant${index + 1}`,
+          number: variant.number ?? index + 1
+        }
+      ] as const;
+    });
     unionIndex[unionName] = {
-      variants: Object.fromEntries(
-        union.variants.map((variant, index) => [
-          normalizeIdentifier(variant.name),
-          {
-            type: normalizeTypeName(variant.type) || `Variant${index + 1}`,
-            number: variant.number ?? index + 1
-          }
-        ])
-      )
+      variants: Object.fromEntries(variantEntries)
     };
   }
 
@@ -2371,6 +2391,16 @@ function realignCompiledForwardChain(
     if (shouldUseQueryContextEnvelope(previous, current)) {
       const queryResultTypeName = previous.outputTypeName;
       const envelope = buildQueryContextEnvelopeMessage(previous.inputTypeName, queryResultTypeName, current.name);
+      const existing = messageIndex.get(envelope.name);
+      if (existing) {
+        const envelopeSignature = JSON.stringify(envelope.fields);
+        const existingSignature = JSON.stringify(existing.fields);
+        if (envelopeSignature !== existingSignature) {
+          const suffix = Date.now().toString(36);
+          envelope.name = `${envelope.name}_${suffix}`;
+          envelope.id = `message.${normalizeIdentifier(envelope.name)}`;
+        }
+      }
       messageIndex.set(envelope.name, envelope);
 
       previous.outputTypeName = envelope.name;
