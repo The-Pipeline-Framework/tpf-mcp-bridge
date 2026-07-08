@@ -1790,10 +1790,16 @@ function applyContractAnswersToPlannerDraft(
 
     applyAnsweredFieldsToBusinessSteps(next.businessSteps, question, fields);
     applyAnsweredFieldsToContracts(next.stepContracts, question, fields);
+    applyAnsweredFieldsToBusinessSteps(next.businessSteps, question, fields);
+    applyAnsweredFieldsToContracts(next.stepContracts, question, fields);
   }
 
+  const unionNames = new Set(Object.keys(next.unions ?? {}));
+
   for (const contract of next.stepContracts) {
-    if (contract.inputFields.length > 0 && contract.outputFields.length > 0) {
+    const inputResolved = unionNames.has(contract.inputTypeName) || contract.inputFields.length > 0;
+    const outputResolved = unionNames.has(contract.outputTypeName) || contract.outputFields.length > 0;
+    if (inputResolved && outputResolved) {
       contract.continuity = "coherent";
     }
   }
@@ -1810,14 +1816,10 @@ function applyAnsweredFieldsToBusinessSteps(
 ): void {
   for (const step of steps) {
     if (step.inputTypeName === question.messageTypeName) {
-      if (!question.stepId || step.id === question.stepId) {
-        step.inputFields = fields;
-      }
+      step.inputFields = fields;
     }
     if (step.outputTypeName === question.messageTypeName) {
-      if (!question.stepId || step.id === question.stepId) {
-        step.outputFields = fields;
-      }
+      step.outputFields = fields;
     }
   }
 }
@@ -1829,14 +1831,10 @@ function applyAnsweredFieldsToContracts(
 ): void {
   for (const contract of contracts) {
     if (contract.inputTypeName === question.messageTypeName) {
-      if (!question.stepId || contract.stepId === question.stepId) {
-        contract.inputFields = fields;
-      }
+      contract.inputFields = fields;
     }
     if (contract.outputTypeName === question.messageTypeName) {
-      if (!question.stepId || contract.stepId === question.stepId) {
-        contract.outputFields = fields;
-      }
+      contract.outputFields = fields;
     }
   }
 }
