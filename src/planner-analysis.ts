@@ -737,7 +737,7 @@ function assertPlannerSemantics(
         throw new Error(`Planner draft defines query step '${pipelineStep.name}' without a matching top-level queries entry.`);
       }
     }
-    if (kind === "command" && (!pipelineStep.command?.trim() || !pipelineStep.commandIdGenerator?.trim())) {
+    if (kind === "command" && !pipelineStep.command?.trim()) {
       throw new Error(`Planner draft defines command step '${pipelineStep.name}' without command metadata.`);
     }
   }
@@ -811,10 +811,12 @@ function assertCoherentStepViews(
   if ((businessStep.command || "") !== (contract.command || "") || (businessStep.command || "") !== (pipelineStep.command || "")) {
     throw new Error(`Planner draft defines inconsistent command names for business step '${businessStep.name}'.`);
   }
-  if (
-    (businessStep.commandIdGenerator || "") !== (contract.commandIdGenerator || "")
-    || (businessStep.commandIdGenerator || "") !== (pipelineStep.commandIdGenerator || "")
-  ) {
+  const commandIdGenerators = [
+    businessStep.commandIdGenerator,
+    contract.commandIdGenerator,
+    pipelineStep.commandIdGenerator
+  ].map((value) => value?.trim()).filter((value): value is string => Boolean(value));
+  if (new Set(commandIdGenerators).size > 1) {
     throw new Error(`Planner draft defines inconsistent command id generators for business step '${businessStep.name}'.`);
   }
   if (
@@ -1038,9 +1040,6 @@ function assertCommandSemantics(
   }
   if (!businessStep.command?.trim() || !contract.command?.trim() || !pipelineStep.command?.trim()) {
     throw new Error(`Planner draft violates TPF semantics: command step '${stepName}' must declare command in every step view.`);
-  }
-  if (!businessStep.commandIdGenerator?.trim() || !contract.commandIdGenerator?.trim() || !pipelineStep.commandIdGenerator?.trim()) {
-    throw new Error(`Planner draft violates TPF semantics: command step '${stepName}' must declare commandIdGenerator in every step view.`);
   }
   const policies = [businessStep.duplicatePolicy, contract.duplicatePolicy, pipelineStep.duplicatePolicy]
     .filter((policy) => policy !== undefined);

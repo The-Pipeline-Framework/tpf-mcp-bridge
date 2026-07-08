@@ -992,7 +992,8 @@ test("ollama-native planner adapter realigns loop-like partial submissions into 
   assert.equal(draft.pipelineSteps[1]?.inputTypeName, "DraftAccountState");
   assert.equal(draft.stepContracts[1]?.inputTypeName, "DraftAccountState");
   assert.equal(draft.stepContracts[1]?.continuity, "clarification_needed");
-  assert.equal(draft.contractQuestions.some((question) => question.id === "contract.submitpersonalprofile.progression"), true);
+  assert.equal(draft.contractQuestions.some((question) => question.messageTypeName === "DraftAccountState"), true);
+  assert.equal(draft.contractQuestions.some((question) => question.id === "contract.submitpersonalprofile.progression"), false);
   assert.match(draft.assumptions.join("\n"), /progression-protocol continuity/i);
   assert.doesNotThrow(() => analyzePlannerDraft({ briefText: onboardingBrief }, draft));
 });
@@ -1056,7 +1057,7 @@ test("ollama-native planner adapter compiles query, command, and await kinds int
   assert.equal(draft.queries?.["lookup-status"]?.inputType, "LookupStatusRequest");
   assert.equal(draft.pipelineSteps.find((step) => step.id === "dispatch-welcome")?.cardinality, "ONE_TO_ONE");
   assert.equal(draft.businessSteps[1]?.command, "dispatchwelcome.execute");
-  assert.equal(draft.businessSteps[1]?.commandIdGenerator, "LookupStatusResultCommandIdGenerator");
+  assert.equal(draft.businessSteps[1]?.commandIdGenerator, undefined);
   assert.equal(draft.pipelineSteps.find((step) => step.id === "await-verification")?.cardinality, "SIDE_EFFECT");
   assert.equal(draft.businessSteps[2]?.timeout, "PT15M");
   assert.deepEqual(draft.businessSteps[2]?.idempotencyKeyFields, ["requestId"]);

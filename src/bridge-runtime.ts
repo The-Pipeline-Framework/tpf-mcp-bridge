@@ -242,10 +242,16 @@ function optionalEnv(env: NodeJS.ProcessEnv, key: string): string | undefined {
 }
 
 export function formatBridgeConfigSummary(config: BridgeConfig): string {
+  const credentialSource = config.llmCredentialSource
+    ?? (config.llmProviderMode === "mock"
+      ? "mock"
+      : config.llmProviderMode === "codex_cli" || config.llmProviderMode === "opencode"
+        ? "local-cli"
+        : "unknown");
   return [
     `plannerTransport=${config.plannerTransportMode ?? "direct-http"}`,
     `providerMode=${config.llmProviderMode ?? "openai-compatible"}`,
-    `credentialSource=${config.llmCredentialSource ?? "unknown"}`,
+    `credentialSource=${credentialSource}`,
     `apiBaseUrl=${config.apiBaseUrl ? "configured" : "local-only"}`
   ].join(", ");
 }
@@ -275,8 +281,17 @@ function readPlannerProviderMode(rawValue: string | undefined): PlannerProviderM
   if (normalized === "ollama-native") {
     return "ollama-native";
   }
+  if (normalized === "codex_cli" || normalized === "codex-cli") {
+    return "codex_cli";
+  }
+  if (normalized === "opencode") {
+    return "opencode";
+  }
+  if (normalized === "mock") {
+    return "mock";
+  }
   throw new Error(
-    `Unsupported TPF_LLM_PROVIDER_MODE '${rawValue}'. Allowed values: openai-compatible, ollama-native.`
+    `Unsupported TPF_LLM_PROVIDER_MODE '${rawValue}'. Allowed values: openai-compatible, ollama-native, codex_cli, opencode, mock.`
   );
 }
 
@@ -301,6 +316,11 @@ function resolveOptionalPlannerCredential(
   providerMode: PlannerProviderMode,
   transportMode: PlannerTransportMode
 ): { token?: string; source?: PlannerCredentialSource } {
+  if (providerMode === "codex_cli" || providerMode === "opencode" || providerMode === "mock") {
+    return {
+      source: providerMode === "mock" ? "mock" : "local-cli"
+    };
+  }
   try {
     return resolvePlannerCredential(env, providerMode);
   } catch (error) {
@@ -325,6 +345,14 @@ function resolveBridgePlannerClient(
       host: server.server,
       modelHint: config.llmModel,
       profile: config.llmProfile ?? "full"
+    });
+  }
+
+  if (config.llmProviderMode === "codex_cli" || config.llmProviderMode === "opencode" || config.llmProviderMode === "mock") {
+    return createOpenAiPlannerClient({
+      model: config.llmModel,
+      profile: config.llmProfile ?? "full",
+      providerMode: config.llmProviderMode
     });
   }
 
