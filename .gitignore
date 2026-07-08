@@ -1,6 +1,10 @@
+.repowise/
+.claude/
+.idea/
 node_modules/
 dist/
 .wrangler/
 coverage/
 *.log
 scaffold-output/
+/tpf-mcp-bridge.iml

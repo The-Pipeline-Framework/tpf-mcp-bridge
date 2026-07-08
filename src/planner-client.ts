@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import * as z from "zod/v4";
 import type {
   ClientCapabilities,
@@ -16,7 +17,8 @@ import type {
   PlannerDraft,
   SessionStartInput,
   StepCardinality,
-  StepKind
+  StepKind,
+  UnionDefinition
 } from "./types.js";
 
 export interface PlannerClient {
@@ -31,6 +33,9 @@ export interface OpenAiPlannerConfig {
   profile?: PlannerProfile;
   providerMode?: PlannerProviderMode;
   fetchImpl?: typeof fetch;
+  workingDirectory?: string;
+  cliTimeoutMs?: number;
+  environment?: NodeJS.ProcessEnv;
 }
 
 export interface McpSamplingPlannerHost {
@@ -277,6 +282,8 @@ const stepDraftCommonSchema = z.object({
   kind: z.enum(["internal", "delegated", "remote", "await", "query", "command"]).optional(),
   inputTypeName: z.string(),
   outputTypeName: z.string(),
+  accepts: z.array(z.string().trim().min(1)).optional(),
+  terminal: z.boolean().optional(),
   query: z.string().optional(),
   capture: queryCaptureSchema.optional(),
   command: z.string().optional(),
@@ -321,6 +328,16 @@ const compositionManifestSchema = z.object({
   })).min(1)
 });
 
+const plannerUnionVariantSchema = z.object({
+  number: z.number().int().positive(),
+  type: z.string().trim().min(1),
+  name: z.string().trim().min(1).optional()
+});
+
+const plannerUnionDefinitionSchema = z.object({
+  variants: z.record(z.string().trim().min(1), plannerUnionVariantSchema)
+});
+
 const plannerDraftSchema = z.object({
   title: z.string(),
   primaryGoal: z.string(),
@@ -345,6 +362,7 @@ const plannerDraftSchema = z.object({
     name: z.string(),
     fields: z.array(messageFieldSchema)
   })),
+  unions: z.record(z.string().trim().min(1), plannerUnionDefinitionSchema).optional(),
   stepContracts: z.array(stepDraftCommonSchema.extend({
     stepId: z.string(),
     stepName: z.string(),
@@ -417,14 +435,26 @@ const semanticIntentStepSchema = z.object({
   purpose: z.string(),
   input: z.string(),
   output: z.string(),
+  accepts: z.array(z.string()).optional(),
+  terminal: z.boolean().optional(),
   cardinality: z.enum(["ONE_TO_ONE", "EXPANSION", "REDUCTION", "SIDE_EFFECT"]),
   kind: z.enum(["internal", "query", "command", "await"])
+});
+
+const semanticIntentUnionSchema = z.object({
+  name: z.string(),
+  variants: z.array(z.object({
+    name: z.string(),
+    type: z.string(),
+    number: z.number().int().positive().optional()
+  })).min(1)
 });
 
 const semanticIntentSchema = z.object({
   title: z.string(),
   primaryGoal: z.string(),
   steps: z.array(semanticIntentStepSchema),
+  unions: z.array(semanticIntentUnionSchema).optional(),
   messages: z.array(z.object({
     name: z.string(),
     fields: z.array(semanticIntentMessageFieldSchema)
@@ -434,6 +464,114 @@ const semanticIntentSchema = z.object({
 });
 
 type SemanticIntentDraft = z.output<typeof semanticIntentSchema>;
+type LocalCliPlannerProviderMode = Extract<PlannerProviderMode, "codex_cli" | "opencode">;
+
+const DEFAULT_CLI_PLANNER_TIMEOUT_MS = 600_000;
+const OPENCODE_READONLY_CONFIG = JSON.stringify({
+  permission: Object.fromEntries(
+    ["edit", "bash", "webfetch", "websearch", "external_directory", "doom_loop", "task"]
+      .map((key) => [key, "deny"])
+  )
+});
+
+function buildMockSemanticIntentDraft(input: SessionStartInput): SemanticIntentDraft {
+  return {
+    title: input.appName || "Mock Boundary Scaffold",
+    primaryGoal: "Exercise command, await, validation, and state-plus-submission envelope compilation without calling an external LLM provider.",
+    steps: [
+      {
+        id: "validate-initial-command",
+        name: "Validate Initial Command",
+        purpose: "Validate the initial command before creating aggregate state.",
+        input: "InitialCommand",
+        output: "ValidatedCommand",
+        cardinality: "ONE_TO_ONE",
+        kind: "internal"
+      },
+      {
+        id: "execute-state-command",
+        name: "Execute State Command",
+        purpose: "Create or update aggregate state through a replay-safe command boundary.",
+        input: "ValidatedCommand",
+        output: "AggregateState",
+        cardinality: "SIDE_EFFECT",
+        kind: "command"
+      },
+      {
+        id: "await-external-submission",
+        name: "Await External Submission",
+        purpose: "Collect an external submission through an interaction-api await boundary.",
+        input: "AggregateState",
+        output: "ExternalSubmission",
+        cardinality: "SIDE_EFFECT",
+        kind: "await"
+      },
+      {
+        id: "validate-external-submission",
+        name: "Validate External Submission",
+        purpose: "Validate the external submission and return the updated aggregate state.",
+        input: "ExternalSubmission",
+        output: "AggregateState",
+        cardinality: "ONE_TO_ONE",
+        kind: "internal"
+      },
+      {
+        id: "return-current-status",
+        name: "Return Current Status",
+        purpose: "Return the current aggregate status for the invocation.",
+        input: "AggregateState",
+        output: "FinalOutput",
+        cardinality: "ONE_TO_ONE",
+        kind: "internal"
+      }
+    ],
+    messages: [
+      {
+        name: "InitialCommand",
+        fields: [
+          { name: "requestId", type: "uuid" },
+          { name: "subjectId", type: "uuid" },
+          { name: "payload", type: "string" }
+        ]
+      },
+      {
+        name: "ValidatedCommand",
+        fields: [
+          { name: "requestId", type: "uuid" },
+          { name: "subjectId", type: "uuid" },
+          { name: "accepted", type: "bool" }
+        ]
+      },
+      {
+        name: "AggregateState",
+        fields: [
+          { name: "aggregateId", type: "uuid" },
+          { name: "status", type: "string" },
+          { name: "version", type: "int64" }
+        ]
+      },
+      {
+        name: "ExternalSubmission",
+        fields: [
+          { name: "submissionId", type: "uuid" },
+          { name: "payload", type: "string" }
+        ]
+      },
+      {
+        name: "FinalOutput",
+        fields: [
+          { name: "aggregateId", type: "uuid" },
+          { name: "status", type: "string" },
+          { name: "nextAction", type: "string" }
+        ]
+      }
+    ],
+    assumptions: [
+      "Mock provider output is deterministic and intended for local CLI/workflow testing only."
+    ],
+    questions: []
+  };
+}
 
 export function createOpenAiPlannerClient(config: OpenAiPlannerConfig): PlannerClient {
   const fetchImpl = config.fetchImpl ?? fetch;
@@ -442,6 +580,9 @@ export function createOpenAiPlannerClient(config: OpenAiPlannerConfig): PlannerC
 
   return {
     async planInitialBrief(input) {
+      if (providerMode === "mock") {
+        return compileSemanticIntentDraftToPlannerDraft(buildMockSemanticIntentDraft(input));
+      }
       if (providerMode === "ollama-native") {
         return requestOllamaSemanticIntentDraft(
           fetchImpl,
@@ -449,15 +590,32 @@ export function createOpenAiPlannerClient(config: OpenAiPlannerConfig): PlannerC
           buildOllamaSemanticIntentPrompt(input, profile)
         );
       }
+      if (isLocalCliPlannerProviderMode(providerMode)) {
+        return requestLocalCliSemanticIntentDraft(
+          config,
+          providerMode,
+          buildOllamaSemanticIntentPrompt(input, profile)
+        );
+      }
       return requestPlannerDraft(fetchImpl, config, buildPlanPrompt(input, profile), providerMode);
     },
     async revisePlanWithAnswers(input, previousDraft, answers) {
+      if (providerMode === "mock") {
+        return previousDraft
+          ? applyContractAnswersToPlannerDraft(previousDraft, answers)
+          : compileSemanticIntentDraftToPlannerDraft(buildMockSemanticIntentDraft(input));
+      }
       if (providerMode === "ollama-native") {
-        return requestOllamaSemanticIntentDraft(
-          fetchImpl,
-          config,
-          buildOllamaSemanticIntentPrompt(input, profile, previousDraft, answers)
-        );
+        if (previousDraft) {
+          return applyContractAnswersToPlannerDraft(previousDraft, answers);
+        }
+        return requestOllamaSemanticIntentDraft(fetchImpl, config, buildOllamaSemanticIntentPrompt(input, profile));
+      }
+      if (isLocalCliPlannerProviderMode(providerMode)) {
+        if (previousDraft) {
+          return applyContractAnswersToPlannerDraft(previousDraft, answers);
+        }
+        return requestLocalCliSemanticIntentDraft(config, providerMode, buildOllamaSemanticIntentPrompt(input, profile));
       }
       return requestPlannerDraft(fetchImpl, config, buildRevisionPrompt(input, previousDraft, answers, profile), providerMode);
     }
@@ -619,6 +777,60 @@ async function requestSamplingPlannerDraft(
   return parsePlannerDraftContent(content);
 }
 
+async function requestLocalCliPlannerDraft(
+  config: OpenAiPlannerConfig,
+  providerMode: LocalCliPlannerProviderMode,
+  prompt: PlannerPrompt
+): Promise<PlannerDraft> {
+  const content = await requestLocalCliPlannerContent(config, providerMode, prompt);
+  return parsePlannerDraftContent(content, { allowEmbeddedJson: true });
+}
+
+async function requestLocalCliSemanticIntentDraft(
+  config: OpenAiPlannerConfig,
+  providerMode: LocalCliPlannerProviderMode,
+  prompt: PlannerPrompt
+): Promise<PlannerDraft> {
+  const content = await requestLocalCliPlannerContent(config, providerMode, prompt);
+  const semanticIntent = parseSemanticIntentContent(content, { allowEmbeddedJson: true });
+  return compileSemanticIntentDraftToPlannerDraft(semanticIntent);
+}
+
+async function requestLocalCliPlannerContent(
+  config: OpenAiPlannerConfig,
+  providerMode: LocalCliPlannerProviderMode,
+  prompt: PlannerPrompt
+): Promise<string> {
+  const command = await buildLocalCliPlannerCommand(config, providerMode);
+  const result = await runLocalCliPlannerCommand(command, combinePlannerPrompt(prompt), {
+    cwd: config.workingDirectory ?? process.cwd(),
+    timeoutMs: config.cliTimeoutMs ?? DEFAULT_CLI_PLANNER_TIMEOUT_MS,
+    env: providerMode === "opencode"
+      ? { ...(config.environment ?? process.env), OPENCODE_CONFIG_CONTENT: OPENCODE_READONLY_CONFIG }
+      : config.environment ?? process.env
+  });
+  if (result.exitCode !== 0) {
+    throw new PlannerError(
+      `${providerMode} failed with exit code ${result.exitCode}.${result.stderr ? ` ${truncateProviderMessage(result.stderr)}` : ""}`,
+      502,
+      undefined,
+      result.exitCode
+    );
+  }
+  const content = providerMode === "codex_cli"
+    ? extractCodexCliJsonlContent(result.stdout)
+    : extractOpenCodeJsonContent(result.stdout);
+  if (!content) {
+    throw new PlannerError(
+      `${providerMode} completed but did not return planner content.${result.stderr ? ` ${truncateProviderMessage(result.stderr)}` : ""}`,
+      502,
+      undefined,
+      result.exitCode || undefined
+    );
+  }
+  return content;
+}
+
 async function fetchOpenAiCompatiblePlannerDraft(
   fetchImpl: typeof fetch,
   config: OpenAiPlannerConfig,
@@ -731,6 +943,185 @@ function normalizePlannerProviderStatus(status: number): number {
   return status >= 400 && status < 500 ? status : 502;
 }
 
+function isLocalCliPlannerProviderMode(providerMode: PlannerProviderMode): providerMode is LocalCliPlannerProviderMode {
+  return providerMode === "codex_cli" || providerMode === "opencode";
+}
+
+async function buildLocalCliPlannerCommand(
+  config: OpenAiPlannerConfig,
+  providerMode: LocalCliPlannerProviderMode
+): Promise<{ executable: string; args: string[]; cleanup?: () => Promise<void> }> {
+  const workdir = config.workingDirectory ?? process.cwd();
+  const model = normalizeLocalCliModel(providerMode, config.model);
+  if (providerMode === "opencode") {
+    return {
+      executable: "opencode",
+      args: [
+        "run",
+        "--format",
+        "json",
+        "--dir",
+        workdir,
+        ...(model ? ["--model", model] : [])
+      ]
+    };
+  }
+
+  return {
+    executable: "codex",
+    args: [
+      "exec",
+      "--ephemeral",
+      "--ignore-user-config",
+      "--ignore-rules",
+      "--sandbox",
+      "read-only",
+      "--json",
+      "--cd",
+      workdir,
+      ...(model ? ["--model", model] : []),
+      "-"
+    ]
+  };
+}
+
+function normalizeLocalCliModel(
+  providerMode: LocalCliPlannerProviderMode,
+  model: string | undefined
+): string | undefined {
+  const trimmed = model?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (providerMode === "codex_cli") {
+    if (trimmed === "codex_cli/default") {
+      return undefined;
+    }
+    return trimmed.startsWith("codex_cli/") ? trimmed.slice("codex_cli/".length) || undefined : trimmed;
+  }
+  if (trimmed === "opencode/default") {
+    return undefined;
+  }
+  return trimmed.startsWith("opencode/") ? trimmed.slice("opencode/".length) || undefined : trimmed;
+}
+
+async function runLocalCliPlannerCommand(
+  command: { executable: string; args: string[]; cleanup?: () => Promise<void> },
+  stdinText: string,
+  options: { cwd: string; timeoutMs: number; env: NodeJS.ProcessEnv }
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  try {
+    return await new Promise((resolve, reject) => {
+      const child = spawn(command.executable, command.args, {
+        cwd: options.cwd,
+        env: options.env,
+        stdio: ["pipe", "pipe", "pipe"]
+      });
+      const stdoutChunks: Buffer[] = [];
+      const stderrChunks: Buffer[] = [];
+      let settled = false;
+
+      const timeout = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        child.kill("SIGKILL");
+        reject(new PlannerError(
+          `${command.executable} timed out after ${Math.round(options.timeoutMs / 1000)} seconds.`,
+          502
+        ));
+      }, options.timeoutMs);
+
+      child.stdout.on("data", (chunk) => stdoutChunks.push(Buffer.from(chunk)));
+      child.stderr.on("data", (chunk) => stderrChunks.push(Buffer.from(chunk)));
+      child.on("error", () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timeout);
+        reject(new PlannerError(
+          `${command.executable} is not available. Install and authenticate it before using this provider.`,
+          400
+        ));
+      });
+      child.on("close", (code) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timeout);
+        const stdout = Buffer.concat(stdoutChunks).toString("utf8");
+        const stderr = Buffer.concat(stderrChunks).toString("utf8");
+        resolve({ stdout, stderr, exitCode: code ?? 0 });
+      });
+
+      child.stdin.end(stdinText, "utf8");
+    });
+  } finally {
+    await command.cleanup?.();
+  }
+}
+
+function combinePlannerPrompt(prompt: PlannerPrompt): string {
+  return [
+    "Follow these system instructions for this one-shot TPF planning task:",
+    "",
+    prompt.systemContent.trim(),
+    "",
+    "User request and context:",
+    "",
+    prompt.userContent.trim()
+  ].join("\n");
+}
+
+function extractCodexCliJsonlContent(stdout: string): string | undefined {
+  const parts: string[] = [];
+  for (const event of parseJsonLines(stdout)) {
+    if (event.type !== "item.completed" || !event.item || typeof event.item !== "object") {
+      continue;
+    }
+    const item = event.item as { type?: unknown; text?: unknown };
+    if (item.type === "agent_message" && typeof item.text === "string" && item.text.trim()) {
+      parts.push(item.text);
+    }
+  }
+  return parts.join("\n").trim() || undefined;
+}
+
+function extractOpenCodeJsonContent(stdout: string): string | undefined {
+  const parts: string[] = [];
+  for (const event of parseJsonLines(stdout)) {
+    if (event.type !== "text" || !event.part || typeof event.part !== "object") {
+      continue;
+    }
+    const text = (event.part as { text?: unknown }).text;
+    if (typeof text === "string" && text.trim()) {
+      parts.push(text);
+    }
+  }
+  return parts.join("\n").trim() || undefined;
+}
+
+function parseJsonLines(stdout: string): Array<Record<string, unknown>> {
+  const events: Array<Record<string, unknown>> = [];
+  for (const rawLine of stdout.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed && typeof parsed === "object") {
+        events.push(parsed as Record<string, unknown>);
+      }
+    } catch {
+    }
+  }
+  return events;
+}
+
 function parseProviderError(rawBody: string): { code?: string; message?: string } {
   if (!rawBody.trim()) {
     return {};
@@ -800,6 +1191,10 @@ function normalizeParsedStepDraft<T extends { duplicatePolicy?: string }>(
   const duplicatePolicy = step.duplicatePolicy?.trim().toUpperCase();
   return {
     ...step,
+    ...("accepts" in step && Array.isArray((step as { accepts?: unknown }).accepts)
+      ? { accepts: [...new Set(((step as { accepts?: string[] }).accepts || []).map((value) => String(value).trim()).filter(Boolean))] }
+      : {}),
+    ...("terminal" in step ? { terminal: Boolean((step as { terminal?: unknown }).terminal) } : {}),
     ...(duplicatePolicy === "RETURN_RECORDED" || duplicatePolicy === "FAIL"
       ? { duplicatePolicy: duplicatePolicy as CommandDuplicatePolicy }
       : {})
@@ -1349,6 +1744,7 @@ function plannerDraftFromAnalysis(analysis: Awaited<ReturnType<typeof analyzeBri
     businessSteps: analysis.businessSteps,
     pipelineSteps: analysis.inferredSteps,
     messageCatalog: analysis.messageCatalog,
+    unions: analysis.derivedConfig.unions,
     stepContracts: analysis.stepContracts,
     contractQuestions: analysis.contractQuestions.map((question) => ({
       ...question,
@@ -1366,8 +1762,103 @@ function plannerDraftFromAnalysis(analysis: Awaited<ReturnType<typeof analyzeBri
   };
 }
 
+function applyContractAnswersToPlannerDraft(
+  draft: PlannerDraft,
+  answers: Record<string, ContractAnswerRecord>
+): PlannerDraft {
+  const answeredIds = new Set(Object.keys(answers));
+  const next = clonePlannerDraft(draft);
+  const contractQuestionsById = new Map(next.contractQuestions.map((question) => [question.id, question] as const));
+
+  for (const [questionId, answer] of Object.entries(answers)) {
+    const question = contractQuestionsById.get(questionId);
+    if (!question?.messageTypeName || !answer.fields) {
+      continue;
+    }
+
+    const fields = answer.fields.map(contractFieldToMessageField);
+    const message = next.messageCatalog.find((entry) => entry.name === question.messageTypeName);
+    if (message) {
+      message.fields = fields;
+    } else {
+      next.messageCatalog.push({
+        id: `message.${normalizeIdentifier(question.messageTypeName)}`,
+        name: question.messageTypeName,
+        fields
+      });
+    }
+
+    applyAnsweredFieldsToBusinessSteps(next.businessSteps, question, fields);
+    applyAnsweredFieldsToContracts(next.stepContracts, question, fields);
+    applyAnsweredFieldsToBusinessSteps(next.businessSteps, question, fields);
+    applyAnsweredFieldsToContracts(next.stepContracts, question, fields);
+  }
+
+  const unionNames = new Set(Object.keys(next.unions ?? {}));
+
+  for (const contract of next.stepContracts) {
+    const inputResolved = unionNames.has(contract.inputTypeName) || contract.inputFields.length > 0;
+    const outputResolved = unionNames.has(contract.outputTypeName) || contract.outputFields.length > 0;
+    if (inputResolved && outputResolved) {
+      contract.continuity = "coherent";
+    }
+  }
+
+  next.questions = (next.questions || []).filter((question) => !answeredIds.has(question.id));
+  next.contractQuestions = next.contractQuestions.filter((question) => !answeredIds.has(question.id));
+  return next;
+}
+
+function applyAnsweredFieldsToBusinessSteps(
+  steps: PlannerDraft["businessSteps"],
+  question: PlannerDraft["contractQuestions"][number],
+  fields: MessageField[]
+): void {
+  for (const step of steps) {
+    if (step.inputTypeName === question.messageTypeName) {
+      step.inputFields = fields;
+    }
+    if (step.outputTypeName === question.messageTypeName) {
+      step.outputFields = fields;
+    }
+  }
+}
+
+function applyAnsweredFieldsToContracts(
+  contracts: PlannerDraft["stepContracts"],
+  question: PlannerDraft["contractQuestions"][number],
+  fields: MessageField[]
+): void {
+  for (const contract of contracts) {
+    if (contract.inputTypeName === question.messageTypeName) {
+      contract.inputFields = fields;
+    }
+    if (contract.outputTypeName === question.messageTypeName) {
+      contract.outputFields = fields;
+    }
+  }
+}
+
+function contractFieldToMessageField(
+  field: NonNullable<ContractAnswerRecord["fields"]>[number],
+  index: number
+): MessageField {
+  return {
+    number: index + 1,
+    name: field.name,
+    type: field.type,
+    ...(field.required === false ? { optional: true } : {}),
+    ...(field.repeated ? { repeated: true } : {})
+  };
+}
+
+function clonePlannerDraft(draft: PlannerDraft): PlannerDraft {
+  return JSON.parse(JSON.stringify(draft)) as PlannerDraft;
+}
+
 function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): PlannerDraft {
   const messageIndex = new Map<string, MessageCatalogEntry>();
+  const unionIndex: Record<string, UnionDefinition> = {};
   const contractQuestions: PlannerDraft["contractQuestions"] = [];
   const contractQuestionIds = new Set<string>();
   const technicalConcerns: NonNullable<PlannerDraft["technicalConcerns"]> = [];
@@ -1379,6 +1870,21 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
   const progressionProtocol = indicatesProgressionProtocolWorkflow(intent);
 
   const pushContractQuestion = (question: PlannerDraft["contractQuestions"][number]): void => {
+    const equivalentIndex = contractQuestions.findIndex((candidate) => (
+      candidate.key === question.key
+      && candidate.kind === question.kind
+      && candidate.messageTypeName === question.messageTypeName
+    ));
+    if (equivalentIndex >= 0) {
+      const existing = contractQuestions[equivalentIndex];
+      if (question.proposedAnswer && !existing.proposedAnswer) {
+        contractQuestions[equivalentIndex] = {
+          ...question,
+          id: existing.id
+        };
+      }
+      return;
+    }
     if (contractQuestionIds.has(question.id)) {
       return;
     }
@@ -1393,6 +1899,44 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
     technicalConcerns.push(concern);
   };
 
+  const pushFieldContractQuestion = (input: {
+    id: string;
+    stepId: string;
+    stepName: string;
+    messageTypeName: string;
+    prompt: string;
+    description: string;
+    fields: MessageField[];
+  }): void => {
+    pushContractQuestion({
+      id: input.id,
+      key: "stepContracts",
+      stepId: input.stepId,
+      stepName: input.stepName,
+      kind: "fields",
+      messageTypeName: input.messageTypeName,
+      prompt: input.prompt,
+      expectedAnswerShape: {
+        type: "fields",
+        description: input.description
+      },
+      ...(input.fields.length > 0 ? {
+        proposedAnswer: {
+          questionId: input.id,
+          fields: input.fields.map((field) => ({
+            name: field.name,
+            type: field.type,
+            required: !field.optional,
+            repeated: field.repeated
+          }))
+        },
+        resolutionModes: ["confirm", "replace", "edit"] as const
+      } : {
+        resolutionModes: ["replace", "edit"] as const
+      })
+    });
+  };
+
   for (const message of intent.messages) {
     const normalizedName = normalizeTypeName(message.name);
     if (!normalizedName) {
@@ -1405,9 +1949,40 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
     });
   }
 
+  for (const union of intent.unions || []) {
+    const unionName = normalizeTypeName(union.name);
+    if (!unionName) {
+      continue;
+    }
+    const variantKeys = new Set<string>();
+    const variantEntries = union.variants.map((variant, index) => {
+      const key = normalizeIdentifier(variant.name);
+      if (!key) {
+        throw new Error(`Semantic intent union '${unionName}' has a variant with an invalid name '${variant.name}'.`);
+      }
+      if (variantKeys.has(key)) {
+        throw new Error(`Semantic intent union '${unionName}' has duplicate variant key '${key}'.`);
+      }
+      variantKeys.add(key);
+      return [
+        key,
+        {
+          type: normalizeTypeName(variant.type) || `Variant${index + 1}`,
+          number: variant.number ?? index + 1
+        }
+      ] as const;
+    });
+    unionIndex[unionName] = {
+      variants: Object.fromEntries(variantEntries)
+    };
+  }
+
   const synthesizedQuestionKeys = new Set<string>();
   const ensureMessage = (name: string, step: SemanticIntentDraft["steps"][number], direction: "input" | "output"): MessageCatalogEntry => {
     const normalizedName = normalizeTypeName(name) || `${direction === "input" ? "Input" : "Output"}Message`;
+    if (unionIndex[normalizedName]) {
+      throw new Error(`Semantic intent ${direction} '${normalizedName}' is a union and cannot be materialized as a message.`);
+    }
     const existing = messageIndex.get(normalizedName);
     if (existing) {
       return existing;
@@ -1423,19 +1998,14 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
     const questionId = `contract.${normalizeIdentifier(step.id)}.${direction}.${normalizeIdentifier(normalizedName)}`;
     if (!synthesizedQuestionKeys.has(questionId)) {
       synthesizedQuestionKeys.add(questionId);
-      pushContractQuestion({
+      pushFieldContractQuestion({
         id: questionId,
-        key: "stepContracts",
         stepId: normalizeStepId(step.id),
         stepName: step.name.trim() || titleCaseFromIdentifier(step.id),
-        kind: "fields",
         messageTypeName: normalizedName,
         prompt: `Confirm the ${direction} fields for ${step.name.trim() || titleCaseFromIdentifier(step.id)}.`,
-        expectedAnswerShape: {
-          type: "fields",
-          description: `Define the fields for ${normalizedName}.`
-        },
-        resolutionModes: ["replace", "edit"]
+        description: `Define the fields for ${normalizedName}.`,
+        fields: synthesized.fields
       });
     }
 
@@ -1445,13 +2015,23 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
   intent.steps.forEach((step, index) => {
     const stepId = normalizeStepId(step.id, index);
     const stepName = step.name.trim() || titleCaseFromIdentifier(stepId);
-    const inputMessage = ensureMessage(step.input, step, "input");
-    const outputMessage = ensureMessage(step.output, step, "output");
-    const continuity = inputMessage.fields.length > 0 && outputMessage.fields.length > 0
+    const inputTypeName = normalizeTypeName(step.input) || "InputMessage";
+    const outputTypeName = normalizeTypeName(step.output) || "OutputMessage";
+    const inputIsUnion = Boolean(unionIndex[inputTypeName]);
+    const outputIsUnion = Boolean(unionIndex[outputTypeName]);
+    const inputMessage = inputIsUnion
+      ? { id: `union.${normalizeIdentifier(inputTypeName)}`, name: inputTypeName, fields: [] }
+      : ensureMessage(inputTypeName, step, "input");
+    const outputMessage = outputIsUnion
+      ? { id: `union.${normalizeIdentifier(outputTypeName)}`, name: outputTypeName, fields: [] }
+      : ensureMessage(outputTypeName, step, "output");
+    const continuity = (inputIsUnion || inputMessage.fields.length > 0) && (outputIsUnion || outputMessage.fields.length > 0)
       ? "coherent"
       : "clarification_needed";
     const kind = step.kind as StepKind;
     const cardinality = normalizeCompiledSemanticCardinality(kind, step.cardinality as StepCardinality);
+    const acceptedContracts = [...new Set((step.accepts || []).map((value) => normalizeTypeName(value)).filter(Boolean))];
+    const terminal = Boolean(step.terminal);
     const sharedFields = buildCompiledStepMetadata(stepId, stepName, kind, inputMessage.name, outputMessage.name, cardinality);
     const resumeSurface = progressionProtocol && kind !== "query" && isResumeBoundarySemanticStep(step);
 
@@ -1461,9 +2041,11 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
       purpose: step.purpose.trim() || `Implement ${stepName}.`,
       kind,
       inputTypeName: inputMessage.name,
-      outputTypeName: outputMessage.name,
+      outputTypeName,
+      ...(acceptedContracts.length > 0 ? { accepts: acceptedContracts } : {}),
+      ...(terminal ? { terminal: true } : {}),
       inputFields: inputMessage.fields,
-      outputFields: outputMessage.fields,
+      outputFields: unionIndex[outputTypeName] ? [] : outputMessage.fields,
       ...(resumeSurface
         ? {
             flowRole: "resume" as const,
@@ -1481,7 +2063,9 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
         kind,
         cardinality,
         inputTypeName: inputMessage.name,
-        outputTypeName: outputMessage.name,
+        outputTypeName,
+        ...(acceptedContracts.length > 0 ? { accepts: acceptedContracts } : {}),
+        ...(terminal ? { terminal: true } : {}),
         ...sharedFields.pipeline
       });
     } else {
@@ -1495,9 +2079,11 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
       stepName,
       kind,
       inputTypeName: inputMessage.name,
-      outputTypeName: outputMessage.name,
+      outputTypeName,
+      ...(acceptedContracts.length > 0 ? { accepts: acceptedContracts } : {}),
+      ...(terminal ? { terminal: true } : {}),
       inputFields: inputMessage.fields,
-      outputFields: outputMessage.fields,
+      outputFields: unionIndex[outputTypeName] ? [] : outputMessage.fields,
       continuity,
       rationale: continuity === "coherent"
         ? `Compiled from Ollama semantic intent for ${stepName}.`
@@ -1516,61 +2102,46 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
       queries[queryId] = {
         connector: "jpa",
         inputType: inputMessage.name,
-        outputType: outputMessage.name,
+        outputType: outputTypeName,
         jpa: {
-          entity: `${simpleTypeName(outputMessage.name)}Entity`,
+          entity: `${simpleTypeName(outputTypeName)}Entity`,
           where: {
             id: "input.id"
           }
         }
       };
-      pushContractQuestion({
+      pushFieldContractQuestion({
         id: `contract.${normalizeIdentifier(stepId)}.query`,
-        key: "stepContracts",
         stepId,
         stepName,
-        kind: "fields",
-        messageTypeName: outputMessage.name,
+        messageTypeName: outputTypeName,
         prompt: `Confirm the query criteria and result fields for ${stepName}.`,
-        expectedAnswerShape: {
-          type: "fields",
-          description: `Confirm the fields returned by ${stepName}.`
-        },
-        resolutionModes: ["replace", "edit"]
+        description: `Confirm the fields returned by ${stepName}.`,
+        fields: unionIndex[outputTypeName] ? [] : outputMessage.fields
       });
     }
 
     if (kind === "command") {
-      pushContractQuestion({
-        id: `contract.${normalizeIdentifier(stepId)}.command`,
-        key: "stepContracts",
+      pushFieldContractQuestion({
+        id: `contract.${normalizeIdentifier(stepId)}.command.output.${normalizeIdentifier(outputTypeName)}`,
         stepId,
         stepName,
-        kind: "fields",
-        messageTypeName: outputMessage.name,
-        prompt: `Confirm the external command contract for ${stepName}.`,
-        expectedAnswerShape: {
-          type: "fields",
-          description: `Confirm the fields involved in ${stepName}.`
-        },
-        resolutionModes: ["replace", "edit"]
+        messageTypeName: outputTypeName,
+        prompt: `Confirm the output fields produced by the command step ${stepName}.`,
+        description: `Confirm the fields produced by ${stepName}.`,
+        fields: unionIndex[outputTypeName] ? [] : outputMessage.fields
       });
     }
 
     if (kind === "await") {
-      pushContractQuestion({
+      pushFieldContractQuestion({
         id: `contract.${normalizeIdentifier(stepId)}.await`,
-        key: "stepContracts",
         stepId,
         stepName,
-        kind: "fields",
-        messageTypeName: outputMessage.name,
+        messageTypeName: outputTypeName,
         prompt: `Confirm the resume contract for ${stepName}.`,
-        expectedAnswerShape: {
-          type: "fields",
-          description: `Confirm the fields needed to resume ${stepName}.`
-        },
-        resolutionModes: ["replace", "edit"]
+        description: `Confirm the fields needed to resume ${stepName}.`,
+        fields: unionIndex[outputTypeName] ? [] : outputMessage.fields
       });
     }
   });
@@ -1599,7 +2170,20 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
     compiledAssumptions.push(
       "Loop-like workflow was compiled as replayable state-advancing invocations over durable aggregate state."
     );
-    realignCompiledForwardChain(businessSteps, pipelineSteps, stepContracts, queries, pushContractQuestion, compiledAssumptions);
+  }
+  realignCompiledForwardChain(
+    businessSteps,
+    pipelineSteps,
+    stepContracts,
+    messageIndex,
+    queries,
+    pushContractQuestion,
+    compiledAssumptions,
+    progressionProtocol
+  );
+  pruneContractQuestionsForKnownMessages(contractQuestions, messageIndex);
+
+  if (progressionProtocol) {
     addProgressionProtocolConcerns([...messageIndex.values()], businessSteps, pushTechnicalConcern);
   }
 
@@ -1609,6 +2193,7 @@ function compileSemanticIntentDraftToPlannerDraft(intent: SemanticIntentDraft): 
     businessSteps,
     pipelineSteps,
     messageCatalog: [...messageIndex.values()],
+    ...(Object.keys(unionIndex).length > 0 ? { unions: unionIndex } : {}),
     stepContracts,
     contractQuestions,
     futureStepCandidates: [],
@@ -1650,10 +2235,8 @@ function buildCompiledStepMetadata(
 
   if (kind === "command") {
     const command = `${normalizeIdentifier(stepId)}.execute`;
-    const commandIdGenerator = `${simpleTypeName(inputTypeName)}CommandIdGenerator`;
     const commandFields = {
       command,
-      commandIdGenerator,
       duplicatePolicy: "RETURN_RECORDED" as CommandDuplicatePolicy,
       ...flowMetadata
     };
@@ -1787,9 +2370,11 @@ function realignCompiledForwardChain(
   businessSteps: PlannerDraft["businessSteps"],
   pipelineSteps: PlannerDraft["pipelineSteps"],
   stepContracts: PlannerDraft["stepContracts"],
+  messageIndex: Map<string, MessageCatalogEntry>,
   queries: NonNullable<PlannerDraft["queries"]>,
   pushContractQuestion: (question: PlannerDraft["contractQuestions"][number]) => void,
-  assumptions: string[]
+  assumptions: string[],
+  progressionProtocol: boolean
 ): void {
   const contractById = new Map(stepContracts.map((contract) => [contract.stepId, contract]));
   const pipelineById = new Map(pipelineSteps.map((step) => [step.id || normalizeStepId(step.name), step]));
@@ -1798,8 +2383,117 @@ function realignCompiledForwardChain(
   for (let index = 1; index < forwardSteps.length; index += 1) {
     const previous = forwardSteps[index - 1];
     const current = forwardSteps[index];
+    const previousContract = contractById.get(previous.id);
+    const previousPipelineStep = pipelineById.get(previous.id);
 
-    if (current.inputTypeName === previous.outputTypeName) {
+    if (shouldUseQueryContextEnvelope(previous, current)) {
+      const queryResultTypeName = previous.outputTypeName;
+      const envelope = buildQueryContextEnvelopeMessage(previous.inputTypeName, queryResultTypeName, current.name);
+      const existing = messageIndex.get(envelope.name);
+      if (existing) {
+        const envelopeSignature = JSON.stringify(envelope.fields);
+        const existingSignature = JSON.stringify(existing.fields);
+        if (envelopeSignature !== existingSignature) {
+          const suffix = Date.now().toString(36);
+          envelope.name = `${envelope.name}_${suffix}`;
+          envelope.id = `message.${normalizeIdentifier(envelope.name)}`;
+        }
+      }
+      messageIndex.set(envelope.name, envelope);
+
+      previous.outputTypeName = envelope.name;
+      previous.outputFields = envelope.fields;
+      if (previousContract) {
+        previousContract.outputTypeName = envelope.name;
+        previousContract.outputFields = envelope.fields;
+        previousContract.continuity = previousContract.inputFields.length > 0 ? "coherent" : previousContract.continuity;
+      }
+      if (previousPipelineStep) {
+        previousPipelineStep.outputTypeName = envelope.name;
+      }
+
+      const queryId = previous.query?.trim();
+      if (queryId && queries[queryId]) {
+        queries[queryId] = {
+          ...queries[queryId],
+          outputType: envelope.name
+        };
+      }
+
+      const contract = contractById.get(current.id);
+      const pipelineStep = pipelineById.get(current.id);
+      current.inputTypeName = envelope.name;
+      current.inputFields = envelope.fields;
+      if (contract) {
+        contract.inputTypeName = envelope.name;
+        contract.inputFields = envelope.fields;
+        contract.continuity = contract.outputFields.length > 0 ? "coherent" : "clarification_needed";
+        contract.rationale = `Compiled from semantic intent for ${current.name}; input uses an original-input-plus-query-result envelope.`;
+      }
+      if (pipelineStep) {
+        pipelineStep.inputTypeName = envelope.name;
+      }
+
+      assumptions.push(
+        `Compiled query step '${previous.name}' and step '${current.name}' through envelope '${envelope.name}' carrying original input '${previous.inputTypeName}' plus query result '${queryResultTypeName}'.`
+      );
+      pushEnvelopeContractQuestion(current, envelope, pushContractQuestion, {
+        prompt: `Confirm the original-input-plus-query-result envelope for ${current.name}.`,
+        description: "Confirm the envelope fields that carry the original request or command plus the lookup/query result."
+      });
+      continue;
+    }
+
+    if (shouldUseAwaitSubmissionEnvelope(previous, current)) {
+      const submittedTypeName = chooseSubmittedPayloadTypeName(messageIndex, previous, current);
+      const proposedEnvelope = buildSubmissionEnvelopeMessage(previous.inputTypeName, submittedTypeName);
+      const envelope = resolveCanonicalEnvelopeMessage(messageIndex, proposedEnvelope, [
+        previous.outputTypeName,
+        current.inputTypeName
+      ]);
+      messageIndex.set(envelope.name, envelope);
+      removeEquivalentEnvelopeAliases(messageIndex, envelope);
+      removeSubmissionEnvelopeAliasNames(messageIndex, envelope.name, submittedTypeName, [
+        previous.outputTypeName,
+        current.inputTypeName
+      ]);
+
+      previous.outputTypeName = envelope.name;
+      previous.outputFields = envelope.fields;
+      if (previousContract) {
+        previousContract.outputTypeName = envelope.name;
+        previousContract.outputFields = envelope.fields;
+        previousContract.continuity = previousContract.inputFields.length > 0 ? "coherent" : previousContract.continuity;
+      }
+      if (previousPipelineStep) {
+        previousPipelineStep.outputTypeName = envelope.name;
+      }
+
+      const contract = contractById.get(current.id);
+      const pipelineStep = pipelineById.get(current.id);
+      current.inputTypeName = envelope.name;
+      current.inputFields = envelope.fields;
+      if (contract) {
+        contract.inputTypeName = envelope.name;
+        contract.inputFields = envelope.fields;
+        contract.continuity = contract.outputFields.length > 0 ? "coherent" : "clarification_needed";
+        contract.rationale = `Compiled from semantic intent for ${current.name}; input uses a state-plus-submission envelope to preserve await boundary context.`;
+      }
+      if (pipelineStep) {
+        pipelineStep.inputTypeName = envelope.name;
+      }
+
+      assumptions.push(
+        `Compiled await boundary '${previous.name}' and step '${current.name}' through envelope '${envelope.name}' carrying state '${previous.inputTypeName}' plus submitted payload '${submittedTypeName}'.`
+      );
+      pushEnvelopeContractQuestion(current, envelope, pushContractQuestion, {
+        prompt: `Confirm the state-plus-submission envelope for ${current.name}.`,
+        description: "Confirm the envelope fields that carry current aggregate state plus the submitted external payload."
+      });
+      continue;
+    }
+
+    if (current.inputTypeName === previous.outputTypeName || !progressionProtocol) {
       continue;
     }
 
@@ -1880,6 +2574,334 @@ function realignCompiledForwardChain(
       });
     }
   }
+}
+
+function shouldUseAwaitSubmissionEnvelope(
+  previous: PlannerDraft["businessSteps"][number],
+  current: PlannerDraft["businessSteps"][number]
+): boolean {
+  if (previous.kind !== "await" || current.kind !== "internal") {
+    return false;
+  }
+  if (!previous.inputTypeName || !previous.outputTypeName || previous.inputTypeName === previous.outputTypeName) {
+    return false;
+  }
+  const combined = [current.id, current.name, current.purpose].join(" ");
+  return /\b(validate|validation|advance|apply|process|submit|segment|submission|stage)\b/i.test(combined)
+    || isCompositeTypeName(current.inputTypeName);
+}
+
+function shouldUseQueryContextEnvelope(
+  previous: PlannerDraft["businessSteps"][number],
+  current: PlannerDraft["businessSteps"][number]
+): boolean {
+  if (previous.kind !== "query" || current.kind !== "internal") {
+    return false;
+  }
+  if (!previous.inputTypeName || !previous.outputTypeName || previous.inputTypeName === previous.outputTypeName) {
+    return false;
+  }
+  const combined = [current.id, current.name, current.purpose].join(" ");
+  return /\b(validate|validation|check|verify|decide|assess|process)\b/i.test(combined)
+    || isCompositeTypeName(current.inputTypeName);
+}
+
+function chooseSubmittedPayloadTypeName(
+  messageIndex: Map<string, MessageCatalogEntry>,
+  previous: PlannerDraft["businessSteps"][number],
+  current: PlannerDraft["businessSteps"][number]
+): string {
+  const envelopePayloadType = submittedPayloadTypeFromEnvelope(messageIndex, previous.inputTypeName, [
+    previous.outputTypeName,
+    current.inputTypeName
+  ]);
+  if (envelopePayloadType) {
+    return envelopePayloadType;
+  }
+
+  const aliasPayloadType = submittedPayloadTypeFromAliasName(messageIndex, previous.inputTypeName, [
+    previous.outputTypeName,
+    current.inputTypeName
+  ]);
+  if (aliasPayloadType) {
+    return aliasPayloadType;
+  }
+
+  if (current.inputTypeName && current.inputTypeName !== previous.inputTypeName && !isCompositeTypeName(current.inputTypeName)) {
+    return current.inputTypeName;
+  }
+  return previous.outputTypeName;
+}
+
+function submittedPayloadTypeFromEnvelope(
+  messageIndex: Map<string, MessageCatalogEntry>,
+  stateTypeName: string,
+  candidateNames: string[]
+): string | undefined {
+  const normalizedStateType = normalizeTypeName(stateTypeName);
+  for (const name of candidateNames) {
+    const message = messageIndex.get(normalizeTypeName(name));
+    if (!message || message.fields.length !== 2) {
+      continue;
+    }
+    const [first, second] = message.fields;
+    if (normalizeTypeName(first.type) === normalizedStateType && second.type) {
+      return normalizeTypeName(second.type) || second.type;
+    }
+  }
+  return undefined;
+}
+
+function submittedPayloadTypeFromAliasName(
+  messageIndex: Map<string, MessageCatalogEntry>,
+  stateTypeName: string,
+  candidateNames: string[]
+): string | undefined {
+  const normalizedState = normalizeIdentifier(stateTypeName);
+  const candidates = [...messageIndex.values()]
+    .map((message) => message.name)
+    .filter((name) => normalizeIdentifier(name) !== normalizedState)
+    .sort((left, right) => right.length - left.length);
+
+  for (const name of candidateNames) {
+    const normalizedName = normalizeIdentifier(stripSubmissionEnvelopeSuffixes(name));
+    if (!normalizedName.includes(normalizedState)) {
+      continue;
+    }
+    const payload = candidates.find((candidate) => {
+      const normalizedPayload = normalizeIdentifier(candidate);
+      return normalizedPayload && normalizedName.includes(normalizedPayload);
+    });
+    if (payload) {
+      return normalizeTypeName(payload);
+    }
+  }
+
+  return undefined;
+}
+
+function buildSubmissionEnvelopeMessage(stateTypeName: string, submittedTypeName: string): MessageCatalogEntry {
+  const normalizedStateType = normalizeTypeName(stateTypeName) || "AggregateState";
+  const normalizedSubmittedType = normalizeTypeName(submittedTypeName) || "SubmittedPayload";
+  const name = buildSubmissionEnvelopeTypeName(normalizedSubmittedType);
+  return {
+    id: `message.${normalizeIdentifier(name)}`,
+    name,
+    fields: [
+      { number: 1, name: "state", type: normalizedStateType },
+      { number: 2, name: submittedPayloadFieldName(normalizedSubmittedType), type: normalizedSubmittedType }
+    ]
+  };
+}
+
+function buildQueryContextEnvelopeMessage(
+  originalInputTypeName: string,
+  queryResultTypeName: string,
+  consumerStepName: string
+): MessageCatalogEntry {
+  const normalizedInputType = normalizeTypeName(originalInputTypeName) || "OriginalInput";
+  const normalizedResultType = normalizeTypeName(queryResultTypeName) || "QueryResult";
+  const name = buildQueryContextEnvelopeTypeName(consumerStepName, normalizedInputType, normalizedResultType);
+  return {
+    id: `message.${normalizeIdentifier(name)}`,
+    name,
+    fields: [
+      { number: 1, name: "originalInput", type: normalizedInputType },
+      { number: 2, name: "queryResult", type: normalizedResultType }
+    ]
+  };
+}
+
+function buildQueryContextEnvelopeTypeName(stepName: string, originalInputTypeName: string, queryResultTypeName: string): string {
+  const step = normalizeTypeName(stepName);
+  const validationMatch = step.match(/^Validate([A-Z][A-Za-z0-9]*)$/);
+  if (validationMatch?.[1]) {
+    return `${validationMatch[1]}ValidationInput`;
+  }
+
+  const originalBase = stripTypeNameSuffixes(originalInputTypeName);
+  if (/\b(validate|validation)\b/i.test(stepName) && originalBase) {
+    return `${originalBase}ValidationInput`;
+  }
+
+  const resultBase = stripTypeNameSuffixes(queryResultTypeName) || "QueryResult";
+  return `${resultBase}Context`;
+}
+
+function buildSubmissionEnvelopeTypeName(submittedTypeName: string): string {
+  const payload = stripTypeNameSuffixes(submittedTypeName) || "Submission";
+  return `${payload}SubmissionContext`;
+}
+
+function stripTypeNameSuffixes(typeName: string): string {
+  return normalizeTypeName(typeName).replace(/(?:SubmissionContext|Context|Submission|Command|Request|Input|Payload|Message)$/i, "");
+}
+
+function stripSubmissionEnvelopeSuffixes(typeName: string): string {
+  return normalizeTypeName(typeName).replace(/(?:SubmissionContext|Context|Submission|Input)$/i, "");
+}
+
+function submittedPayloadFieldName(typeName: string): string {
+  const stripped = stripTypeNameSuffixes(typeName);
+  const normalized = stripped.replace(/Segment$/i, "") || stripped || normalizeTypeName(typeName) || "submission";
+  return lowerCamelTypeName(normalized);
+}
+
+function isCompositeTypeName(typeName: string): boolean {
+  const normalized = normalizeTypeName(typeName);
+  return /\bplus\b/i.test(typeName) || /Plus/.test(normalized) || /And[A-Z]/.test(normalized);
+}
+
+function resolveCanonicalEnvelopeMessage(
+  messageIndex: Map<string, MessageCatalogEntry>,
+  proposed: MessageCatalogEntry,
+  preferredNames: string[]
+): MessageCatalogEntry {
+  const proposedSignature = envelopeFieldSignature(proposed.fields);
+  if (!proposedSignature) {
+    return proposed;
+  }
+
+  const canonical = messageIndex.get(proposed.name);
+  if (canonical && envelopeFieldSignature(canonical.fields) === proposedSignature) {
+    return {
+      ...canonical,
+      fields: canonicalizeEnvelopeFieldNames(canonical.fields, proposed.fields)
+    };
+  }
+
+  for (const name of preferredNames) {
+    const existing = messageIndex.get(normalizeTypeName(name));
+    if (existing && existing.name === proposed.name && envelopeFieldSignature(existing.fields) === proposedSignature) {
+      return {
+        ...existing,
+        fields: canonicalizeEnvelopeFieldNames(existing.fields, proposed.fields)
+      };
+    }
+  }
+
+  return proposed;
+}
+
+function removeEquivalentEnvelopeAliases(
+  messageIndex: Map<string, MessageCatalogEntry>,
+  canonical: MessageCatalogEntry
+): void {
+  const signature = envelopeFieldSignature(canonical.fields);
+  if (!signature) {
+    return;
+  }
+  for (const [name, message] of messageIndex.entries()) {
+    if (
+      name !== canonical.name
+      && envelopeFieldSignature(message.fields) === signature
+      && isLikelyEnvelopeAliasTypeName(message.name, message.fields)
+    ) {
+      messageIndex.delete(name);
+    }
+  }
+}
+
+function removeSubmissionEnvelopeAliasNames(
+  messageIndex: Map<string, MessageCatalogEntry>,
+  canonicalName: string,
+  submittedTypeName: string,
+  candidateNames: string[]
+): void {
+  const normalizedCanonical = normalizeIdentifier(canonicalName);
+  const normalizedSubmitted = normalizeIdentifier(submittedTypeName);
+  for (const name of candidateNames) {
+    const normalizedName = normalizeIdentifier(name);
+    if (normalizedName && normalizedName !== normalizedCanonical && normalizedName !== normalizedSubmitted) {
+      messageIndex.delete(normalizeTypeName(name));
+    }
+  }
+}
+
+function pruneContractQuestionsForKnownMessages(
+  contractQuestions: PlannerDraft["contractQuestions"],
+  messageIndex: Map<string, MessageCatalogEntry>
+): void {
+  const knownMessages = new Set([...messageIndex.values()].map((message) => message.name));
+  for (let index = contractQuestions.length - 1; index >= 0; index -= 1) {
+    if (!knownMessages.has(contractQuestions[index].messageTypeName)) {
+      contractQuestions.splice(index, 1);
+    }
+  }
+}
+
+function envelopeFieldSignature(fields: MessageField[]): string | undefined {
+  if (fields.length !== 2) {
+    return undefined;
+  }
+  const [first, second] = fields;
+  if (!first?.type || !second?.type) {
+    return undefined;
+  }
+  return `${normalizeTypeName(first.type)}|${normalizeTypeName(second.type)}`;
+}
+
+function canonicalizeEnvelopeFieldNames(fields: MessageField[], proposedFields: MessageField[]): MessageField[] {
+  return fields.map((field, index) => ({
+    ...field,
+    name: proposedFields[index]?.name || field.name,
+    number: index + 1
+  }));
+}
+
+function isLikelyEnvelopeTypeName(typeName: string): boolean {
+  return /(?:Context|Input)$/i.test(typeName) || isCompositeTypeName(typeName);
+}
+
+function isLikelyEnvelopeAliasTypeName(typeName: string, fields: MessageField[]): boolean {
+  if (isLikelyEnvelopeTypeName(typeName)) {
+    return true;
+  }
+  if (fields.length !== 2) {
+    return false;
+  }
+  const normalizedName = normalizeIdentifier(typeName);
+  return fields.every((field) => normalizeIdentifier(field.type) && normalizedName.includes(normalizeIdentifier(field.type)));
+}
+
+function lowerCamelTypeName(typeName: string): string {
+  const normalized = normalizeTypeName(typeName);
+  if (!normalized) {
+    return "value";
+  }
+  return normalized.charAt(0).toLowerCase() + normalized.slice(1);
+}
+
+function pushEnvelopeContractQuestion(
+  step: PlannerDraft["businessSteps"][number],
+  envelope: MessageCatalogEntry,
+  pushContractQuestion: (question: PlannerDraft["contractQuestions"][number]) => void,
+  text: { prompt: string; description: string }
+): void {
+  const questionId = `contract.${normalizeIdentifier(step.id)}.envelope.${normalizeIdentifier(envelope.name)}`;
+  pushContractQuestion({
+    id: questionId,
+    key: "stepContracts",
+    stepId: step.id,
+    stepName: step.name,
+    kind: "fields",
+    messageTypeName: envelope.name,
+    prompt: text.prompt,
+    expectedAnswerShape: {
+      type: "fields",
+      description: text.description
+    },
+    proposedAnswer: {
+      questionId,
+      fields: envelope.fields.map((field) => ({
+        name: field.name,
+        type: field.type,
+        required: !field.optional,
+        repeated: field.repeated
+      }))
+    },
+    resolutionModes: ["confirm", "replace", "edit"]
+  });
 }
 
 function isCompiledForwardChainStep(step: PlannerDraft["businessSteps"][number]): boolean {
@@ -1967,7 +2989,8 @@ function buildOllamaSemanticIntentPrompt(
       "Loop-like workflows are modeled as replayable state-advancing invocations.",
       "The pipeline execution is single-pass; the application protocol may invoke it repeatedly over durable state.",
       "Use only these step kinds: internal, query, command, await.",
-      "Do not model persistence as a step."
+      "Do not model persistence as a step.",
+      "When one step can complete with different business outcomes, use unions plus typed branch routing instead of a status string."
     ].join("\n"),
     userContent: [
       "Return JSON only.",
@@ -1978,6 +3001,9 @@ function buildOllamaSemanticIntentPrompt(
       "Rules:",
       "- steps[].cardinality must be one of ONE_TO_ONE, EXPANSION, REDUCTION, SIDE_EFFECT",
       "- steps[].kind must be one of internal, query, command, await",
+      "- when needed, unions[] defines closed outcome unions with typed variants",
+      "- steps[].accepts may list only concrete contract types, never union names",
+      "- if any step uses accepts, exactly one final step should set terminal=true",
       "- messages[].fields must contain only name and type",
       "- assumptions and questions must be arrays of strings",
       "- the pipeline execution is single-pass; the application protocol may invoke it repeatedly over durable state",
@@ -2022,6 +3048,8 @@ function buildPlanPrompt(input: SessionStartInput, profile: PlannerProfile): Pla
           "If the brief implies await behavior, use kind \"await\" with timeout, idempotencyKeyFields, and await config.",
           "If the brief implies a framework-owned read from JPA inside the pipeline, use kind \"query\" with a top-level queries entry; do not generate a fake service step.",
           "If the brief implies a replay-safe external write/effect, use kind \"command\" with command, commandIdGenerator, and optional duplicatePolicy/config; do not generate a fake service step.",
+          "If one step can complete with several distinct business outcomes, model the output as a closed union in top-level unions and use the union name as outputTypeName.",
+          "For union-routed branching, keep the authored pipeline linear, use accepts with concrete contract types on downstream steps, and mark exactly one final merge step with terminal: true.",
           "For JPA queries, prefer simple equality where bindings by default. Use eq/in/gt/gte/lt/lte/between/like/isNull predicates, orderBy, or limit: 1 only when the brief implies that filtering.",
           "If the brief starts from filesystem/S3/object storage input, use top-level sources plus inputBoundary.object; do not generate a fake read-file step.",
           "",
@@ -2041,6 +3069,8 @@ function buildPlanPrompt(input: SessionStartInput, profile: PlannerProfile): Pla
           "A framework connector query is different from a resume/read surface: use kind \"query\" only for an in-pipeline read boundary, cardinality ONE_TO_ONE, query id, optional capture.keyFields, and a top-level queries entry. In this slice, supported connector is jpa.",
           "For JPA query where clauses, use simple equality shorthand by default, for example entityId: \"input.entityId\". Use predicate objects only when the brief explicitly implies them: eq, in, gt, gte, lt, lte, between, like, or isNull. Use orderBy plus limit: 1 only for latest/top-one style reads. Do not invent database tuning or query semantics beyond the brief.",
           "Use kind \"command\" for replay-safe external writes/effects with deterministic command identity. Command steps require cardinality ONE_TO_ONE, command, commandIdGenerator, optional duplicatePolicy RETURN_RECORDED or FAIL, and optional config. Use replay-safe command/update semantics when an effect or durable state transition must be idempotent. Keep provider endpoints, credentials, and tuning outside the planner output unless the brief explicitly provides them.",
+          "If one step can complete with several distinct business outcomes, model the output as a closed union in top-level unions and use the union name as the step output type.",
+          "For union-routed branching, keep the pipeline linear, use accepts only with concrete contract types, and require exactly one terminal: true merge step as the last authored step.",
           "Do not use command for async callback or human approval; that is await. Do not use command for downstream ownership transfer; that is checkpoint handoff. Do not use command for ordinary internal business logic.",
           "Filesystem/S3 object ingestion is an input boundary, not a business step: use top-level sources and inputBoundary.object with emits.type/typeName/mapper. The first forward step must consume the emitted type.",
           "Use await steps only when the brief implies a real suspend/resume external boundary. Distinguish await steps from checkpoint hand-off and from ordinary forward steps.",
@@ -2076,6 +3106,7 @@ function buildRevisionPrompt(
           "Keep framework connector queries as kind \"query\" steps with top-level queries definitions; keep resume/read surfaces outside the main pipeline.",
           "For JPA queries, keep equality shorthand unless the answer explicitly requires range/list/prefix/null/latest filtering.",
           "Keep replay-safe external writes as kind \"command\" steps, not fake service modules. Use command for deterministic external effects, await for callbacks/human approval, and checkpoint for downstream ownership transfer.",
+          "Preserve typed union outputs, accepts routing, and one final terminal: true merge step when the brief has multiple business outcomes.",
           "Keep filesystem/S3 object ingest as top-level sources plus inputBoundary.object, not a read-file service step.",
           "",
           "Brief:",
@@ -2098,6 +3129,7 @@ function buildRevisionPrompt(
           "If the brief implies a JPA-backed in-pipeline lookup or load-state boundary, model it as kind \"query\" with a referenced top-level queries entry when it feeds the next step, not as an internal service.",
           "For JPA lookups, preserve simple equality unless the brief or answer explicitly requires richer predicates. Use orderBy with limit: 1 only for latest/top-one reads.",
           "If the brief implies a replay-safe external write/effect or idempotent state update, model it as kind \"command\" with command, commandIdGenerator, optional duplicatePolicy, and optional config. Do not invent provider endpoint, credential, or tuning details.",
+          "If the brief has multiple business outcomes with different contracts, keep a top-level unions section, use the union name as the output type, and preserve accepts plus one final terminal: true merge step.",
           "If the brief starts from filesystem/S3/object storage input, model it with top-level sources and inputBoundary.object; the first forward step consumes inputBoundary.object.emits.typeName.",
           "If ownership transfers to another pipeline after this one completes, model checkpoint handoff with outputBoundary.checkpoint and optional compositionManifest instead of await.",
           "If ambiguity remains, keep only the unresolved contractQuestions.",
@@ -2129,6 +3161,7 @@ Rules:
 - Keep future or non-MVP items out of the active pipeline and place them in futureStepCandidates.
 - Use step ids and message names consistently across the draft.
 - Keep message field names unique inside each message.
+- When one step can complete with several distinct business outcomes, use a closed union in top-level unions.
 - Keep cardinality honest: EXPANSION for fan-out, REDUCTION for aggregate/writeout, ONE_TO_ONE otherwise.
 - Treat persistence as an aspect/plugin concern. Do not emit save, persist, store, or commit business steps.
 - In the main forward-processing pipeline, each step must consume the previous forward step's output type.
@@ -2139,6 +3172,7 @@ Rules:
 - Framework connector queries are different from resume/query surfaces: use kind "query" only for in-pipeline JPA reads that feed the next step. They require cardinality ONE_TO_ONE, a query id, and a matching top-level queries entry with connector "jpa", input or inputType, output or outputType, and jpa.entity / jpa.where.
 - In JPA where clauses, use equality shorthand by default. Use predicate objects only when explicit filtering is implied: eq, in, gt, gte, lt, lte, between, like, isNull. Use orderBy plus limit: 1 only for latest/top-one semantics. Do not invent database tuning or hidden query behavior.
 - Use kind "command" for replay-safe external writes/effects owned by the TPF command runtime. Command steps require cardinality ONE_TO_ONE, command, commandIdGenerator, optional duplicatePolicy RETURN_RECORDED or FAIL, and optional config. Use replay-safe command/update semantics when a durable state transition must be idempotent.
+- For union-routed branching, keep the authored pipeline linear. Downstream routing uses accepts with concrete contract types, and exactly one final merge step must set terminal: true.
 - Do not use command for async callbacks/human approval, downstream pipeline ownership transfer, or ordinary internal business logic.
 - Keep provider endpoint, credential, and tuning details out of command steps unless the brief explicitly provides them; prefer runtime configuration guidance.
 - Filesystem/S3 object ingestion is an input boundary: use top-level sources and inputBoundary.object with emits.type/typeName/mapper, and make the first forward step consume the emitted type.

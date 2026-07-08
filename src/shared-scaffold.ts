@@ -1,5 +1,6 @@
 import YAML from "js-yaml";
 import JSZip from "jszip";
+import { buildBranchingMetadata } from "./branching.js";
 import { assertCompositionManifestInvariants, assertDerivedConfigInvariants } from "./derived-config-validation.js";
 import type { DerivedConfig, MessageDefinition, MessageField, PipelineCompositionManifest } from "./types.js";
 
@@ -39,6 +40,10 @@ export async function generateScaffoldZip(
     }
   });
   zip.file("config/pipeline.yaml", YAML.dump(config, { lineWidth: -1 }));
+  const branching = buildBranchingMetadata(config);
+  if (branching) {
+    zip.file("config/branching.json", `${JSON.stringify(branching, null, 2)}\n`);
+  }
   if (compositionManifest) {
     zip.file("config/pipeline-composition.yaml", YAML.dump(compositionManifest, { lineWidth: -1 }));
   }

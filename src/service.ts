@@ -137,12 +137,19 @@ function createLazyLocalPlannerClient(): PlannerClient {
 
 function getLocalPlannerClient(): PlannerClient {
   if (!localPlannerClient) {
+    const providerMode = readPlannerProviderMode(process.env.TPF_LLM_PROVIDER_MODE);
     localPlannerClient = createOpenAiPlannerClient({
-      endpoint: requiredEnv("TPF_LLM_ENDPOINT"),
-      model: requiredEnv("TPF_LLM_MODEL"),
-      token: resolvePlannerToken(process.env, readPlannerProviderMode(process.env.TPF_LLM_PROVIDER_MODE)),
+      endpoint: providerMode === "codex_cli" || providerMode === "opencode" || providerMode === "mock"
+        ? undefined
+        : requiredEnv("TPF_LLM_ENDPOINT"),
+      model: providerMode === "codex_cli" || providerMode === "opencode" || providerMode === "mock"
+        ? process.env.TPF_LLM_MODEL?.trim()
+        : requiredEnv("TPF_LLM_MODEL"),
+      token: providerMode === "codex_cli" || providerMode === "opencode" || providerMode === "mock"
+        ? undefined
+        : resolvePlannerToken(process.env, providerMode),
       profile: readPlannerProfile(process.env.TPF_LLM_PROFILE),
-      providerMode: readPlannerProviderMode(process.env.TPF_LLM_PROVIDER_MODE)
+      providerMode
     });
   }
   return localPlannerClient;
@@ -178,7 +185,16 @@ function readPlannerProviderMode(rawValue: string | undefined): PlannerProviderM
   if (normalized === "ollama-native") {
     return "ollama-native";
   }
+  if (normalized === "codex_cli" || normalized === "codex-cli") {
+    return "codex_cli";
+  }
+  if (normalized === "opencode") {
+    return "opencode";
+  }
+  if (normalized === "mock") {
+    return "mock";
+  }
   throw new Error(
-    `Unsupported TPF_LLM_PROVIDER_MODE '${rawValue}'. Allowed values: openai-compatible, ollama-native.`
+    `Unsupported TPF_LLM_PROVIDER_MODE '${rawValue}'. Allowed values: openai-compatible, ollama-native, codex_cli, opencode, mock.`
   );
 }

@@ -7,7 +7,7 @@ interface CodexAuthFile {
   OPENAI_API_KEY?: string;
 }
 
-export type PlannerCredentialSource = "env" | "codex_auth_fallback";
+export type PlannerCredentialSource = "env" | "codex_auth_fallback" | "mock" | "local-cli";
 
 export interface ResolvedPlannerCredential {
   token: string;

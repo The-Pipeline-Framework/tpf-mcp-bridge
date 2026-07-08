@@ -1,4 +1,5 @@
 import YAML from "js-yaml";
+import { buildBranchingPlan } from "./branching.js";
 import type {
   AnalyzeResult,
   AspectConfig,
@@ -24,7 +25,8 @@ import type {
   SessionStartInput,
   StepFlowRole,
   StepKind,
-  StepContract
+  StepContract,
+  UnionDefinition
 } from "./types.js";
 import { legacyObjectInputBoundary, simpleTypeName, typeNamesMatch } from "./type-name-utils.js";
 
@@ -40,12 +42,8 @@ export function analyzePlannerDraft(
   const basePackage = input.basePackage?.trim() || defaultBasePackage(title);
 
   const messageCatalog = normalizeMessageCatalog(draft.messageCatalog);
-  const messages = Object.fromEntries(
-    messageCatalog.map((message) => [
-      message.name,
-      { fields: message.fields } satisfies MessageDefinition
-    ])
-  );
+  const unions = normalizeUnions(draft.unions || {}, messagesFromCatalog(messageCatalog));
+  const messages = messagesFromCatalog(messageCatalog);
   const businessSteps = normalizeBusinessSteps(draft.businessSteps, messages, basePackage);
   const stepContracts = normalizeStepContracts(draft.stepContracts, businessSteps, messages, basePackage);
   const inferredSteps = normalizePipelineSteps(draft.pipelineSteps, basePackage);
@@ -78,13 +76,14 @@ export function analyzePlannerDraft(
     ...(inputBoundary ? { input: inputBoundary } : {}),
     ...(outputBoundary ? { output: outputBoundary } : {}),
     messages,
+    ...(Object.keys(unions).length > 0 ? { unions } : {}),
     ...(Object.keys(queries).length > 0 ? { queries } : {}),
     ...(Object.keys(sources).length > 0 ? { sources } : {}),
     steps: inferredSteps.map(({ id, ...step }) => step),
     ...(Object.keys(resolvedAspects).length > 0 ? { aspects: resolvedAspects } : {})
   };
 
-  assertPlannerSemantics(businessSteps, stepContracts, inferredSteps, queries, sources, resolvedAspects, platform, inputBoundary, outputBoundary, compositionManifest);
+  assertPlannerSemantics(businessSteps, stepContracts, inferredSteps, unions, queries, sources, resolvedAspects, platform, inputBoundary, outputBoundary, compositionManifest);
 
   const couplingFindings = draft.couplingFindings?.length ? draft.couplingFindings : deriveCouplingFindings(businessSteps);
   const status = questions.length > 0 || contractQuestions.length > 0 ? "needs_input" : "ready";
@@ -123,6 +122,15 @@ export function analyzePlannerDraft(
   };
 }
 
+function messagesFromCatalog(messageCatalog: MessageCatalogEntry[]): Record<string, MessageDefinition> {
+  return Object.fromEntries(
+    messageCatalog.map((message) => [
+      message.name,
+      { fields: message.fields } satisfies MessageDefinition
+    ])
+  );
+}
+
 function normalizeMessageCatalog(messages: MessageCatalogEntry[]): MessageCatalogEntry[] {
   const seen = new Set<string>();
   return messages.map((message) => {
@@ -136,6 +144,44 @@ function normalizeMessageCatalog(messages: MessageCatalogEntry[]): MessageCatalo
       fields: renumberFields(message.fields)
     };
   });
+}
+
+function normalizeUnions(
+  unions: Record<string, UnionDefinition>,
+  messages: Record<string, MessageDefinition>
+): Record<string, UnionDefinition> {
+  const normalized: Record<string, UnionDefinition> = {};
+  for (const [unionName, definition] of Object.entries(unions || {})) {
+    const normalizedName = simpleTypeName(unionName);
+    const variants = Object.entries(definition?.variants || {})
+      .map(([variantName, variant]) => ({
+        name: variantName,
+        type: simpleTypeName(variant.type),
+        number: variant.number
+      }))
+      .sort((left, right) => left.number - right.number);
+    if (!normalizedName || variants.length === 0) {
+      throw new Error(`Planner draft defines invalid union '${unionName}'.`);
+    }
+    for (const variant of variants) {
+      if (!messages[variant.type]) {
+        throw new Error(`Planner draft union '${normalizedName}' variant '${variant.name}' references unknown message '${variant.type}'.`);
+      }
+    }
+    if (normalized[normalizedName]) {
+      throw new Error(`Planner draft defines unions that normalize to the same name '${normalizedName}': '${unionName}' collides with an earlier union.`);
+    }
+    if (messages[normalizedName]) {
+      throw new Error(`Planner draft union '${normalizedName}' (from '${unionName}') collides with an existing message key.`);
+    }
+    normalized[normalizedName] = {
+      variants: Object.fromEntries(variants.map((variant) => [variant.name, {
+        number: variant.number,
+        type: variant.type
+      }]))
+    };
+  }
+  return normalized;
 }
 
 function normalizeBusinessSteps(
@@ -156,6 +202,8 @@ function normalizeBusinessSteps(
       ...step,
       id,
       kind: normalizeStepKind(step.kind),
+      accepts: normalizeAcceptedContracts(step.accepts),
+      terminal: Boolean(step.terminal),
       ...(normalizeQueryId(step.query) ? { query: normalizeQueryId(step.query) } : {}),
       ...(normalizeQueryCapture(step.capture) ? { capture: normalizeQueryCapture(step.capture) } : {}),
       ...normalizeCommandFields(step, basePackage),
@@ -183,6 +231,8 @@ function normalizeStepContracts(
     return {
       ...contract,
       kind: normalizeStepKind(contract.kind),
+      accepts: normalizeAcceptedContracts(contract.accepts),
+      terminal: Boolean(contract.terminal),
       ...(normalizeQueryId(contract.query) ? { query: normalizeQueryId(contract.query) } : {}),
       ...(normalizeQueryCapture(contract.capture) ? { capture: normalizeQueryCapture(contract.capture) } : {}),
       ...normalizeCommandFields(contract, basePackage),
@@ -208,6 +258,8 @@ function normalizePipelineSteps(steps: AnalyzeResult["inferredSteps"], basePacka
       ...step,
       id,
       kind: normalizeStepKind(step.kind),
+      accepts: normalizeAcceptedContracts(step.accepts),
+      terminal: Boolean(step.terminal),
       ...(normalizeQueryId(step.query) ? { query: normalizeQueryId(step.query) } : {}),
       ...(normalizeQueryCapture(step.capture) ? { capture: normalizeQueryCapture(step.capture) } : {}),
       ...normalizeCommandFields(step, basePackage),
@@ -589,6 +641,11 @@ function normalizeContractQuestions(questions: ContractQuestion[]): ContractQues
   }));
 }
 
+function normalizeAcceptedContracts(values: string[] | undefined): string[] | undefined {
+  const normalized = (values || []).map((value) => simpleTypeName(value.trim())).filter(Boolean);
+  return normalized.length > 0 ? [...new Set(normalized)] : undefined;
+}
+
 function renumberFields(fields: MessageField[]): MessageField[] {
   return fields.map((field, index) => ({ ...field, number: index + 1 }));
 }
@@ -597,6 +654,7 @@ function assertPlannerSemantics(
   businessSteps: BusinessStep[],
   stepContracts: StepContract[],
   pipelineSteps: PipelineStep[],
+  unions: Record<string, UnionDefinition>,
   queries: Record<string, PipelineQueryDefinition>,
   sources: Record<string, PipelineObjectSourceDefinition>,
   aspects: Record<string, AspectConfig>,
@@ -685,20 +743,35 @@ function assertPlannerSemantics(
         throw new Error(`Planner draft defines query step '${pipelineStep.name}' without a matching top-level queries entry.`);
       }
     }
-    if (kind === "command" && (!pipelineStep.command?.trim() || !pipelineStep.commandIdGenerator?.trim())) {
+    if (kind === "command" && !pipelineStep.command?.trim()) {
       throw new Error(`Planner draft defines command step '${pipelineStep.name}' without command metadata.`);
     }
   }
 
-  const forwardSteps = businessSteps.filter((step) => isForwardChainStep(step));
-  for (let index = 1; index < forwardSteps.length; index += 1) {
-    const previous = forwardSteps[index - 1];
-    const current = forwardSteps[index];
-    if (current.inputTypeName !== previous.outputTypeName) {
-      throw new Error(
-        `Planner draft violates TPF semantics: forward step '${current.name}' consumes '${current.inputTypeName}' but the previous forward step ` +
-        `'${previous.name}' outputs '${previous.outputTypeName}'.`
-      );
+  let branchAwarePlan;
+  try {
+    branchAwarePlan = buildBranchingPlan(pipelineSteps, unions);
+  } catch (error) {
+    throw new Error(
+      `Planner draft violates TPF semantics: ${error instanceof Error ? error.message : "invalid branch-aware routing metadata."}`
+    );
+  }
+  if (branchAwarePlan) {
+    const lastStep = pipelineSteps[branchAwarePlan.terminalStepIndex];
+    if (!lastStep?.terminal) {
+      throw new Error("Planner draft violates TPF semantics: branch-aware routing requires a terminal step.");
+    }
+  } else {
+    const forwardSteps = businessSteps.filter((step) => isForwardChainStep(step));
+    for (let index = 1; index < forwardSteps.length; index += 1) {
+      const previous = forwardSteps[index - 1];
+      const current = forwardSteps[index];
+      if (current.inputTypeName !== previous.outputTypeName) {
+        throw new Error(
+          `Planner draft violates TPF semantics: forward step '${current.name}' consumes '${current.inputTypeName}' but the previous forward step ` +
+          `'${previous.name}' outputs '${previous.outputTypeName}'.`
+        );
+      }
     }
   }
 
@@ -725,6 +798,13 @@ function assertCoherentStepViews(
   if (contract.outputTypeName !== businessStep.outputTypeName || pipelineStep.outputTypeName !== businessStep.outputTypeName) {
     throw new Error(`Planner draft defines inconsistent output types for business step '${businessStep.name}'.`);
   }
+  if (acceptedContractsSignature(businessStep.accepts) !== acceptedContractsSignature(contract.accepts)
+    || acceptedContractsSignature(businessStep.accepts) !== acceptedContractsSignature(pipelineStep.accepts)) {
+    throw new Error(`Planner draft defines inconsistent accepted branch contracts for business step '${businessStep.name}'.`);
+  }
+  if (Boolean(businessStep.terminal) !== Boolean(contract.terminal) || Boolean(businessStep.terminal) !== Boolean(pipelineStep.terminal)) {
+    throw new Error(`Planner draft defines inconsistent terminal routing metadata for business step '${businessStep.name}'.`);
+  }
   const businessRole = inferFlowRole(businessStep.flowRole, businessStep.name, businessStep.inputTypeName, businessStep.outputTypeName);
   const contractRole = inferFlowRole(contract.flowRole, contract.stepName, contract.inputTypeName, contract.outputTypeName);
   const pipelineRole = inferFlowRole(pipelineStep.flowRole, pipelineStep.name, pipelineStep.inputTypeName, pipelineStep.outputTypeName, pipelineStep.cardinality);
@@ -737,10 +817,13 @@ function assertCoherentStepViews(
   if ((businessStep.command || "") !== (contract.command || "") || (businessStep.command || "") !== (pipelineStep.command || "")) {
     throw new Error(`Planner draft defines inconsistent command names for business step '${businessStep.name}'.`);
   }
-  if (
-    (businessStep.commandIdGenerator || "") !== (contract.commandIdGenerator || "")
-    || (businessStep.commandIdGenerator || "") !== (pipelineStep.commandIdGenerator || "")
-  ) {
+  const commandIdGeneratorValues = [
+    businessStep.commandIdGenerator?.trim() || null,
+    contract.commandIdGenerator?.trim() || null,
+    pipelineStep.commandIdGenerator?.trim() || null
+  ];
+  const commandIdGenerators = commandIdGeneratorValues.filter((value): value is string => Boolean(value));
+  if (new Set(commandIdGenerators).size > 1 || (commandIdGenerators.length > 0 && commandIdGeneratorValues.some((value) => value === null))) {
     throw new Error(`Planner draft defines inconsistent command id generators for business step '${businessStep.name}'.`);
   }
   if (
@@ -756,6 +839,10 @@ function assertCoherentStepViews(
     throw new Error(`Planner draft defines inconsistent command config metadata for business step '${businessStep.name}'.`);
   }
   assertVirtualThreadSemantics(businessStep, contract, pipelineStep);
+}
+
+function acceptedContractsSignature(values: string[] | undefined): string {
+  return [...(values || [])].sort().join("|");
 }
 
 function inferFlowRole(
@@ -960,9 +1047,6 @@ function assertCommandSemantics(
   }
   if (!businessStep.command?.trim() || !contract.command?.trim() || !pipelineStep.command?.trim()) {
     throw new Error(`Planner draft violates TPF semantics: command step '${stepName}' must declare command in every step view.`);
-  }
-  if (!businessStep.commandIdGenerator?.trim() || !contract.commandIdGenerator?.trim() || !pipelineStep.commandIdGenerator?.trim()) {
-    throw new Error(`Planner draft violates TPF semantics: command step '${stepName}' must declare commandIdGenerator in every step view.`);
   }
   const policies = [businessStep.duplicatePolicy, contract.duplicatePolicy, pipelineStep.duplicatePolicy]
     .filter((policy) => policy !== undefined);
