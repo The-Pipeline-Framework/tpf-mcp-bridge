@@ -169,7 +169,7 @@ function classifyEntry(entry) {
   if (isPipelineTemplateSchema(filePath)) {
     category = "fix now";
     owner = "deployment schema";
-    notes.push("Sync the vendored generator schema and run check:pipeline-schema against this release candidate.");
+    notes.push("Synchronize the app-generator schema and run its check:pipeline-schema command against this release candidate before updating the bridge pin.");
     notes.push("Inspect schema additions such as query, object source/publish, and YAML-owned execution flags.");
   } else if (isGeneratedCompileBreakSurface(filePath)) {
     category = "fix now";

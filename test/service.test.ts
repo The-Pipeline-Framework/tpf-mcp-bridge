@@ -3016,6 +3016,7 @@ test("package metadata advertises the publishable bridge install surface", async
     version: string;
     bin: Record<string, string>;
     scripts: Record<string, string>;
+    dependencies: Record<string, string>;
     files: string[];
     publishConfig: { access: string };
     main: string;
@@ -3029,13 +3030,11 @@ test("package metadata advertises the publishable bridge install surface", async
     "tpf-mcp-bridge": "./dist/src/bridge.js"
   });
   assert.equal(packageJson.scripts.start, "node dist/src/bridge.js");
+  assert.equal(packageJson.dependencies["app-generator"], "github:The-Pipeline-Framework/app-generator#62c2783");
   assert.equal(packageJson.main, "dist/src/bridge-runtime.js");
   assert.equal(packageJson.exports["."], "./dist/src/bridge-runtime.js");
   assert.deepEqual(packageJson.files, [
     "dist/src/**/*",
-    "template-generator-node/src/**/*",
-    "template-generator-node/templates/**/*",
-    "template-generator-node/package.json",
     "README.md",
     "LICENSE"
   ]);
@@ -3057,9 +3056,9 @@ test("standalone readme documents host installs, provider modes, and schema sync
   assert.match(readme, /What each planner environment variable does/i);
   assert.match(readme, /What each backend environment variable does/i);
   assert.match(readme, /DEVELOPING\.md/);
-  assert.match(developerGuide, /sync:pipeline-schema/);
+  assert.match(developerGuide, /app-generator/);
   assert.match(developerGuide, /framework\/deployment/);
-  assert.match(developerGuide, /vendored generator snapshot/i);
+  assert.match(developerGuide, /pinned standalone dependency/i);
   assert.match(developerGuide, /npm ci/);
   assert.match(developerGuide, /npm test/);
   assert.match(developerGuide, /npm pack --dry-run/);
@@ -3100,7 +3099,7 @@ test("release parity audit classifies scaffold-relevant release deltas", async (
 
     assert.match(report, /Baseline: `v26\.6\.1\.\.HEAD`/);
     assert.match(report, /## Fix Now/);
-    assert.match(report, /Sync the vendored generator schema/i);
+  assert.match(report, /Synchronize the app-generator schema/i);
     assert.match(report, /generated Java\/templates must compile/i);
     assert.match(report, /virtual-thread authoring/i);
     assert.match(report, /## Defer Issue/);

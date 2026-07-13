@@ -7,10 +7,11 @@ import { fileURLToPath } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
 import YAML from "js-yaml";
 import { generateScaffold } from "../dist/src/template-bridge.js";
+import { alignGeneratedFrameworkVersion } from "./framework-version.mjs";
 
 const require = createRequire(import.meta.url);
-const pipelineSchema = require("../template-generator-node/src/pipeline-template-schema.json");
-const compositionSchema = require("../template-generator-node/src/pipeline-composition-schema.json");
+const pipelineSchema = require("app-generator/src/pipeline-template-schema.json");
+const compositionSchema = require("app-generator/src/pipeline-composition-schema.json");
 const DEFAULT_SMOKE_NAME = "checkpoint-composition-smoke";
 
 const args = parseArgs(process.argv.slice(2));
@@ -31,6 +32,7 @@ if (!existsSync(path.join(frameworkDir, "pom.xml"))) {
 const outputDir = path.join(frameworkDir, "examples", smokeName);
 await rm(outputDir, { recursive: true, force: true });
 await generateScaffold(buildCheckpointConfig(), outputDir, buildCompositionManifest(smokeName));
+alignGeneratedFrameworkVersion(outputDir, frameworkDir);
 
 const pipelinePath = path.join(outputDir, "config", "pipeline.yaml");
 const compositionPath = path.join(outputDir, "config", "pipeline-composition.yaml");

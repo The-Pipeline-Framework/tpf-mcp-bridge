@@ -222,7 +222,7 @@ export function createTpfMcpServer(
     server.registerTool(
       "scaffold_from_brief",
       {
-        description: "Analyze a Markdown business brief, derive a TPF v2 pipeline config, and generate a scaffold with template-generator-node.",
+        description: "Analyze a Markdown business brief, derive a TPF v2 pipeline config, and generate a scaffold with app-generator.",
         inputSchema: briefInputSchema
       },
       async (input) => invokeTool(() => handlers.scaffoldFromBrief(input as BriefInput), options.errorMapper)

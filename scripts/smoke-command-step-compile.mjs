@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { generateScaffold } from "../dist/src/template-bridge.js";
+import { alignGeneratedFrameworkVersion } from "./framework-version.mjs";
 
 const DEFAULT_SMOKE_NAME = "command-step-smoke";
 
@@ -20,6 +21,7 @@ await fs.rm(outputDir, { recursive: true, force: true });
 await fs.mkdir(outputDir, { recursive: true });
 
 await generateScaffold(buildCommandStepConfig(), outputDir);
+alignGeneratedFrameworkVersion(outputDir, frameworkDir);
 
 await assertGeneratedFiles(outputDir);
 
