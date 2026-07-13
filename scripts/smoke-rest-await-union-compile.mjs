@@ -4,6 +4,7 @@ import { rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateScaffold } from "../dist/src/template-bridge.js";
+import { alignGeneratedFrameworkVersion } from "./framework-version.mjs";
 
 const DEFAULT_SMOKE_NAME = "restaurant-approval-union-smoke";
 
@@ -24,6 +25,7 @@ if (!existsSync(path.join(frameworkDir, "pom.xml"))) {
 const outputDir = path.join(frameworkDir, "examples", smokeName);
 await rm(outputDir, { recursive: true, force: true });
 await generateScaffold(buildRestaurantApprovalUnionConfig(), outputDir);
+alignGeneratedFrameworkVersion(outputDir, frameworkDir);
 
 const legacyConfigPath = path.join(outputDir, "pipeline-config.yaml");
 if (existsSync(legacyConfigPath)) {
@@ -164,7 +166,9 @@ function buildRestaurantApprovalUnionConfig() {
         name: "Finalize Restaurant Decision",
         cardinality: "ONE_TO_ONE",
         inputTypeName: "RestaurantDecision",
-        outputTypeName: "TerminalOrderState"
+        outputTypeName: "TerminalOrderState",
+        accepts: ["RestaurantOrderAccepted", "RestaurantOrderDeclined"],
+        terminal: true
       }
     ]
   };

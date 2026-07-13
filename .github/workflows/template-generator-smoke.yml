@@ -46,11 +46,6 @@ jobs:
       - name: Build bridge
         run: npm run build
 
-      - name: Normalize framework candidate version for scaffold smokes
-        run: |
-          find pipelineframework-26.6.2-candidate -name '*.xml' -print0 \
-            | xargs -0 perl -0pi -e 's/26\.6\.\d+-SNAPSHOT/26.6.2/g'
-
       - name: Install framework root candidate POM locally
         run: ./mvnw -N install
         working-directory: pipelineframework-26.6.2-candidate

@@ -4,6 +4,7 @@ import { rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateScaffold } from "../dist/src/template-bridge.js";
+import { alignGeneratedFrameworkVersion } from "./framework-version.mjs";
 
 const DEFAULT_SMOKE_NAME = "kafka-await-smoke";
 
@@ -25,6 +26,7 @@ if (!existsSync(path.join(frameworkDir, "pom.xml"))) {
 const outputDir = path.join(frameworkDir, "examples", smokeName);
 await rm(outputDir, { recursive: true, force: true });
 await generateScaffold(buildKafkaAwaitConfig(), outputDir);
+alignGeneratedFrameworkVersion(outputDir, frameworkDir);
 
 const awaitServiceModulePath = path.join(outputDir, "await-payment-provider-svc");
 if (existsSync(awaitServiceModulePath)) {
