@@ -9,8 +9,8 @@ import YAML from "js-yaml";
 import { generateScaffold } from "../dist/src/template-bridge.js";
 
 const require = createRequire(import.meta.url);
-const pipelineSchema = require("../template-generator-node/src/pipeline-template-schema.json");
-const compositionSchema = require("../template-generator-node/src/pipeline-composition-schema.json");
+const pipelineSchema = require("app-generator/src/pipeline-template-schema.json");
+const compositionSchema = require("app-generator/src/pipeline-composition-schema.json");
 const DEFAULT_SMOKE_NAME = "checkpoint-composition-smoke";
 
 const args = parseArgs(process.argv.slice(2));

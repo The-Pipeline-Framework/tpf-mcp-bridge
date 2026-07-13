@@ -25,7 +25,7 @@
 - `M` `framework/deployment/src/main/java/org/pipelineframework/processor/schema/PipelineTemplateSchemaExporter.java` (deployment/compiler)
   - Framework authoring/runtime API changed; generated Java/templates must compile against the release candidate.
 - `M` `framework/deployment/src/main/resources/META-INF/pipeline/pipeline-template-schema.json` (deployment schema)
-  - Sync the vendored generator schema and run check:pipeline-schema against this release candidate.
+- Synchronize the app-generator schema and run its check:pipeline-schema command against this release candidate before updating the bridge pin.
   - Inspect schema additions such as query, object source/publish, and YAML-owned execution flags.
 - `M` `framework/runtime/src/main/java/org/pipelineframework/annotation/PipelineStep.java` (runtime/orchestrator)
   - Framework authoring/runtime API changed; generated Java/templates must compile against the release candidate.

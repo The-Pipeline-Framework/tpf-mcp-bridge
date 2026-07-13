@@ -32,9 +32,6 @@
   },
   "files": [
     "dist/src/**/*",
-    "template-generator-node/src/**/*",
-    "template-generator-node/templates/**/*",
-    "template-generator-node/package.json",
     "README.md",
     "LICENSE"
   ],
@@ -48,7 +45,6 @@
     "start:local": "node dist/src/server.js",
     "start:worker": "wrangler dev src/worker.ts",
     "deploy:worker": "wrangler deploy src/worker.ts",
-    "sync:pipeline-schema": "node scripts/sync-pipeline-schema.mjs",
     "audit:release-parity": "node scripts/audit-release-parity.mjs",
     "smoke:rest-await-union": "node scripts/smoke-rest-await-union-compile.mjs",
     "smoke:kafka-await": "node scripts/smoke-kafka-await-compile.mjs",
@@ -57,12 +53,12 @@
     "smoke:command-step": "npm run build && node scripts/smoke-command-step-compile.mjs",
     "smoke:object-ingest": "node scripts/smoke-object-ingest-compile.mjs",
     "smoke:checkpoint-composition": "node scripts/smoke-checkpoint-composition.mjs",
-    "check:pipeline-schema": "node scripts/check-pipeline-schema.mjs",
     "test": "npm run build && node --test dist/test/*.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
     "ajv": "^8.18.0",
+    "app-generator": "github:The-Pipeline-Framework/app-generator#62c2783",
     "fs-extra": "^11.3.2",
     "handlebars": "^4.7.9",
     "js-yaml": "4.1.0",

@@ -11,9 +11,9 @@ import type { DerivedConfig, PipelineCompositionManifest } from "./types.js";
 
 const require = createRequire(import.meta.url);
 const packageRoot = resolvePackageRoot();
-const PipelineGenerator = require(resolveVendoredModulePath("pipeline-generator.js"));
-const BrowserTemplateEngine = require(resolveVendoredModulePath("browser-template-engine.js"));
-const templateBundle = require(resolveVendoredModulePath("template-bundle.js"));
+const PipelineGenerator = require(resolveGeneratorModulePath("pipeline-generator.js"));
+const BrowserTemplateEngine = require(resolveGeneratorModulePath("browser-template-engine.js"));
+const templateBundle = require(resolveGeneratorModulePath("template-bundle.js"));
 
 type FileContent = string;
 type FileCallback = (filePath: string, content: FileContent) => Promise<void> | void;
@@ -156,11 +156,11 @@ function resolvePackageRoot(): string {
   throw new Error("Unable to locate the @pipelineframework/mcp package root.");
 }
 
-function resolveVendoredModulePath(fileName: string): string {
-  const candidate = path.join(packageRoot, "template-generator-node", "src", fileName);
+function resolveGeneratorModulePath(fileName: string): string {
+  const candidate = `app-generator/src/${fileName}`;
   try {
     return require.resolve(candidate);
   } catch (_error) {
-    throw new Error(`Unable to locate vendored template-generator-node/src/${fileName} from the standalone bridge repo.`);
+    throw new Error(`Unable to locate app-generator/src/${fileName} from the standalone bridge repo.`);
   }
 }

@@ -1,6 +1,6 @@
 # Contributing to TPF MCP Bridge
 
-Thank you for contributing. This repository owns the TPF MCP bridge package, its hosted Worker backend, and the vendored `template-generator-node` snapshot used for scaffold generation.
+Thank you for contributing. This repository owns the TPF MCP bridge package, its hosted Worker backend, and the pinned `app-generator` dependency used for scaffold generation.
 
 ## Code of Conduct
 
@@ -9,7 +9,7 @@ This project is governed by [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md). Please r
 ## Before You Start
 
 - For core Java framework, compiler, runtime, or examples work, use the main TPF monorepo instead.
-- For bridge, Worker, MCP workflow, hosted artifact flow, or vendored generator behavior in this repo, contribute here.
+- For bridge, Worker, MCP workflow, hosted artifact flow, or generator integration behavior in this repo, contribute here.
 
 ## Development Setup
 
@@ -23,14 +23,13 @@ Install:
 
 ```bash
 npm ci
-npm --prefix template-generator-node ci
 ```
 
 ## Project Structure
 
 - `src/` - bridge runtime, MCP server, planner integration, Worker backend
 - `test/` - bridge and Worker tests
-- `template-generator-node/` - vendored generator/schema/templates snapshot
+- `app-generator` - pinned standalone generator dependency
 - `.github/workflows/` - package publish workflow
 
 ## Testing
@@ -39,7 +38,6 @@ Run before submitting changes:
 
 ```bash
 npm test
-npm --prefix template-generator-node test
 npm pack --dry-run
 ```
 
@@ -53,12 +51,12 @@ Before submitting:
 2. Put maintainer-only operational notes in `DEVELOPING.md` or `AGENTS.md`.
 3. Add or update tests for bridge, Worker, or generator behavior you changed.
 4. Update docs when install, env vars, package surface, or hosted-backend behavior changes.
-5. Keep the vendored generator snapshot and bridge expectations aligned.
+5. Keep the pinned generator dependency and bridge expectations aligned.
 
 ## Schema Sync
 
-This repo vendors `template-generator-node`, but the generator-facing schema authority lives in the main TPF repo under `framework/deployment`. When config-shape changes land there, sync the generated schema here:
+The standalone `app-generator` repository owns the generator-facing schema snapshot. The schema authority remains in the main TPF repo under `framework/deployment`; when config-shape changes land there, synchronize the snapshot in `app-generator` and then update this bridge's pinned dependency.
 
 ```bash
-npm run sync:pipeline-schema -- ../pipelineframework/framework/deployment/target/classes/META-INF/pipeline/pipeline-template-schema.json
+cd ../app-generator && npm run sync:pipeline-schema -- ../pipelineframework/framework/deployment/target/classes/META-INF/pipeline/pipeline-template-schema.json
 ```

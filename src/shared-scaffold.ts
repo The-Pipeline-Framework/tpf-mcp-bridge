@@ -56,25 +56,16 @@ async function initializeBrowserTemplateEngine(): Promise<InstanceType<BrowserTe
 }
 
 async function loadBrowserGenerator(): Promise<{ BrowserTemplateEngine: BrowserTemplateEngineCtor; templates: Record<string, string> }> {
-  const [engineModule, templatesModule] = isWorkerRuntime()
-    ? await Promise.all([
-        // @ts-ignore Plain JS module imported from the vendored generator snapshot for Worker bundling.
-        import("../template-generator-node/src/browser-template-engine.js"),
-        // @ts-ignore Plain JS module imported from the vendored generator snapshot for Worker bundling.
-        import("../template-generator-node/src/template-bundle-precompiled.js")
-      ])
-    : await Promise.all([
-        import(new URL("../../template-generator-node/src/browser-template-engine.js", import.meta.url).href),
-        import(new URL("../../template-generator-node/src/template-bundle-precompiled.js", import.meta.url).href)
-      ]);
+  const [engineModule, templatesModule] = await Promise.all([
+    // @ts-ignore Plain JS module imported from the standalone generator package for Worker bundling.
+    import("app-generator/src/browser-template-engine.js"),
+    // @ts-ignore Plain JS module imported from the standalone generator package for Worker bundling.
+    import("app-generator/src/template-bundle-precompiled.js")
+  ]);
   return {
     BrowserTemplateEngine: (engineModule.default || engineModule) as BrowserTemplateEngineCtor,
     templates: (templatesModule.default || templatesModule) as Record<string, string>
   };
-}
-
-function isWorkerRuntime(): boolean {
-  return typeof (globalThis as { WebSocketPair?: unknown }).WebSocketPair !== "undefined";
 }
 
 function toWorkerScaffoldConfig(config: DerivedConfig): {

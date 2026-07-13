@@ -39,13 +39,9 @@ jobs:
           cache: npm
           cache-dependency-path: |
             package-lock.json
-            template-generator-node/package-lock.json
 
       - name: Install bridge dependencies
         run: npm ci
-
-      - name: Install vendored generator dependencies
-        run: npm --prefix template-generator-node ci
 
       - name: Build bridge
         run: npm run build
@@ -71,8 +67,8 @@ jobs:
         run: ./mvnw -f connectors/object-ingest/pom.xml -DskipTests install
         working-directory: pipelineframework-26.6.2-candidate
 
-      - name: Check vendored pipeline schema
-        run: npm run check:pipeline-schema -- "${GITHUB_WORKSPACE}/pipelineframework-26.6.2-candidate/framework/deployment/src/main/resources/META-INF/pipeline/pipeline-template-schema.json"
+      - name: Check app-generator pipeline schema
+        run: npm --prefix node_modules/app-generator run check:pipeline-schema -- "${GITHUB_WORKSPACE}/pipelineframework-26.6.2-candidate/framework/deployment/src/main/resources/META-INF/pipeline/pipeline-template-schema.json"
 
       - name: Compile generated REST await union scaffold
         run: npm run smoke:rest-await-union -- --framework-dir "${GITHUB_WORKSPACE}/pipelineframework-26.6.2-candidate"
