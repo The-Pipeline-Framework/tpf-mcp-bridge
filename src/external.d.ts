@@ -3,7 +3,7 @@ declare module "app-generator/src/browser-template-engine.js" {
   export default BrowserTemplateEngine;
 }
 
-declare module "app-generator/src/template-bundle.js" {
+declare module "app-generator/src/template-bundle-precompiled.js" {
   const templates: Record<string, string>;
   export default templates;
 }

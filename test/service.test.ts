@@ -3016,6 +3016,7 @@ test("package metadata advertises the publishable bridge install surface", async
     version: string;
     bin: Record<string, string>;
     scripts: Record<string, string>;
+    dependencies: Record<string, string>;
     files: string[];
     publishConfig: { access: string };
     main: string;
@@ -3029,6 +3030,7 @@ test("package metadata advertises the publishable bridge install surface", async
     "tpf-mcp-bridge": "./dist/src/bridge.js"
   });
   assert.equal(packageJson.scripts.start, "node dist/src/bridge.js");
+  assert.equal(packageJson.dependencies["app-generator"], "github:The-Pipeline-Framework/app-generator#62c2783");
   assert.equal(packageJson.main, "dist/src/bridge-runtime.js");
   assert.equal(packageJson.exports["."], "./dist/src/bridge-runtime.js");
   assert.deepEqual(packageJson.files, [
