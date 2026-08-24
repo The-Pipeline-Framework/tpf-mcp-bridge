@@ -1,7 +1,8 @@
 {
-  "name": "@pipelineframework/mcp",
-  "version": "26.6.2",
-  "description": "Local MCP bridge for TPF brief-to-scaffold sessions with a local planner and optional hosted generation backend",
+  "name": "tpf-author-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Versioned, author-facing TPF knowledge MCP for Cloudflare Workers",
   "license": "Apache-2.0",
   "homepage": "https://github.com/The-Pipeline-Framework/tpf-mcp-bridge",
   "bugs": {
@@ -11,64 +12,42 @@
     "type": "git",
     "url": "git+https://github.com/The-Pipeline-Framework/tpf-mcp-bridge.git"
   },
-  "keywords": [
-    "mcp",
-    "codex",
-    "openai",
-    "pipeline-framework",
-    "tpf"
-  ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "type": "module",
-  "main": "dist/src/bridge-runtime.js",
-  "exports": {
-    ".": "./dist/src/bridge-runtime.js"
-  },
-  "bin": {
-    "mcp": "./dist/src/bridge.js",
-    "tpf-mcp-bridge": "./dist/src/bridge.js"
-  },
-  "files": [
-    "dist/src/**/*",
-    "README.md",
-    "LICENSE"
-  ],
-  "publishConfig": {
-    "access": "public"
-  },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "prepack": "npm run build",
-    "start": "node dist/src/bridge.js",
-    "start:local": "node dist/src/server.js",
-    "start:worker": "wrangler dev src/worker.ts",
-    "deploy:worker": "wrangler deploy src/worker.ts",
-    "audit:release-parity": "node scripts/audit-release-parity.mjs",
-    "smoke:rest-await-union": "node scripts/smoke-rest-await-union-compile.mjs",
-    "smoke:kafka-await": "node scripts/smoke-kafka-await-compile.mjs",
-    "smoke:sqs-await": "node scripts/smoke-sqs-await-compile.mjs",
-    "smoke:query-connector": "node scripts/smoke-query-connector-compile.mjs",
-    "smoke:command-step": "npm run build && node scripts/smoke-command-step-compile.mjs",
-    "smoke:object-ingest": "node scripts/smoke-object-ingest-compile.mjs",
-    "smoke:checkpoint-composition": "node scripts/smoke-checkpoint-composition.mjs",
-    "test": "npm run build && node --test dist/test/*.test.js"
+    "build": "tsc --noEmit",
+    "audit:release-parity": "tsx scripts/audit-release-parity.ts",
+    "check": "npm run format:check && npm run lint && npm run build && npm test",
+    "deploy": "wrangler deploy",
+    "deploy:staging": "wrangler deploy --env staging",
+    "dev": "wrangler dev --env staging",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "install:repowise-upload-hook": "tsx scripts/install-repowise-upload-hook.ts",
+    "lint": "oxlint .",
+    "migrate:local": "wrangler d1 migrations apply TPF_MCP_KNOWLEDGE --local",
+    "migrate:staging": "wrangler d1 migrations apply TPF_MCP_KNOWLEDGE --env staging --remote",
+    "migrate:production": "wrangler d1 migrations apply TPF_MCP_KNOWLEDGE --remote",
+    "publish:knowledge": "tsx scripts/publish-knowledge.ts",
+    "test": "vitest run --config vitest.config.ts && vitest run --config vitest.worker.config.ts",
+    "test:watch": "vitest",
+    "upload:repowise-input": "tsx scripts/upload-repowise-input.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.29.0",
-    "ajv": "^8.18.0",
-    "app-generator": "github:The-Pipeline-Framework/app-generator#62c2783",
-    "fs-extra": "^11.3.2",
-    "handlebars": "^4.7.9",
-    "js-yaml": "4.1.0",
-    "jszip": "^3.10.1",
+    "@modelcontextprotocol/server": "2.0.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@types/js-yaml": "4.0.9",
+    "@cloudflare/vitest-plugin": "1.0.0",
+    "@cloudflare/workers-types": "5.20260823.1",
     "@types/node": "24.9.0",
+    "oxlint": "1.39.0",
+    "prettier": "3.6.2",
+    "tsx": "4.20.6",
     "typescript": "5.9.3",
-    "wrangler": "^4.81.1"
+    "vitest": "4.1.11",
+    "wrangler": "4.125.0"
   }
 }

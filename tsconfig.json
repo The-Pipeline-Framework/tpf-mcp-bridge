@@ -1,20 +1,25 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "outDir": "dist",
-    "rootDir": ".",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "strict": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "declaration": false
+    "noEmit": true,
+    "types": [
+      "@cloudflare/workers-types",
+      "node",
+      "@cloudflare/vitest-plugin/types"
+    ]
   },
   "include": [
     "src/**/*.ts",
-    "src/**/*.d.ts",
-    "test/**/*.ts"
+    "scripts/**/*.ts",
+    "test/**/*.ts",
+    "vitest*.config.ts",
+    "cloudflare-bindings.d.ts"
   ]
 }

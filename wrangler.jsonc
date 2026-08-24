@@ -1,48 +1,78 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "tpf-mcp-worker",
+  "name": "tpf-author-mcp",
   "main": "src/worker.ts",
-  "compatibility_date": "2026-05-07",
+  "compatibility_date": "2026-08-24",
   "compatibility_flags": ["nodejs_compat"],
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "TPF_MCP_SESSIONS",
-        "class_name": "BriefSessionDurableObject"
-      }
-    ]
-  },
-  "kv_namespaces": [
+  "d1_databases": [
     {
-      "binding": "TPF_MCP_SESSION_SNAPSHOTS",
-      "id": "3d4b15e99ff146f4b0a088967a3d622a"
+      "binding": "TPF_MCP_KNOWLEDGE",
+      "database_name": "tpf-mcp-knowledge",
+      "database_id": "c4d781da-3621-48f9-a767-7bb1c7bc0af4",
+      "migrations_dir": "migrations",
     },
-    {
-      "binding": "TPF_MCP_QUOTAS",
-      "id": "f1ea670219ea4a3391a95ddd40e27406"
-    }
   ],
   "r2_buckets": [
     {
-      "binding": "TPF_MCP_ARTIFACTS",
-      "bucket_name": "sessions",
-      "preview_bucket_name": "sessions-dev"
-    }
+      "binding": "TPF_MCP_KNOWLEDGE_OBJECTS",
+      "bucket_name": "tpf-mcp-knowledge",
+    },
+  ],
+  "ratelimits": [
+    {
+      "name": "TPF_MCP_RATE_LIMITER",
+      "namespace_id": "57501",
+      "simple": {
+        "limit": 60,
+        "period": 60,
+      },
+    },
   ],
   "routes": [
     {
       "pattern": "mcp.pipelineframework.org",
-      "custom_domain": true
-    }
+      "custom_domain": true,
+    },
   ],
   "vars": {
-    "TPF_MCP_BASE_URL": "https://mcp.pipelineframework.org",
-    "TPF_MCP_ALLOWED_ORIGIN": "https://app.pipelineframework.org"
+    "TPF_MCP_ALLOWED_HOSTS": "mcp.pipelineframework.org",
+    "TPF_MCP_ALLOWED_ORIGINS": "https://mcp.pipelineframework.org,https://playground.ai.cloudflare.com",
+    "TPF_MCP_SERVICE_VERSION": "1.0.0",
   },
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_sqlite_classes": ["BriefSessionDurableObject"]
-    }
-  ]
+  "env": {
+    "staging": {
+      "name": "tpf-author-mcp-staging",
+      "workers_dev": true,
+      "routes": [],
+      "d1_databases": [
+        {
+          "binding": "TPF_MCP_KNOWLEDGE",
+          "database_name": "tpf-mcp-knowledge-staging",
+          "database_id": "de99978b-36c5-44af-b897-3e76d9a0def1",
+          "migrations_dir": "migrations",
+        },
+      ],
+      "r2_buckets": [
+        {
+          "binding": "TPF_MCP_KNOWLEDGE_OBJECTS",
+          "bucket_name": "tpf-mcp-knowledge-staging",
+        },
+      ],
+      "ratelimits": [
+        {
+          "name": "TPF_MCP_RATE_LIMITER",
+          "namespace_id": "57502",
+          "simple": {
+            "limit": 60,
+            "period": 60,
+          },
+        },
+      ],
+      "vars": {
+        "TPF_MCP_ALLOWED_HOSTS": "tpf-author-mcp-staging.mariano-barcia.workers.dev,localhost,127.0.0.1",
+        "TPF_MCP_ALLOWED_ORIGINS": "https://playground.ai.cloudflare.com,http://localhost:5173",
+        "TPF_MCP_SERVICE_VERSION": "1.0.0",
+      },
+    },
+  },
 }
