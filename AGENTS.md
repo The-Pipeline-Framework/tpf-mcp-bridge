@@ -1,42 +1,30 @@
-# TPF MCP Bridge
+# TPF Author Knowledge MCP
 
-## Project Overview
+This repository owns the public, read-only MCP service at `mcp.pipelineframework.org`.
 
-This repository owns the TPF MCP bridge product:
+## Product boundary
 
-- local stdio MCP bridge for agent hosts such as Codex, Claude Code, OpenCode, Cursor, and VS Code
-- Cloudflare Worker backend for session persistence, scaffold generation, and artifact delivery
-- pinned `app-generator` dependency used for scaffold generation
+- The Cloudflare Worker is stateless and exposes versioned author knowledge only.
+- Repowise is a release-publication input, never a runtime dependency or public API.
+- D1 owns the searchable release catalogue. R2 owns immutable page and source payloads.
+- Every knowledge lookup requires an exact supported TPF version; never add a latest-version fallback.
+- The public catalogue is author-scoped. Do not expose maintainer ADRs, `docs/evolve`, backlog material, or arbitrary repository reads.
+- The service does not generate applications, run models, store sessions, execute source, or depend on app-generator.
 
-This is a standalone product repo. It is not the main TPF monorepo.
-
-## Core Commands
+## Commands
 
 - Install: `npm ci`
-- Bridge tests: `npm test`
-- Generator tests: run `npm test` in the `app-generator` repository
-- Package dry-run: `npm pack --dry-run`
-- StdIO bridge: `npm start`
-- Local HTTP helper: `npm run start:local`
-- Worker local dev: `npm run start:worker`
-- Worker deploy: `npm run deploy:worker`
+- Validate: `npm run check`
+- Local Worker: `npm run dev`
+- Compile release knowledge: `npm run publish:knowledge -- --framework-dir <clean-tagged-checkout> --version <x.y.z>`
+- Publish to staging: add `--environment staging --publish`
+- Deploy staging: `npm run deploy:staging`
 
-## Engineering Invariants
+## Working rules
 
-- The bridge runs planner execution locally.
-- The Worker does hosted session persistence, scaffold generation, and artifact delivery.
-- `TPF_LLM_TRANSPORT_MODE=direct-http` is the supported default.
-- `mcp-sampling` is experimental and must not be treated as broadly supported.
-- Keep `README.md` user-facing and `DEVELOPING.md` maintainer-facing.
-- `app-generator` is pinned deliberately. Update its commit reference and bridge tests together when generator behavior changes.
-- The generator-facing schema authority lives in main TPF `framework/deployment`; synchronize it from the `app-generator` repository after building the main repo.
-
-## Working Rules
-
-- Prefer `rg` / `rg --files` for search.
-- Do not perform destructive git operations unless explicitly requested.
-- Keep edits scoped to bridge, Worker, and generator integration behavior owned here.
-- If changing scaffold semantics, update both:
-  - `test/service.test.ts`
-  - the matching `app-generator/__tests__/*` coverage
-- If changing package/deploy behavior, update docs and workflow config in the same change.
+- Keep tool inputs and responses bounded and evidence-oriented.
+- Treat release objects as immutable. A matching checksum is a no-op; a changed checksum for an existing version is an error.
+- Update runtime code, D1 migration, publisher, tests, and operator documentation together when the storage contract changes.
+- Use a clean external TPF checkout at an exact release tag for publication.
+- Never add model credentials or make CI build a Repowise index.
+- Do not deploy production or change the custom-domain route without an explicit release action.

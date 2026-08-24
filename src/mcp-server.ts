@@ -1,298 +1,106 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
-import * as z from "zod/v4";
-import type {
-  AnalyzeResult,
-  AnswerQuestionsInput,
-  BriefInput,
-  CompileScaffoldPlanInput,
-  CompileScaffoldPlanResult,
-  DraftContractsInput,
-  DraftContractsResult,
-  DraftProtocolInput,
-  DraftProtocolResult,
-  GenerateScaffoldInput,
-  GenerateScaffoldResult,
-  GenerateSessionInput,
-  GetSessionInput,
-  InspectBriefInput,
-  InspectBriefResult,
-  ResolveContractsInput,
-  ResolveContractsResult,
-  ScaffoldResult,
-  SessionResult,
-  SessionStartInput
-} from "./types.js";
+import { McpServer } from "@modelcontextprotocol/server";
+import { z } from "zod";
 
-export interface TpfMcpHandlers {
-  inspectBrief(input: InspectBriefInput): Promise<InspectBriefResult>;
-  draftProtocol(input: DraftProtocolInput): Promise<DraftProtocolResult>;
-  draftContracts(input: DraftContractsInput): Promise<DraftContractsResult>;
-  resolveContracts(input: ResolveContractsInput): Promise<ResolveContractsResult>;
-  compileScaffoldPlan(input: CompileScaffoldPlanInput): Promise<CompileScaffoldPlanResult>;
-  generateScaffold(input: GenerateScaffoldInput): Promise<GenerateScaffoldResult>;
-  analyzeBrief(input: BriefInput): Promise<AnalyzeResult>;
-  scaffoldFromBrief(input: BriefInput): Promise<ScaffoldResult>;
-  startBriefSession(input: SessionStartInput): Promise<SessionResult>;
-  answerContractQuestions(input: AnswerQuestionsInput): Promise<SessionResult>;
-  getBriefSession(input: GetSessionInput): Promise<SessionResult>;
-  generateScaffoldSession(input: GenerateSessionInput): Promise<SessionResult>;
-}
+import { KnowledgeService } from "./service.js";
+import { KNOWLEDGE_SCOPES, KnowledgeError } from "./types.js";
 
-export interface TpfMcpServerOptions {
-  includeCompatibilityTools?: boolean;
-  errorMapper?: (error: unknown) => McpError;
-}
-
-const aspectHintSchema = z.union([
-  z.array(z.string()),
-  z.record(
-    z.string(),
-    z.union([
-      z.boolean(),
-      z.object({
-        enabled: z.boolean().optional(),
-        scope: z.enum(["GLOBAL", "STEPS"]).optional(),
-        position: z.enum(["BEFORE_STEP", "AFTER_STEP"]).optional(),
-        order: z.number().int().optional(),
-        config: z.record(z.string(), z.unknown()).optional()
-      })
-    ])
-  )
-]).optional();
-
-const detailSchema = z.enum(["summary", "full"]).optional();
-
-const workflowBriefInputSchema = z.object({
-  briefText: z.string(),
-  appName: z.string().optional(),
-  basePackage: z.string().optional(),
-  transport: z.enum(["GRPC", "REST", "LOCAL"]).optional(),
-  platform: z.enum(["COMPUTE", "FUNCTION"]).optional(),
-  runtimeLayout: z.enum(["MODULAR", "PIPELINE_RUNTIME", "MONOLITH"]).optional(),
-  aspects: aspectHintSchema
-});
-
-const briefInputSchema = z.object({
-  briefPath: z.string().optional(),
-  briefText: z.string().optional(),
-  outputDir: z.string().optional(),
-  appName: z.string().optional(),
-  basePackage: z.string().optional(),
-  transport: z.enum(["GRPC", "REST", "LOCAL"]).optional(),
-  platform: z.enum(["COMPUTE", "FUNCTION"]).optional(),
-  runtimeLayout: z.enum(["MODULAR", "PIPELINE_RUNTIME", "MONOLITH"]).optional(),
-  aspects: aspectHintSchema,
-  dryRun: z.boolean().optional()
-});
-
-const sessionStartSchema = z.object({
-  briefText: z.string(),
-  appName: z.string().optional(),
-  basePackage: z.string().optional(),
-  transport: z.enum(["GRPC", "REST", "LOCAL"]).optional(),
-  platform: z.enum(["COMPUTE", "FUNCTION"]).optional(),
-  runtimeLayout: z.enum(["MODULAR", "PIPELINE_RUNTIME", "MONOLITH"]).optional(),
-  aspects: aspectHintSchema
-});
-
-const inspectBriefSchema = workflowBriefInputSchema.extend({
-  detail: detailSchema
-});
-
-const workIdSchema = z.object({
-  workId: z.string(),
-  detail: detailSchema
-});
-
-const draftContractsSchema = workIdSchema.extend({
-  stepIds: z.array(z.string()).optional()
-});
-
-const answerQuestionsSchema = z.object({
-  sessionId: z.string(),
-  answers: z.array(z.object({
-    questionId: z.string(),
-    resolution: z.enum(["confirm", "replace", "edit"]).optional(),
-    fields: z.array(z.object({
-      name: z.string(),
-      type: z.string(),
-      required: z.boolean().optional(),
-      repeated: z.boolean().optional(),
-      source: z.enum(["payload", "persisted_state", "derived"]).optional()
-    })).optional(),
-    fieldEdits: z.array(z.object({
-      action: z.enum(["add", "update", "remove"]),
-      name: z.string(),
-      nextName: z.string().optional(),
-      type: z.string().optional(),
-      required: z.boolean().optional(),
-      repeated: z.boolean().optional(),
-      source: z.enum(["payload", "persisted_state", "derived"]).optional()
-    })).optional(),
-    values: z.array(z.string()).optional(),
-    valueEdits: z.array(z.object({
-      action: z.enum(["add", "remove"]),
-      value: z.string()
-    })).optional()
-  }))
-});
-
-const sessionIdSchema = z.object({
-  sessionId: z.string()
-});
-
-export function createTpfMcpServer(
-  handlers: TpfMcpHandlers,
-  options: TpfMcpServerOptions = {}
-): McpServer {
+export function createTpfMcpServer(service: KnowledgeService): McpServer {
   const server = new McpServer({
-    name: "tpf-brief-to-scaffold",
-    version: "0.2.0"
+    name: "tpf-author-knowledge",
+    version: "1.0.0",
   });
 
   server.registerTool(
-    "inspect_brief",
+    "tpf_versions",
     {
-      description: "Inspect a brief, cache normalized analysis state, and return a terse workflow summary plus the next recommended tool.",
-      inputSchema: inspectBriefSchema
+      description:
+        "List the exact released TPF versions currently supported by this author knowledge service.",
+      inputSchema: z.object({}),
     },
-    async (input) => invokeTool(() => handlers.inspectBrief(input as InspectBriefInput), options.errorMapper)
+    () => invoke(() => service.listVersions()),
   );
 
   server.registerTool(
-    "draft_protocol",
+    "tpf_search",
     {
-      description: "Draft the business protocol and explicit TPF boundaries for a cached work item without expanding full scaffold config.",
-      inputSchema: workIdSchema
-    },
-    async (input) => invokeTool(() => handlers.draftProtocol(input as DraftProtocolInput), options.errorMapper)
-  );
-
-  server.registerTool(
-    "draft_contracts",
-    {
-      description: "Draft scoped contracts and unresolved semantic questions for the next unresolved step/boundary batch or for explicitly requested ids.",
-      inputSchema: draftContractsSchema
-    },
-    async (input) => invokeTool(() => handlers.draftContracts(input as DraftContractsInput), options.errorMapper)
-  );
-
-  server.registerTool(
-    "resolve_contracts",
-    {
-      description: "Merge contract answers into the cached work state and recompute the derived scaffold plan deterministically.",
+      description:
+        "Search author-facing TPF documentation, public APIs, examples, or the authoring skill for one exact TPF version. Read the application's pinned TPF version before calling; no version fallback occurs.",
       inputSchema: z.object({
-        workId: z.string(),
-        answers: answerQuestionsSchema.shape.answers,
-        detail: detailSchema
-      })
+        version: z.string().min(1),
+        query: z.string().min(1).max(500),
+        scope: z.enum(KNOWLEDGE_SCOPES).optional(),
+        maxResults: z.number().int().min(1).max(20).default(8),
+      }),
     },
-    async (input) => invokeTool(() => handlers.resolveContracts(input as ResolveContractsInput), options.errorMapper)
+    ({ version, query, scope, maxResults }) =>
+      invoke(() => service.search(version, query, scope, maxResults)),
   );
 
   server.registerTool(
-    "compile_scaffold_plan",
+    "tpf_context",
     {
-      description: "Compile the cached protocol and accepted contracts into a deterministic scaffold plan summary.",
-      inputSchema: workIdSchema
+      description:
+        "Retrieve complete, bounded author-facing knowledge pages returned by tpf_search for the same exact TPF version.",
+      inputSchema: z.object({
+        version: z.string().min(1),
+        ids: z.array(z.string().min(1)).min(1).max(5),
+      }),
     },
-    async (input) => invokeTool(() => handlers.compileScaffoldPlan(input as CompileScaffoldPlanInput), options.errorMapper)
+    ({ version, ids }) => invoke(() => service.context(version, ids)),
   );
 
   server.registerTool(
-    "generate_scaffold",
+    "tpf_source",
     {
-      description: "Generate a scaffold artifact for a cached work item after the deterministic compile is ready.",
-      inputSchema: workIdSchema
+      description:
+        "Read at most 200 lines from an approved author-facing TPF source path at one exact released version.",
+      inputSchema: z.object({
+        version: z.string().min(1),
+        path: z.string().min(1).max(1_024),
+        startLine: z.number().int().positive().default(1),
+        endLine: z.number().int().positive().optional(),
+      }),
     },
-    async (input) => invokeTool(() => handlers.generateScaffold(input as GenerateScaffoldInput), options.errorMapper)
+    ({ version, path, startLine, endLine }) =>
+      invoke(() => service.source(version, path, startLine, endLine)),
   );
-
-  if (options.includeCompatibilityTools ?? false) {
-    server.registerTool(
-      "analyze_brief",
-      {
-        description: "Analyze a Markdown business brief and derive a draft TPF v2 pipeline config without writing files.",
-        inputSchema: briefInputSchema
-      },
-      async (input) => invokeTool(() => handlers.analyzeBrief(input as BriefInput), options.errorMapper)
-    );
-
-    server.registerTool(
-      "scaffold_from_brief",
-      {
-        description: "Analyze a Markdown business brief, derive a TPF v2 pipeline config, and generate a scaffold with app-generator.",
-        inputSchema: briefInputSchema
-      },
-      async (input) => invokeTool(() => handlers.scaffoldFromBrief(input as BriefInput), options.errorMapper)
-    );
-
-    server.registerTool(
-      "start_brief_session",
-      {
-        description: "Start the legacy planner-centric brief session workflow.",
-        inputSchema: sessionStartSchema
-      },
-      async (input) => invokeTool(() => handlers.startBriefSession(input as SessionStartInput), options.errorMapper)
-    );
-
-    server.registerTool(
-      "answer_contract_questions",
-      {
-        description: "Submit structured answers for the legacy planner-centric session workflow.",
-        inputSchema: answerQuestionsSchema
-      },
-      async (input) => invokeTool(() => handlers.answerContractQuestions(input as AnswerQuestionsInput), options.errorMapper)
-    );
-
-    server.registerTool(
-      "get_brief_session",
-      {
-        description: "Fetch the current state of a legacy planner-centric brief session.",
-        inputSchema: sessionIdSchema
-      },
-      async (input) => invokeTool(() => handlers.getBriefSession(input as GetSessionInput), options.errorMapper)
-    );
-
-    server.registerTool(
-      "generate_scaffold_session",
-      {
-        description: "Generate a scaffold artifact for a ready legacy planner-centric brief session.",
-        inputSchema: sessionIdSchema
-      },
-      async (input) => invokeTool(() => handlers.generateScaffoldSession(input as GenerateSessionInput), options.errorMapper)
-    );
-  }
 
   return server;
 }
 
-function toolResult(payload: unknown) {
-  const structuredContent = payload as Record<string, unknown>;
-  return {
-    content: [
-      {
-        type: "text" as const,
-        text: JSON.stringify(payload, null, 2)
-      }
-    ],
-    structuredContent
-  };
-}
-
-async function invokeTool(
-  operation: () => Promise<unknown>,
-  errorMapper?: (error: unknown) => McpError
-) {
+async function invoke(operation: () => Promise<unknown>) {
   try {
-    return toolResult(await operation());
+    const value = await operation();
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify(value, undefined, 2) },
+      ],
+    };
   } catch (error) {
-    throw errorMapper
-      ? errorMapper(error)
-      : new McpError(
-          ErrorCode.InternalError,
-          error instanceof Error ? error.message : String(error)
-        );
+    if (!(error instanceof KnowledgeError)) {
+      console.error(
+        "TPF knowledge tool failed",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+    const knowledgeError =
+      error instanceof KnowledgeError
+        ? error
+        : new KnowledgeError(
+            "The TPF knowledge service could not complete the request",
+            "INTERNAL",
+          );
+    return {
+      isError: true,
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify({
+            code: knowledgeError.code,
+            message: knowledgeError.message,
+          }),
+        },
+      ],
+    };
   }
 }

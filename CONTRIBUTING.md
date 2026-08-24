@@ -1,62 +1,22 @@
-# Contributing to TPF MCP Bridge
+# Contributing
 
-Thank you for contributing. This repository owns the TPF MCP bridge package, its hosted Worker backend, and the pinned `app-generator` dependency used for scaffold generation.
+Thank you for contributing to the TPF Author Knowledge MCP. This repository owns a public, stateless, read-only Cloudflare Worker and its deterministic knowledge publisher.
 
-## Code of Conduct
+## Before opening a change
 
-This project is governed by [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md). Please report unacceptable behavior to [team@pipelineframework.org](mailto:team@pipelineframework.org).
-
-## Before You Start
-
-- For core Java framework, compiler, runtime, or examples work, use the main TPF monorepo instead.
-- For bridge, Worker, MCP workflow, hosted artifact flow, or generator integration behavior in this repo, contribute here.
-
-## Development Setup
-
-Prerequisites:
-
-- Node.js 20+
-- npm
-- Git
-
-Install:
-
-```bash
+```shell
 npm ci
+npm run check
+npx wrangler deploy --dry-run --outdir dist/worker
 ```
 
-## Project Structure
+Changes to tool behavior, storage, publication, or scope must update the matching tests and operator documentation. Keep every tool bounded, require exact TPF versions, and preserve the author-only allowlist. Maintainer ADRs, `docs/evolve`, backlog material, arbitrary repository paths, sessions, model calls, and write tools are outside the service boundary.
 
-- `src/` - bridge runtime, MCP server, planner integration, Worker backend
-- `test/` - bridge and Worker tests
-- `app-generator` - pinned standalone generator dependency
-- `.github/workflows/` - package publish workflow
+## Repository shape
 
-## Testing
+- `src/` — Worker, MCP tools, bounded service, D1/R2 repository, and publication model;
+- `scripts/` — release parity, Repowise input, and immutable knowledge publication tooling;
+- `migrations/` — dedicated knowledge-catalogue D1 schema;
+- `test/` — unit and Cloudflare Worker integration coverage.
 
-Run before submitting changes:
-
-```bash
-npm test
-npm pack --dry-run
-```
-
-If your change affects the Worker or packaging flow, also run the relevant local command from [DEVELOPING.md](./DEVELOPING.md).
-
-## Pull Requests
-
-Before submitting:
-
-1. Keep `README.md` user-facing.
-2. Put maintainer-only operational notes in `DEVELOPING.md` or `AGENTS.md`.
-3. Add or update tests for bridge, Worker, or generator behavior you changed.
-4. Update docs when install, env vars, package surface, or hosted-backend behavior changes.
-5. Keep the pinned generator dependency and bridge expectations aligned.
-
-## Schema Sync
-
-The standalone `app-generator` repository owns the generator-facing schema snapshot. The schema authority remains in the main TPF repo under `framework/deployment`; when config-shape changes land there, synchronize the snapshot in `app-generator` and then update this bridge's pinned dependency.
-
-```bash
-cd ../app-generator && npm run sync:pipeline-schema -- ../pipelineframework/framework/deployment/target/classes/META-INF/pipeline/pipeline-template-schema.json
-```
+Use pull requests for code changes. Do not deploy production, activate knowledge, change the custom-domain route, or delete retired storage as part of an ordinary contribution.
