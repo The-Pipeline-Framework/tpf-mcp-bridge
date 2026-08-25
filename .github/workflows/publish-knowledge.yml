@@ -43,8 +43,6 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
           FRAMEWORK_COMMIT: ${{ inputs.framework_commit }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           TAG: ${{ inputs.tag }}
         run: |
           test "$TAG" = "v$VERSION"
@@ -54,6 +52,8 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
           FRAMEWORK_COMMIT: ${{ inputs.framework_commit }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           npm run publish:knowledge -- \
             --framework-dir "$GITHUB_WORKSPACE/.framework-release" \
