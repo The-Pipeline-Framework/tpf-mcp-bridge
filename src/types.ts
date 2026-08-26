@@ -2,8 +2,11 @@ export const KNOWLEDGE_SCOPES = ["docs", "api", "examples", "skill"] as const;
 
 export type KnowledgeScope = (typeof KNOWLEDGE_SCOPES)[number];
 
+export type KnowledgeVersionKind = "RELEASE" | "SNAPSHOT";
+
 export interface ReleaseVersion {
   version: string;
+  kind: KnowledgeVersionKind;
   frameworkCommit: string;
   publishedAt: string;
   bundleChecksum: string;

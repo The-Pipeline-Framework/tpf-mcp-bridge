@@ -12,6 +12,7 @@ import {
   supportedMinorLines,
   validateImmutableRelease,
   verifyFrameworkRelease,
+  verifyFrameworkSnapshot,
   writeBundle,
 } from "../src/publication.js";
 import {
@@ -85,6 +86,10 @@ describe("author knowledge publication", () => {
     const first = compileBundle(input);
     const second = compileBundle(input);
     expect(first.manifest.bundleChecksum).toBe(second.manifest.bundleChecksum);
+    expect(first.manifest).toMatchObject({
+      schemaVersion: 2,
+      kind: "RELEASE",
+    });
     expect(first.documents).toHaveLength(1);
     expect(first.sources.map((source) => source.path)).toEqual([
       "docs/develop/author.md",
@@ -171,6 +176,64 @@ describe("author knowledge publication", () => {
     );
   });
 
+  it("publishes a mutable snapshot alias over immutable commit objects", () => {
+    const frameworkDir = fixtureRepository(false, "26.8.2-SNAPSHOT");
+    const framework = verifyFrameworkSnapshot(frameworkDir, "26.8.2-SNAPSHOT");
+    const bundle = compileBundle({
+      frameworkDir,
+      version: "26.8.2-SNAPSHOT",
+      frameworkCommit: framework.commit,
+      publishedAt: framework.publishedAt,
+      repowiseVersion: "0.43.0",
+      repowiseExportBytes: Buffer.from(
+        JSON.stringify({
+          pages: [
+            {
+              page_id: "docs",
+              title: "Snapshot docs",
+              content: "Current main knowledge",
+              target_path: "docs/develop/author.md",
+            },
+          ],
+        }),
+      ),
+      kind: "SNAPSHOT",
+    });
+    expect(bundle.manifest.kind).toBe("SNAPSHOT");
+    expect(bundle.documents[0].objectKey).toContain(
+      `snapshots/26.8.2-SNAPSHOT/${framework.commit}/${bundle.manifest.bundleChecksum}`,
+    );
+
+    const output = path.join(frameworkDir, "snapshot-bundle");
+    writeBundle(bundle, output);
+    const refresh = readFileSync(path.join(output, "refresh.sql"), "utf8");
+    expect(refresh).toContain("DELETE FROM documents_fts");
+    expect(refresh).toContain("'SNAPSHOT'");
+    expect(refresh).toContain("'ACTIVE', 1");
+    expect(
+      refresh
+        .trim()
+        .endsWith(
+          `ON CONFLICT(public_version) DO UPDATE SET dataset_version = excluded.dataset_version;`,
+        ),
+    ).toBe(true);
+    expect(refresh).not.toMatch(/\b(?:BEGIN|COMMIT)\b/);
+  });
+
+  it("requires the exact clean root project snapshot version", () => {
+    const frameworkDir = fixtureRepository(false, "26.8.2-SNAPSHOT");
+    expect(() =>
+      verifyFrameworkSnapshot(frameworkDir, "26.8.3-SNAPSHOT"),
+    ).toThrow("root project version must be 26.8.3-SNAPSHOT");
+    writeFileSync(
+      path.join(frameworkDir, "docs/develop/author.md"),
+      "changed\n",
+    );
+    expect(() =>
+      verifyFrameworkSnapshot(frameworkDir, "26.8.2-SNAPSHOT"),
+    ).toThrow("Framework checkout must be clean");
+  });
+
   it("accepts only an exact commit-addressed Repowise input manifest", () => {
     const commit = "a".repeat(40);
     const manifest = {
@@ -199,7 +262,7 @@ describe("author knowledge publication", () => {
     expect(() =>
       validateRepowiseHealthReport(
         { stale_pages: 0, indexed_commit: commit },
-        {},
+        { last_docs_commit: "b".repeat(40) },
         commit,
       ),
     ).not.toThrow();
@@ -349,7 +412,7 @@ describe("author knowledge publication", () => {
   });
 });
 
-function fixtureRepository(tag = true): string {
+function fixtureRepository(tag = true, version = "26.7.1"): string {
   const directory = mkdtempSync(
     path.join(os.tmpdir(), "tpf-publication-test-"),
   );
@@ -367,6 +430,10 @@ function fixtureRepository(tag = true): string {
   writeFileSync(
     path.join(directory, "docs/decisions/001.md"),
     "Maintainer only\n",
+  );
+  writeFileSync(
+    path.join(directory, "pom.xml"),
+    `<project><modelVersion>4.0.0</modelVersion><groupId>org.example</groupId><artifactId>fixture</artifactId><version>${version}</version></project>\n`,
   );
   execFileSync("git", ["init", "-q"], {
     cwd: directory,

@@ -10,6 +10,7 @@ import {
   supportedMinorLines,
   validateImmutableRelease,
   verifyFrameworkRelease,
+  verifyFrameworkSnapshot,
   writeBundle,
 } from "../src/publication.js";
 import {
@@ -19,8 +20,13 @@ import {
 } from "../src/repowise-input.js";
 
 const execute = promisify(execFile);
+const wranglerExecutable = path.resolve("node_modules/.bin/wrangler");
+const R2_UPLOAD_CONCURRENCY = 16;
 const args = parseArgs(process.argv.slice(2));
-const release = verifyFrameworkRelease(args.frameworkDir, args.version);
+const publicationKind = args.snapshot ? "SNAPSHOT" : "RELEASE";
+const release = args.snapshot
+  ? verifyFrameworkSnapshot(args.frameworkDir, args.version)
+  : verifyFrameworkRelease(args.frameworkDir, args.version);
 const temporary = mkdtempSync(path.join(os.tmpdir(), "tpf-knowledge-"));
 
 try {
@@ -32,6 +38,7 @@ try {
     publishedAt: release.publishedAt,
     repowiseVersion: input.version,
     repowiseExportBytes: input.bytes,
+    kind: publicationKind,
   });
   writeBundle(bundle, args.outputDir);
   console.log(
@@ -58,6 +65,8 @@ function parseArgs(values: string[]) {
     repowiseExportChecksum: "",
     repowiseR2Commit: "",
     waitForRepowiseSeconds: 0,
+    repowiseIndexDir: "",
+    snapshot: false,
   };
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index];
@@ -74,6 +83,11 @@ function parseArgs(values: string[]) {
       parsed.environment = environment;
     } else if (value === "--publish") parsed.publish = true;
     else if (value === "--stage-only") parsed.stageOnly = true;
+    else if (value === "--snapshot") parsed.snapshot = true;
+    else if (value === "--repowise-index-dir")
+      parsed.repowiseIndexDir = path.resolve(
+        requireValue(values, ++index, value),
+      );
     else if (value === "--repowise-export")
       parsed.repowiseExportFile = path.resolve(
         requireValue(values, ++index, value),
@@ -99,13 +113,22 @@ function parseArgs(values: string[]) {
   }
   if (!parsed.frameworkDir || !parsed.version) {
     throw new Error(
-      "Usage: npm run publish:knowledge -- --framework-dir <checkout> --version <x.y.z> [--repowise-r2-commit <sha> [--wait-for-repowise-seconds <0..1800>]|--repowise-export <json> --repowise-version <version> --repowise-export-checksum <sha256>] [--output <dir>] [--environment staging|production] [--stage-only|--publish]",
+      "Usage: npm run publish:knowledge -- --framework-dir <checkout> --version <x.y.z> [--snapshot --repowise-index-dir <indexed-checkout>] [--repowise-r2-commit <sha> [--wait-for-repowise-seconds <0..1800>]|--repowise-export <json> --repowise-version <version> --repowise-export-checksum <sha256>] [--output <dir>] [--environment staging|production] [--stage-only|--publish]",
     );
   }
-  if (!/^\d+\.\d+\.\d+$/.test(parsed.version))
-    throw new Error("version must be an exact x.y.z release");
+  const expectedVersion = parsed.snapshot
+    ? /^\d+\.\d+\.\d+-SNAPSHOT$/
+    : /^\d+\.\d+\.\d+$/;
+  if (!expectedVersion.test(parsed.version))
+    throw new Error(
+      parsed.snapshot
+        ? "snapshot version must be exact x.y.z-SNAPSHOT"
+        : "version must be an exact x.y.z release",
+    );
   if (parsed.publish && parsed.stageOnly)
     throw new Error("--publish and --stage-only are mutually exclusive");
+  if (parsed.snapshot && parsed.stageOnly)
+    throw new Error("Snapshots use atomic --publish and cannot be staged");
   if (
     parsed.repowiseExportFile !== "" &&
     (parsed.repowiseVersion === "" || parsed.repowiseExportChecksum === "")
@@ -116,6 +139,13 @@ function parseArgs(values: string[]) {
   if (parsed.repowiseR2Commit !== "" && parsed.repowiseExportFile !== "")
     throw new Error(
       "--repowise-r2-commit and --repowise-export are mutually exclusive",
+    );
+  if (
+    parsed.repowiseIndexDir !== "" &&
+    (parsed.repowiseR2Commit !== "" || parsed.repowiseExportFile !== "")
+  )
+    throw new Error(
+      "--repowise-index-dir cannot be combined with stored Repowise input",
     );
   if (
     parsed.repowiseR2Commit !== "" &&
@@ -189,7 +219,7 @@ async function resolveRepowiseInput(
     );
   }
   return exportHealthyRepowiseInput(
-    args.frameworkDir,
+    args.repowiseIndexDir || args.frameworkDir,
     frameworkCommit,
     path.join(temporary, "repowise"),
   );
@@ -224,7 +254,7 @@ async function waitForRepowiseManifest(
         Date.now() >= deadline
       )
         throw new Error(
-          `Exact Repowise input for release commit ${frameworkCommit} is unavailable. A maintainer can upload the queued immutable input and rerun this MCP workflow. ${details}`,
+          `Exact Repowise input for framework commit ${frameworkCommit} is unavailable. A maintainer can upload the queued immutable input and rerun this MCP workflow. ${details}`,
           { cause: error },
         );
       console.log(
@@ -264,10 +294,46 @@ async function publish(
     database,
     "--remote",
     "--command",
-    `SELECT bundle_checksum, status FROM releases WHERE version = ${sqlLiteral(args.version)}`,
+    args.snapshot
+      ? `SELECT r.bundle_checksum, r.status, r.publication_kind FROM knowledge_aliases AS a JOIN releases AS r ON r.version = a.dataset_version WHERE a.public_version = ${sqlLiteral(args.version)}`
+      : `SELECT bundle_checksum, status, publication_kind FROM releases WHERE version = ${sqlLiteral(args.version)}`,
     ...environmentArgs,
   ]);
   const checksums = collectValues(existing, new Set(["bundle_checksum"]));
+  const kinds = collectValues(existing, new Set(["publication_kind"]));
+  if (kinds.some((kind) => kind !== publicationKind)) {
+    throw new Error(
+      `Knowledge version ${args.version} already exists with a different publication kind`,
+    );
+  }
+  if (args.snapshot) {
+    const statuses = collectValues(existing, new Set(["status"]));
+    if (
+      checksums.length > 0 &&
+      checksums.every((existingChecksum) => existingChecksum === checksum) &&
+      statuses.includes("ACTIVE")
+    ) {
+      console.log(
+        `Snapshot ${args.version} already points to the same checksum; publication is a no-op.`,
+      );
+      return;
+    }
+    await uploadBundle(args, bucket);
+    await wrangler([
+      "d1",
+      "execute",
+      database,
+      "--remote",
+      "--file",
+      path.join(args.outputDir, "refresh.sql"),
+      ...environmentArgs,
+    ]);
+    await verifyPublication(database, environmentArgs, args.version, "ACTIVE");
+    console.log(
+      `Published atomic TPF snapshot ${args.version} in ${args.environment}.`,
+    );
+    return;
+  }
   if (validateImmutableRelease(checksums, checksum) === "EXISTS") {
     const statuses = collectValues(existing, new Set(["status"]));
     if (!activate || statuses.includes("ACTIVE")) {
@@ -277,25 +343,7 @@ async function publish(
       return;
     }
   } else {
-    const uploads = JSON.parse(
-      readFileSync(path.join(args.outputDir, "uploads.json"), "utf8"),
-    ) as Array<{ key: string; file: string; contentType: string }>;
-    await mapConcurrent(uploads, 8, ({ key, file, contentType }) =>
-      wrangler(
-        [
-          "r2",
-          "object",
-          "put",
-          `${bucket}/${key}`,
-          "--remote",
-          "--file",
-          file,
-          "--content-type",
-          contentType,
-        ],
-        false,
-      ),
-    );
+    await uploadBundle(args, bucket);
     await wrangler([
       "d1",
       "execute",
@@ -306,18 +354,7 @@ async function publish(
       ...environmentArgs,
     ]);
   }
-  const verification = await wranglerJson([
-    "d1",
-    "execute",
-    database,
-    "--remote",
-    "--command",
-    `SELECT document_count, source_count, status FROM releases WHERE version = ${sqlLiteral(args.version)}`,
-    ...environmentArgs,
-  ]);
-  const verificationStatuses = collectValues(verification, new Set(["status"]));
-  if (verificationStatuses.length !== 1 || verificationStatuses[0] !== "STAGED")
-    throw new Error("Staged release verification failed");
+  await verifyPublication(database, environmentArgs, args.version, "STAGED");
   if (!activate) {
     console.log(
       `Staged immutable TPF ${args.version} candidate in ${args.environment}.`,
@@ -339,6 +376,62 @@ async function publish(
   );
 }
 
+async function uploadBundle(
+  args: ReturnType<typeof parseArgs>,
+  bucket: string,
+): Promise<void> {
+  const environmentArgs =
+    args.environment === "staging" ? ["--env", "staging"] : [];
+  const uploads = JSON.parse(
+    readFileSync(path.join(args.outputDir, "uploads.json"), "utf8"),
+  ) as Array<{ key: string; file: string; contentType: string }>;
+  await mapConcurrent(
+    uploads,
+    R2_UPLOAD_CONCURRENCY,
+    ({ key, file, contentType }) =>
+      wrangler(
+        [
+          "r2",
+          "object",
+          "put",
+          `${bucket}/${key}`,
+          "--remote",
+          "--file",
+          file,
+          "--content-type",
+          contentType,
+          ...environmentArgs,
+        ],
+        false,
+      ),
+  );
+}
+
+async function verifyPublication(
+  database: string,
+  environmentArgs: string[],
+  version: string,
+  expectedStatus: "STAGED" | "ACTIVE",
+): Promise<void> {
+  const verification = await wranglerJson([
+    "d1",
+    "execute",
+    database,
+    "--remote",
+    "--command",
+    expectedStatus === "ACTIVE" && version.endsWith("-SNAPSHOT")
+      ? `SELECT r.document_count, r.source_count, r.status FROM knowledge_aliases AS a JOIN releases AS r ON r.version = a.dataset_version WHERE a.public_version = ${sqlLiteral(version)}`
+      : `SELECT document_count, source_count, status FROM releases WHERE version = ${sqlLiteral(version)}`,
+    ...environmentArgs,
+  ]);
+  const verificationStatuses = collectValues(verification, new Set(["status"]));
+  if (
+    verificationStatuses.length !== 1 ||
+    verificationStatuses[0] !== expectedStatus
+  )
+    throw new Error(`${expectedStatus} knowledge verification failed`);
+}
+
 async function applySupportWindow(
   database: string,
   environmentArgs: string[],
@@ -349,7 +442,7 @@ async function applySupportWindow(
     database,
     "--remote",
     "--command",
-    "SELECT version FROM releases WHERE status = 'ACTIVE'",
+    "SELECT version FROM releases WHERE status = 'ACTIVE' AND publication_kind = 'RELEASE'",
     ...environmentArgs,
   ]);
   const versions = collectValues(rows, new Set(["version"]));
@@ -357,7 +450,7 @@ async function applySupportWindow(
   const statements = versions
     .map((version) => {
       const [major, minor] = version.split(".");
-      return `UPDATE releases SET supported = ${supported.has(`${major}.${minor}`) ? 1 : 0} WHERE version = ${sqlLiteral(version)};`;
+      return `UPDATE releases SET supported = ${supported.has(`${major}.${minor}`) ? 1 : 0} WHERE version = ${sqlLiteral(version)} AND publication_kind = 'RELEASE';`;
     })
     .join(" ");
   if (statements)
@@ -373,7 +466,7 @@ async function applySupportWindow(
 }
 
 async function wrangler(values: string[], inherit = true): Promise<string> {
-  const result = await execute("npx", ["wrangler", ...values], {
+  const result = await execute(wranglerExecutable, values, {
     maxBuffer: 64 * 1024 * 1024,
   });
   if (inherit && result.stdout) process.stdout.write(result.stdout);

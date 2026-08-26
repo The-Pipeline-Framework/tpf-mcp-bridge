@@ -5,6 +5,7 @@ import type { KnowledgeRepository } from "../src/types.js";
 
 const release = {
   version: "26.7.1",
+  kind: "RELEASE" as const,
   frameworkCommit: "abc123",
   publishedAt: "2026-07-01T00:00:00Z",
   bundleChecksum: "bundle",

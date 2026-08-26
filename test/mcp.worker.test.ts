@@ -8,14 +8,18 @@ beforeAll(async () => {
      VALUES ('26.7.1', 'abc123', '2026-07-01T00:00:00Z', 'bundle', '0.43.0', 'export', 'ACTIVE', 1, 1, 1)`,
   ).run();
   await env.TPF_MCP_KNOWLEDGE.prepare(
+    `INSERT INTO knowledge_aliases (public_version, dataset_version)
+     VALUES ('26.7.1', '26.7.1')`,
+  ).run();
+  await env.TPF_MCP_KNOWLEDGE.prepare(
     `INSERT INTO documents (version, id, scope, title, path, object_key, content_checksum)
-     VALUES ('26.7.1', 'command-page', 'docs', 'Command authoring', 'docs/develop/command.md',
+     VALUES ('26.7.1', 'command-page', 'docs', 'Command authoring', 'docs/develop/command.md::configuration',
        'releases/26.7.1/bundle/pages/command-page.json', 'page')`,
   ).run();
   await env.TPF_MCP_KNOWLEDGE.prepare(
     `INSERT INTO documents_fts (version, id, scope, title, content, path)
      VALUES ('26.7.1', 'command-page', 'docs', 'Command authoring', 'Typed command connector configuration',
-       'docs/develop/command.md')`,
+       'docs/develop/command.md::configuration')`,
   ).run();
   await env.TPF_MCP_KNOWLEDGE.prepare(
     `INSERT INTO source_files (version, path, object_key, content_checksum, line_count)
@@ -27,7 +31,7 @@ beforeAll(async () => {
       id: "command-page",
       scope: "docs",
       title: "Command authoring",
-      path: "docs/develop/command.md",
+      path: "docs/develop/command.md::configuration",
       content: "Typed command connector configuration",
     }),
   );
@@ -77,6 +81,8 @@ describe("TPF Author MCP Worker", () => {
       scope: "docs",
     });
     expect(search).toContain("command-page");
+    expect(search).toContain("docs/develop/command.md");
+    expect(search).not.toContain("command.md%3A%3Aconfiguration");
     const context = await callTool("tpf_context", {
       version: "26.7.1",
       ids: ["command-page"],

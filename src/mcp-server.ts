@@ -14,7 +14,7 @@ export function createTpfMcpServer(service: KnowledgeService): McpServer {
     "tpf_versions",
     {
       description:
-        "List the exact released TPF versions currently supported by this author knowledge service.",
+        "List the exact released and snapshot TPF versions currently supported by this author knowledge service, including each version's publication kind, exact Git commit, and checksum.",
       inputSchema: z.object({}),
     },
     () => invoke(() => service.listVersions()),
@@ -53,7 +53,7 @@ export function createTpfMcpServer(service: KnowledgeService): McpServer {
     "tpf_source",
     {
       description:
-        "Read at most 200 lines from an approved author-facing TPF source path at one exact released version.",
+        "Read at most 200 lines from an approved author-facing TPF source path at one exact released or snapshot version.",
       inputSchema: z.object({
         version: z.string().min(1),
         path: z.string().min(1).max(1_024),

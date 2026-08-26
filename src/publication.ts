@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import type { KnowledgeScope } from "./types.js";
+import type { KnowledgeScope, KnowledgeVersionKind } from "./types.js";
 
 export interface RepowisePage {
   page_id?: string;
@@ -31,8 +31,10 @@ export interface CompiledSource {
 }
 
 export interface ReleaseManifest {
-  schemaVersion: 1;
+  schemaVersion: 2;
+  kind: KnowledgeVersionKind;
   version: string;
+  datasetVersion: string;
   frameworkCommit: string;
   publishedAt: string;
   bundleChecksum: string;
@@ -101,7 +103,9 @@ export function compileBundle(options: {
   publishedAt: string;
   repowiseVersion: string;
   repowiseExportBytes: Uint8Array;
+  kind?: KnowledgeVersionKind;
 }): CompiledBundle {
+  const kind = options.kind ?? "RELEASE";
   const parsed = JSON.parse(
     new TextDecoder().decode(options.repowiseExportBytes),
   ) as { pages?: RepowisePage[] };
@@ -137,7 +141,8 @@ export function compileBundle(options: {
   const repowiseExportChecksum = sha256(options.repowiseExportBytes);
   const bundleChecksum = sha256(
     JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
+      kind,
       version: options.version,
       frameworkCommit: options.frameworkCommit,
       repowiseExportChecksum,
@@ -151,7 +156,16 @@ export function compileBundle(options: {
       })),
     }),
   );
-  const prefix = `releases/${options.version}/${bundleChecksum}`;
+  const prefix = objectPrefix(
+    kind,
+    options.version,
+    options.frameworkCommit,
+    bundleChecksum,
+  );
+  const datasetVersion =
+    kind === "RELEASE"
+      ? options.version
+      : `${options.version}@${options.frameworkCommit.slice(0, 12)}.${bundleChecksum.slice(0, 12)}`;
   const documents = documentSeeds.map((document) => ({
     ...document,
     objectKey: `${prefix}/pages/${document.id}.json`,
@@ -168,8 +182,10 @@ export function compileBundle(options: {
   ) as Record<KnowledgeScope, number>;
   return {
     manifest: {
-      schemaVersion: 1,
+      schemaVersion: 2,
+      kind,
       version: options.version,
+      datasetVersion,
       frameworkCommit: options.frameworkCommit,
       publishedAt: options.publishedAt,
       bundleChecksum,
@@ -223,7 +239,7 @@ export function writeBundle(bundle: CompiledBundle, outputDir: string): void {
     `${JSON.stringify(bundle.manifest, undefined, 2)}\n`,
   );
   uploads.push({
-    key: `releases/${bundle.manifest.version}/${bundle.manifest.bundleChecksum}/manifest.json`,
+    key: `${objectPrefix(bundle.manifest.kind, bundle.manifest.version, bundle.manifest.frameworkCommit, bundle.manifest.bundleChecksum)}/manifest.json`,
     file: manifestFile,
     contentType: "application/json",
   });
@@ -236,6 +252,12 @@ export function writeBundle(bundle: CompiledBundle, outputDir: string): void {
     path.join(outputDir, "activate.sql"),
     renderActivationSql(bundle.manifest.version),
   );
+  if (bundle.manifest.kind === "SNAPSHOT") {
+    writeFileSync(
+      path.join(outputDir, "refresh.sql"),
+      renderRefreshSql(bundle),
+    );
+  }
 }
 
 export function supportedMinorLines(versions: string[], keep = 3): Set<string> {
@@ -289,6 +311,39 @@ export function verifyFrameworkRelease(
   if (tag !== `v${version}`) {
     throw new Error(
       `Framework HEAD must be exact tag v${version}; found '${tag || "no tag"}'`,
+    );
+  }
+  return {
+    commit: git(frameworkDir, ["rev-parse", "HEAD"]).trim(),
+    publishedAt: git(frameworkDir, [
+      "show",
+      "-s",
+      "--format=%cI",
+      "HEAD",
+    ]).trim(),
+  };
+}
+
+export function verifyFrameworkSnapshot(
+  frameworkDir: string,
+  version: string,
+): {
+  commit: string;
+  publishedAt: string;
+} {
+  const status = git(frameworkDir, ["status", "--porcelain"]);
+  if (status.trim().length > 0) {
+    throw new Error(
+      `Framework checkout must be clean before publishing ${version}`,
+    );
+  }
+  const pom = readFileSync(path.join(frameworkDir, "pom.xml"), "utf8");
+  const projectVersion = /<project[\s\S]*?<version>([^<]+)<\/version>/.exec(
+    pom,
+  )?.[1];
+  if (projectVersion !== version) {
+    throw new Error(
+      `Framework root project version must be ${version}; found '${projectVersion ?? "none"}'`,
     );
   }
   return {
@@ -356,27 +411,63 @@ function readApprovedSources(
 }
 
 function renderStageSql(bundle: CompiledBundle): string {
+  return renderBundleSql(bundle, "STAGED", false);
+}
+
+function renderRefreshSql(bundle: CompiledBundle): string {
+  return renderBundleSql(bundle, "ACTIVE", true);
+}
+
+function renderBundleSql(
+  bundle: CompiledBundle,
+  status: "STAGED" | "ACTIVE",
+  replace: boolean,
+): string {
   const manifest = bundle.manifest;
-  const statements = [
-    `INSERT INTO releases (version, framework_commit, published_at, bundle_checksum, repowise_version, repowise_export_checksum, status, supported, document_count, source_count) VALUES (${sqlLiteral(manifest.version)}, ${sqlLiteral(manifest.frameworkCommit)}, ${sqlLiteral(manifest.publishedAt)}, ${sqlLiteral(manifest.bundleChecksum)}, ${sqlLiteral(manifest.repowiseVersion)}, ${sqlLiteral(manifest.repowiseExportChecksum)}, 'STAGED', 0, ${manifest.documentCount}, ${manifest.sourceCount});`,
-  ];
+  const statements = replace
+    ? [
+        `DELETE FROM documents_fts WHERE version = ${sqlLiteral(manifest.datasetVersion)};`,
+        `DELETE FROM source_files WHERE version = ${sqlLiteral(manifest.datasetVersion)};`,
+        `DELETE FROM documents WHERE version = ${sqlLiteral(manifest.datasetVersion)};`,
+        `DELETE FROM releases WHERE version = ${sqlLiteral(manifest.datasetVersion)};`,
+      ]
+    : [];
+  statements.push(
+    `INSERT INTO releases (version, publication_kind, framework_commit, published_at, bundle_checksum, repowise_version, repowise_export_checksum, status, supported, document_count, source_count) VALUES (${sqlLiteral(manifest.datasetVersion)}, ${sqlLiteral(manifest.kind)}, ${sqlLiteral(manifest.frameworkCommit)}, ${sqlLiteral(manifest.publishedAt)}, ${sqlLiteral(manifest.bundleChecksum)}, ${sqlLiteral(manifest.repowiseVersion)}, ${sqlLiteral(manifest.repowiseExportChecksum)}, ${sqlLiteral(status)}, ${status === "ACTIVE" ? 1 : 0}, ${manifest.documentCount}, ${manifest.sourceCount});`,
+  );
   for (const document of bundle.documents) {
     statements.push(
-      `INSERT INTO documents (version, id, scope, title, path, object_key, content_checksum) VALUES (${sqlLiteral(manifest.version)}, ${sqlLiteral(document.id)}, ${sqlLiteral(document.scope)}, ${sqlLiteral(document.title)}, ${sqlLiteral(document.path)}, ${sqlLiteral(document.objectKey)}, ${sqlLiteral(document.contentChecksum)});`,
-      `INSERT INTO documents_fts (version, id, scope, title, content, path) VALUES (${sqlLiteral(manifest.version)}, ${sqlLiteral(document.id)}, ${sqlLiteral(document.scope)}, ${sqlLiteral(document.title)}, ${sqlLiteral(document.content)}, ${sqlLiteral(document.path)});`,
+      `INSERT INTO documents (version, id, scope, title, path, object_key, content_checksum) VALUES (${sqlLiteral(manifest.datasetVersion)}, ${sqlLiteral(document.id)}, ${sqlLiteral(document.scope)}, ${sqlLiteral(document.title)}, ${sqlLiteral(document.path)}, ${sqlLiteral(document.objectKey)}, ${sqlLiteral(document.contentChecksum)});`,
+      `INSERT INTO documents_fts (version, id, scope, title, content, path) VALUES (${sqlLiteral(manifest.datasetVersion)}, ${sqlLiteral(document.id)}, ${sqlLiteral(document.scope)}, ${sqlLiteral(document.title)}, ${sqlLiteral(document.content)}, ${sqlLiteral(document.path)});`,
     );
   }
   for (const source of bundle.sources) {
     statements.push(
-      `INSERT INTO source_files (version, path, object_key, content_checksum, line_count) VALUES (${sqlLiteral(manifest.version)}, ${sqlLiteral(source.path)}, ${sqlLiteral(source.objectKey)}, ${sqlLiteral(source.contentChecksum)}, ${source.lineCount});`,
+      `INSERT INTO source_files (version, path, object_key, content_checksum, line_count) VALUES (${sqlLiteral(manifest.datasetVersion)}, ${sqlLiteral(source.path)}, ${sqlLiteral(source.objectKey)}, ${sqlLiteral(source.contentChecksum)}, ${source.lineCount});`,
+    );
+  }
+  if (replace) {
+    statements.push(
+      `INSERT INTO knowledge_aliases (public_version, dataset_version) VALUES (${sqlLiteral(manifest.version)}, ${sqlLiteral(manifest.datasetVersion)}) ON CONFLICT(public_version) DO UPDATE SET dataset_version = excluded.dataset_version;`,
     );
   }
   statements.push("");
   return statements.join("\n");
 }
 
+function objectPrefix(
+  kind: KnowledgeVersionKind,
+  version: string,
+  frameworkCommit: string,
+  bundleChecksum: string,
+): string {
+  return kind === "RELEASE"
+    ? `releases/${version}/${bundleChecksum}`
+    : `snapshots/${version}/${frameworkCommit}/${bundleChecksum}`;
+}
+
 function renderActivationSql(version: string): string {
-  return `UPDATE releases SET status = 'ACTIVE', supported = 1 WHERE version = ${sqlLiteral(version)} AND status = 'STAGED';\n`;
+  return `UPDATE releases SET status = 'ACTIVE', supported = 1 WHERE version = ${sqlLiteral(version)} AND status = 'STAGED';\nINSERT INTO knowledge_aliases (public_version, dataset_version) VALUES (${sqlLiteral(version)}, ${sqlLiteral(version)}) ON CONFLICT(public_version) DO UPDATE SET dataset_version = excluded.dataset_version;\n`;
 }
 
 function minorLine(version: string): string | undefined {

@@ -5,7 +5,7 @@ The hosted MCP at `https://mcp.pipelineframework.org/mcp` gives application-auth
 It complements the TPF authoring skill:
 
 - the skill supplies durable application-architecture guidance;
-- this MCP supplies exact documentation, public API, example, and source evidence for the application's pinned TPF release.
+- this MCP supplies exact documentation, public API, example, and source evidence for the application's pinned TPF version.
 
 The service is public and read-only. It does not scaffold applications, call an LLM, inspect application repositories, or expose TPF maintainer material.
 
@@ -13,12 +13,15 @@ The service is public and read-only. It does not scaffold applications, call an 
 
 | Tool           | Purpose                                                                            |
 | -------------- | ---------------------------------------------------------------------------------- |
-| `tpf_versions` | List exact releases available to query.                                            |
-| `tpf_search`   | Search one exact release, optionally within `docs`, `api`, `examples`, or `skill`. |
+| `tpf_versions` | List exact releases and the current snapshot available to query.                   |
+| `tpf_search`   | Search one exact version, optionally within `docs`, `api`, `examples`, or `skill`. |
 | `tpf_context`  | Retrieve up to five complete search results.                                       |
 | `tpf_source`   | Read up to 200 lines from an approved source path.                                 |
 
 Every knowledge request requires an exact version. The MCP never substitutes a newer patch, another minor line, or `latest`.
+Released versions are immutable. An explicitly named `X.Y.Z-SNAPSHOT` entry tracks a
+healthy indexed `main` commit between releases; `tpf_versions` reports that exact commit
+and bundle checksum.
 
 ## Connect
 
