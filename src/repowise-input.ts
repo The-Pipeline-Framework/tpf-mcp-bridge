@@ -122,12 +122,7 @@ export function validateRepowiseHealthReport(
 ): void {
   const commits = collectValues(
     [report, state],
-    new Set([
-      "indexed_commit",
-      "indexedCommit",
-      "last_sync_commit",
-      "last_docs_commit",
-    ]),
+    new Set(["indexed_commit", "indexedCommit", "last_sync_commit"]),
   );
   const shortCommit = expectedCommit.slice(0, 12);
   if (

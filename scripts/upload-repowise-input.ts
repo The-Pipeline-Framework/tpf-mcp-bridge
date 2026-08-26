@@ -20,6 +20,7 @@ import {
 } from "../src/repowise-queue.js";
 
 const execute = promisify(execFile);
+const wranglerExecutable = path.resolve("node_modules/.bin/wrangler");
 const args = parseArgs(process.argv.slice(2));
 const queueDirectory = repowiseQueueDirectory(args.frameworkDir);
 const releaseLock = acquireRepowiseQueueLock(queueDirectory);
@@ -231,7 +232,7 @@ function git(directory: string, values: string[]): string {
 }
 
 async function wrangler(values: string[], inherit = true): Promise<string> {
-  const result = await execute("npx", ["wrangler", ...values], {
+  const result = await execute(wranglerExecutable, values, {
     maxBuffer: 64 * 1024 * 1024,
   });
   if (inherit && result.stdout) process.stdout.write(result.stdout);

@@ -2,6 +2,7 @@ import type {
   KnowledgePage,
   KnowledgeRepository,
   KnowledgeScope,
+  KnowledgeVersionKind,
   ReleaseVersion,
   SearchHit,
   SearchRequest,
@@ -10,6 +11,7 @@ import type {
 
 interface ReleaseRow {
   version: string;
+  publication_kind: KnowledgeVersionKind;
   framework_commit: string;
   published_at: string;
   bundle_checksum: string;
@@ -61,14 +63,17 @@ export class D1R2KnowledgeRepository implements KnowledgeRepository {
   async listVersions(): Promise<ReleaseVersion[]> {
     const query = await this.database
       .prepare(
-        `SELECT version, framework_commit, published_at, bundle_checksum, repowise_version
-         FROM releases
-         WHERE status = 'ACTIVE' AND supported = 1
-         ORDER BY published_at DESC, version DESC`,
+        `SELECT a.public_version AS version, r.publication_kind, r.framework_commit,
+                r.published_at, r.bundle_checksum, r.repowise_version
+         FROM knowledge_aliases AS a
+         JOIN releases AS r ON r.version = a.dataset_version
+         WHERE r.status = 'ACTIVE' AND r.supported = 1
+         ORDER BY r.published_at DESC, a.public_version DESC`,
       )
       .all<ReleaseRow>();
     return query.results.map((row) => ({
       version: row.version,
+      kind: row.publication_kind,
       frameworkCommit: row.framework_commit,
       publishedAt: row.published_at,
       bundleChecksum: row.bundle_checksum,
@@ -84,8 +89,9 @@ export class D1R2KnowledgeRepository implements KnowledgeRepository {
               snippet(documents_fts, 4, '', '', ' … ', 18) AS snippet,
               r.framework_commit
        FROM documents_fts AS f
-       JOIN releases AS r ON r.version = f.version
-       WHERE f.version = ?${scopeClause}
+       JOIN knowledge_aliases AS a ON a.dataset_version = f.version
+       JOIN releases AS r ON r.version = a.dataset_version
+       WHERE a.public_version = ?${scopeClause}
          AND documents_fts MATCH ?
          AND r.status = 'ACTIVE' AND r.supported = 1
        ORDER BY bm25(documents_fts, 0.0, 0.0, 0.0, 6.0, 3.0, 1.0)
@@ -115,8 +121,9 @@ export class D1R2KnowledgeRepository implements KnowledgeRepository {
       .prepare(
         `SELECT d.id, d.scope, d.title, d.path, d.object_key, r.framework_commit
          FROM documents AS d
-         JOIN releases AS r ON r.version = d.version
-         WHERE d.version = ? AND d.id IN (${placeholders})
+         JOIN knowledge_aliases AS a ON a.dataset_version = d.version
+         JOIN releases AS r ON r.version = a.dataset_version
+         WHERE a.public_version = ? AND d.id IN (${placeholders})
            AND r.status = 'ACTIVE' AND r.supported = 1`,
       )
       .bind(version, ...ids)
@@ -154,8 +161,9 @@ export class D1R2KnowledgeRepository implements KnowledgeRepository {
       .prepare(
         `SELECT s.path, s.object_key, s.line_count, r.framework_commit
          FROM source_files AS s
-         JOIN releases AS r ON r.version = s.version
-         WHERE s.version = ? AND s.path = ?
+         JOIN knowledge_aliases AS a ON a.dataset_version = s.version
+         JOIN releases AS r ON r.version = a.dataset_version
+         WHERE a.public_version = ? AND s.path = ?
            AND r.status = 'ACTIVE' AND r.supported = 1`,
       )
       .bind(version, path)
@@ -196,5 +204,6 @@ export function toFtsQuery(query: string): string {
 }
 
 function githubCitation(commit: string, path: string): string {
-  return `${GITHUB_ROOT}/${encodeURIComponent(commit)}/${path.split("/").map(encodeURIComponent).join("/")}`;
+  const sourcePath = path.split("::", 1)[0];
+  return `${GITHUB_ROOT}/${encodeURIComponent(commit)}/${sourcePath.split("/").map(encodeURIComponent).join("/")}`;
 }

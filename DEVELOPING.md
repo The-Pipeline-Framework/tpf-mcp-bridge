@@ -4,11 +4,16 @@
 
 The Worker uses the stateless MCP HTTP handler and creates a fresh MCP server per request. Runtime reads are split deliberately:
 
-- D1 stores supported releases, document metadata, and the FTS5 search index.
+- D1 stores supported versions, document metadata, and the FTS5 search index.
 - R2 stores immutable normalized page JSON and approved tagged-source files.
 - the Worker performs bounded retrieval only; it has no model or Repowise dependency.
 
 The release manifest records the exact TPF tag commit, Repowise version, raw export checksum, bundle checksum, publication time, and object counts. Private Repowise exports are stored separately in R2 under immutable commit-addressed input keys; the Worker cannot serve that input namespace.
+
+Release rows and R2 prefixes are immutable. A snapshot is a public, exact
+`X.Y.Z-SNAPSHOT` alias. Its new immutable commit/checksum dataset is fully written before
+one final D1 statement switches the alias. The old dataset and R2 bundle are retained, so
+a failed refresh cannot corrupt the active snapshot.
 
 ## Provisioning
 
@@ -77,6 +82,31 @@ The compiler applies the author-scope allowlist, collects approved tagged source
 - `stage.sql` and `activate.sql` for D1.
 
 Generated publication data is local build output and is not committed.
+
+## Publish current main as a snapshot
+
+A snapshot uses a clean source checkout at the exact indexed commit. The Repowise index
+may live in a different checkout, which avoids treating Repowise-generated working-tree
+metadata as released source:
+
+```shell
+npm run publish:knowledge -- \
+  --framework-dir /path/to/clean/pipelineframework-main \
+  --repowise-index-dir /path/to/indexed/pipelineframework-main \
+  --version X.Y.Z-SNAPSHOT \
+  --snapshot \
+  --environment production \
+  --publish
+```
+
+The publisher requires the clean checkout's root Maven version and the indexed commit to
+match exactly, and requires zero stale Repowise pages. Snapshots cannot use `--stage-only`:
+their metadata, FTS rows, and source catalogue are immutable, and only the final public
+alias changes. The immutable release path and its support-window calculation are
+unaffected.
+
+R2 payloads upload with bounded concurrency through the installed Wrangler executable;
+the publisher does not start a separate package-manager process for every object.
 
 ## Publish and deploy
 

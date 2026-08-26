@@ -1,17 +1,25 @@
-name: Publish released TPF knowledge
+name: Publish TPF knowledge
 
 on:
   workflow_dispatch:
     inputs:
+      kind:
+        description: Knowledge publication kind
+        required: true
+        default: release
+        type: choice
+        options:
+          - release
+          - snapshot
       version:
-        description: Exact released TPF version
+        description: Exact TPF version (x.y.z or x.y.z-SNAPSHOT)
         required: true
       framework_commit:
-        description: Full Git commit for the released tag
+        description: Full Git commit for the exact version
         required: true
       tag:
         description: Exact vX.Y.Z release tag
-        required: true
+        required: false
 
 permissions:
   contents: read
@@ -32,7 +40,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: The-Pipeline-Framework/pipelineframework
-          ref: ${{ inputs.tag }}
+          ref: ${{ inputs.kind == 'snapshot' && inputs.framework_commit || inputs.tag }}
           path: .framework-release
       - uses: actions/setup-node@v6
         with:
@@ -45,9 +53,15 @@ jobs:
           FRAMEWORK_COMMIT: ${{ inputs.framework_commit }}
           TAG: ${{ inputs.tag }}
         run: |
-          test "$TAG" = "v$VERSION"
           test "${#FRAMEWORK_COMMIT}" -eq 40
           test "$(git -C .framework-release rev-parse HEAD)" = "$FRAMEWORK_COMMIT"
+          if [ "${{ inputs.kind }}" = "release" ]; then
+            test "$TAG" = "v$VERSION"
+            test "$(git -C .framework-release describe --tags --exact-match HEAD)" = "$TAG"
+          else
+            test -z "$TAG"
+            case "$VERSION" in *-SNAPSHOT) ;; *) exit 1 ;; esac
+          fi
       - name: Compile and publish matching Repowise knowledge
         env:
           VERSION: ${{ inputs.version }}
@@ -55,9 +69,12 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
+          SNAPSHOT_ARG=""
+          if [ "${{ inputs.kind }}" = "snapshot" ]; then SNAPSHOT_ARG="--snapshot"; fi
           npm run publish:knowledge -- \
             --framework-dir "$GITHUB_WORKSPACE/.framework-release" \
             --version "$VERSION" \
+            $SNAPSHOT_ARG \
             --repowise-r2-commit "$FRAMEWORK_COMMIT" \
             --wait-for-repowise-seconds 600 \
             --environment production \
