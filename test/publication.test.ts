@@ -90,7 +90,16 @@ describe("author knowledge publication", () => {
       schemaVersion: 2,
       kind: "RELEASE",
     });
-    expect(first.documents).toHaveLength(1);
+    expect(first.documents).toHaveLength(2);
+    expect(first.documents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          scope: "docs",
+          path: "docs/develop/author.md",
+          content: "How to author",
+        }),
+      ]),
+    );
     expect(first.sources.map((source) => source.path)).toEqual([
       "docs/develop/author.md",
     ]);
@@ -102,12 +111,66 @@ describe("author knowledge publication", () => {
     writeBundle(first, output);
     expect(
       JSON.parse(readFileSync(path.join(output, "manifest.json"), "utf8")),
-    ).toMatchObject({ documentCount: 1, sourceCount: 1 });
+    ).toMatchObject({ documentCount: 2, sourceCount: 1 });
     expect(readFileSync(path.join(output, "stage.sql"), "utf8")).not.toContain(
       "Maintainer ADR",
     );
     expect(readFileSync(path.join(output, "stage.sql"), "utf8")).not.toMatch(
       /\b(?:BEGIN|COMMIT)\b/,
+    );
+  });
+
+  it("indexes authoritative author docs and skill Markdown when Repowise emits no pages", () => {
+    const frameworkDir = fixtureRepository();
+    mkdirSync(path.join(frameworkDir, ".agents/skills/tpf-authoring"), {
+      recursive: true,
+    });
+    writeFileSync(
+      path.join(frameworkDir, ".agents/skills/tpf-authoring/SKILL.md"),
+      "# TPF authoring\n\nRepeated fields use immutable List values and nested records.\n",
+    );
+    writeFileSync(
+      path.join(frameworkDir, "docs/develop/author.md"),
+      "# Pipeline types\n\nUse discriminated unions for variant output.\n",
+    );
+    execFileSync("git", ["add", "."], { cwd: frameworkDir });
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "--no-gpg-sign",
+        "-qm",
+        "author guidance",
+      ],
+      { cwd: frameworkDir },
+    );
+
+    const bundle = compileBundle({
+      frameworkDir,
+      version: "26.7.1",
+      frameworkCommit: "a".repeat(40),
+      publishedAt: "2026-07-01T00:00:00Z",
+      repowiseVersion: "0.43.0",
+      repowiseExportBytes: Buffer.from('{"pages":[]}'),
+    });
+
+    expect(bundle.documents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          scope: "docs",
+          title: "Pipeline types",
+          content: expect.stringContaining("discriminated unions"),
+        }),
+        expect.objectContaining({
+          scope: "skill",
+          title: "TPF authoring",
+          content: expect.stringContaining("Repeated fields"),
+        }),
+      ]),
     );
   });
 
