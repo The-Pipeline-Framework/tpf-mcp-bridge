@@ -82,27 +82,48 @@ export class D1R2KnowledgeRepository implements KnowledgeRepository {
   }
 
   async search(request: SearchRequest): Promise<SearchHit[]> {
-    const match = toFtsQuery(request.query);
     const scopeClause = request.scope === undefined ? "" : " AND f.scope = ?";
-    const statement = this.database.prepare(
-      `SELECT f.id, f.scope, f.title, f.path,
-              snippet(documents_fts, 4, '', '', ' … ', 18) AS snippet,
-              r.framework_commit
-       FROM documents_fts AS f
-       JOIN knowledge_aliases AS a ON a.dataset_version = f.version
-       JOIN releases AS r ON r.version = a.dataset_version
-       WHERE a.public_version = ?${scopeClause}
-         AND documents_fts MATCH ?
-         AND r.status = 'ACTIVE' AND r.supported = 1
-       ORDER BY bm25(documents_fts, 0.0, 0.0, 0.0, 6.0, 3.0, 1.0)
-       LIMIT ?`,
-    );
-    const bindings =
-      request.scope === undefined
-        ? [request.version, match, request.maxResults]
-        : [request.version, request.scope, match, request.maxResults];
-    const query = await statement.bind(...bindings).all<SearchRow>();
-    return query.results.map((row) => ({
+    const search = async (match: string): Promise<SearchRow[]> => {
+      const statement = this.database.prepare(
+        `SELECT f.id, f.scope, f.title, f.path,
+                snippet(documents_fts, 4, '', '', ' … ', 18) AS snippet,
+                r.framework_commit
+         FROM documents_fts AS f
+         JOIN knowledge_aliases AS a ON a.dataset_version = f.version
+         JOIN releases AS r ON r.version = a.dataset_version
+         WHERE a.public_version = ?${scopeClause}
+           AND documents_fts MATCH ?
+           AND r.status = 'ACTIVE' AND r.supported = 1
+         ORDER BY CASE f.scope
+                    WHEN 'skill' THEN 0
+                    WHEN 'docs' THEN 1
+                    WHEN 'examples' THEN 2
+                    ELSE 3
+                  END,
+                  bm25(documents_fts, 0.0, 0.0, 0.0, 6.0, 3.0, 1.0)
+         LIMIT ?`,
+      );
+      const bindings =
+        request.scope === undefined
+          ? [request.version, match, request.maxResults]
+          : [request.version, request.scope, match, request.maxResults];
+      return (await statement.bind(...bindings).all<SearchRow>()).results;
+    };
+
+    const exactMatch = toFtsQuery(request.query, "AND");
+    const exact = await search(exactMatch);
+    const fallbackMatch = toFtsQuery(request.query, "OR");
+    const fallback =
+      exact.length < request.maxResults && fallbackMatch !== exactMatch
+        ? await search(fallbackMatch)
+        : [];
+    const rows = [...exact, ...fallback]
+      .filter(
+        (row, index, results) =>
+          results.findIndex((candidate) => candidate.id === row.id) === index,
+      )
+      .slice(0, request.maxResults);
+    return rows.map((row) => ({
       id: row.id,
       scope: row.scope,
       title: row.title,
@@ -191,7 +212,10 @@ export class D1R2KnowledgeRepository implements KnowledgeRepository {
   }
 }
 
-export function toFtsQuery(query: string): string {
+export function toFtsQuery(
+  query: string,
+  operator: "AND" | "OR" = "AND",
+): string {
   const tokens = query
     .normalize("NFKC")
     .match(/[\p{L}\p{N}_.-]+/gu)
@@ -200,7 +224,7 @@ export function toFtsQuery(query: string): string {
   if (tokens === undefined || tokens.length === 0) {
     return '""';
   }
-  return tokens.join(" OR ");
+  return tokens.join(` ${operator} `);
 }
 
 function githubCitation(commit: string, path: string): string {

@@ -8,6 +8,12 @@ beforeAll(async () => {
      VALUES ('26.7.1', 'abc123', '2026-07-01T00:00:00Z', 'bundle', '0.43.0', 'export', 'ACTIVE', 1, 1, 1)`,
   ).run();
   await env.TPF_MCP_KNOWLEDGE.prepare(
+    `INSERT INTO documents_fts (version, id, scope, title, content, path) VALUES
+      ('26.7.1', 'api-repeated', 'api', 'Repeated', 'repeated Java API member', 'framework/api/Repeated.java'),
+      ('26.7.1', 'docs-repeated', 'docs', 'Pipeline types', 'Repeated fields use nested records and immutable List values', 'docs/develop/types.md'),
+      ('26.7.1', 'skill-unions', 'skill', 'TPF authoring', 'Use discriminated unions for compiler-known branch applicability', '.agents/skills/tpf-authoring/SKILL.md')`,
+  ).run();
+  await env.TPF_MCP_KNOWLEDGE.prepare(
     `INSERT INTO knowledge_aliases (public_version, dataset_version)
      VALUES ('26.7.1', '26.7.1')`,
   ).run();
@@ -102,6 +108,37 @@ describe("TPF Author MCP Worker", () => {
       endLine: 4,
     });
     expect(outOfRange).toContain("NOT_FOUND");
+  });
+
+  it("prefers author guidance and requires every term in multi-term searches", async () => {
+    const repeated = await callTool("tpf_search", {
+      version: "26.7.1",
+      query: "repeated",
+    });
+    expect(repeated.indexOf("docs-repeated")).toBeLessThan(
+      repeated.indexOf("api-repeated"),
+    );
+
+    const detailed = await callTool("tpf_search", {
+      version: "26.7.1",
+      query: "repeated fields nested records immutable List",
+      scope: "docs",
+    });
+    expect(detailed).toContain("docs-repeated");
+
+    const union = await callTool("tpf_search", {
+      version: "26.7.1",
+      query: "discriminated unions",
+      scope: "skill",
+    });
+    expect(union).toContain("skill-unions");
+
+    const partial = await callTool("tpf_search", {
+      version: "26.7.1",
+      query: "repeated unavailable-term",
+      scope: "docs",
+    });
+    expect(partial).toContain("docs-repeated");
   });
 
   it("rejects unavailable versions before searching", async () => {

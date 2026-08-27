@@ -112,17 +112,28 @@ export function compileBundle(options: {
   if (!Array.isArray(parsed.pages)) {
     throw new Error("Repowise full JSON export must contain a pages array");
   }
-  const documentSeeds = parsed.pages
-    .map((page) => normalizePage(page, options.version))
-    .filter(
-      (page): page is Omit<CompiledDocument, "objectKey"> => page !== undefined,
-    )
-    .sort(
-      (left, right) =>
-        compare(left.path, right.path) ||
-        compare(left.title, right.title) ||
-        compare(left.id, right.id),
-    );
+  const sourceSeeds = readApprovedSources(options.frameworkDir).sort(
+    (left, right) => compare(left.path, right.path),
+  );
+  const documentSeeds = [
+    ...parsed.pages
+      .map((page) => normalizePage(page, options.version))
+      .filter(
+        (page): page is Omit<CompiledDocument, "objectKey"> =>
+          page !== undefined,
+      ),
+    ...sourceSeeds
+      .map((source) => normalizeAuthorSource(source, options.version))
+      .filter(
+        (document): document is Omit<CompiledDocument, "objectKey"> =>
+          document !== undefined,
+      ),
+  ].sort(
+    (left, right) =>
+      compare(left.path, right.path) ||
+      compare(left.title, right.title) ||
+      compare(left.id, right.id),
+  );
   const duplicateIds = documentSeeds
     .filter(
       (document, index, documents) =>
@@ -135,9 +146,6 @@ export function compileBundle(options: {
       `Repowise export contains duplicate document IDs: ${[...new Set(duplicateIds)].join(", ")}`,
     );
   }
-  const sourceSeeds = readApprovedSources(options.frameworkDir).sort(
-    (left, right) => compare(left.path, right.path),
-  );
   const repowiseExportChecksum = sha256(options.repowiseExportBytes);
   const bundleChecksum = sha256(
     JSON.stringify({
@@ -376,6 +384,30 @@ function normalizePage(
     scope,
     title,
     path: targetPath,
+    content,
+    contentChecksum: sha256(content),
+  };
+}
+
+function normalizeAuthorSource(
+  source: Omit<CompiledSource, "objectKey">,
+  version: string,
+): Omit<CompiledDocument, "objectKey"> | undefined {
+  const scope = classifyAuthorPath(source.path);
+  if (
+    (scope !== "docs" && scope !== "skill") ||
+    path.extname(source.path).toLowerCase() !== ".md"
+  ) {
+    return undefined;
+  }
+  const content = source.content.trim();
+  if (content.length === 0) return undefined;
+  const title = /^#\s+(.+)$/m.exec(content)?.[1]?.trim() ?? source.path;
+  return {
+    id: sha256(`${version}\0${source.path}\0author-source`).slice(0, 24),
+    scope,
+    title,
+    path: source.path,
     content,
     contentChecksum: sha256(content),
   };
