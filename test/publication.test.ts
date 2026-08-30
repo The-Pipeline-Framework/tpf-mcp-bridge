@@ -269,18 +269,27 @@ describe("author knowledge publication", () => {
 
     const output = path.join(frameworkDir, "snapshot-bundle");
     writeBundle(bundle, output);
-    const refresh = readFileSync(path.join(output, "refresh.sql"), "utf8");
-    expect(refresh).toContain("DELETE FROM documents_fts");
-    expect(refresh).toContain("'SNAPSHOT'");
-    expect(refresh).toContain("'ACTIVE', 1");
+    const stage = readFileSync(path.join(output, "stage.sql"), "utf8");
+    const activate = readFileSync(path.join(output, "activate.sql"), "utf8");
+    const chunks = JSON.parse(
+      readFileSync(path.join(output, "stage-chunks.json"), "utf8"),
+    ) as string[];
+    expect(stage).toContain("INSERT OR IGNORE INTO releases");
+    expect(stage).toContain("DELETE FROM documents_fts");
+    expect(stage).toContain("INSERT OR REPLACE INTO documents");
+    expect(stage).toContain("'SNAPSHOT'");
+    expect(stage).toContain("'STAGED', 0");
+    expect(chunks.length).toBeGreaterThan(0);
     expect(
-      refresh
-        .trim()
-        .endsWith(
-          `ON CONFLICT(public_version) DO UPDATE SET dataset_version = excluded.dataset_version;`,
-        ),
+      chunks.every((chunk) =>
+        readFileSync(path.join(output, chunk), "utf8").endsWith("\n"),
+      ),
     ).toBe(true);
-    expect(refresh).not.toMatch(/\b(?:BEGIN|COMMIT)\b/);
+    expect(activate).toContain(bundle.manifest.datasetVersion);
+    expect(activate).toContain(
+      `VALUES ('26.8.2-SNAPSHOT', '${bundle.manifest.datasetVersion}')`,
+    );
+    expect(stage).not.toMatch(/\b(?:BEGIN|COMMIT)\b/);
   });
 
   it("requires the exact clean root project snapshot version", () => {

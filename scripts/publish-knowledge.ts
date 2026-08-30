@@ -22,6 +22,8 @@ import {
 const execute = promisify(execFile);
 const wranglerExecutable = path.resolve("node_modules/.bin/wrangler");
 const R2_UPLOAD_CONCURRENCY = 16;
+const WRANGLER_TIMEOUT_MILLISECONDS = 120_000;
+const WRANGLER_RETRY_ATTEMPTS = 4;
 const args = parseArgs(process.argv.slice(2));
 const publicationKind = args.snapshot ? "SNAPSHOT" : "RELEASE";
 const release = args.snapshot
@@ -46,7 +48,12 @@ try {
   );
   console.log(`Bundle checksum: ${bundle.manifest.bundleChecksum}`);
   if (args.stageOnly || args.publish) {
-    await publish(args, bundle.manifest.bundleChecksum, args.publish);
+    await publish(
+      args,
+      bundle.manifest.bundleChecksum,
+      bundle.manifest.datasetVersion,
+      args.publish,
+    );
   }
 } finally {
   rmSync(temporary, { recursive: true, force: true });
@@ -195,16 +202,20 @@ async function resolveRepowiseInput(
       frameworkCommit,
     );
     const exportFile = path.join(temporary, "stored-repowise-export.json");
-    await wrangler([
-      "r2",
-      "object",
-      "get",
-      `${bucket}/${prefix}/wiki_pages.json`,
-      "--remote",
-      "--file",
-      exportFile,
-      ...environmentArgs,
-    ]);
+    await wrangler(
+      [
+        "r2",
+        "object",
+        "get",
+        `${bucket}/${prefix}/wiki_pages.json`,
+        "--remote",
+        "--file",
+        exportFile,
+        ...environmentArgs,
+      ],
+      false,
+      true,
+    );
     return readRepowiseInput(
       exportFile,
       manifest.repowiseVersion,
@@ -268,6 +279,7 @@ async function waitForRepowiseManifest(
 async function publish(
   args: ReturnType<typeof parseArgs>,
   checksum: string,
+  datasetVersion: string,
   activate: boolean,
 ): Promise<void> {
   const environmentArgs =
@@ -319,15 +331,14 @@ async function publish(
       return;
     }
     await uploadBundle(args, bucket);
-    await wrangler([
-      "d1",
-      "execute",
+    await stageBundle(database, environmentArgs, args.outputDir);
+    await verifyPublication(
       database,
-      "--remote",
-      "--file",
-      path.join(args.outputDir, "refresh.sql"),
-      ...environmentArgs,
-    ]);
+      environmentArgs,
+      datasetVersion,
+      "STAGED",
+    );
+    await activateBundle(database, environmentArgs, args.outputDir);
     await verifyPublication(database, environmentArgs, args.version, "ACTIVE");
     console.log(
       `Published atomic TPF snapshot ${args.version} in ${args.environment}.`,
@@ -344,15 +355,7 @@ async function publish(
     }
   } else {
     await uploadBundle(args, bucket);
-    await wrangler([
-      "d1",
-      "execute",
-      database,
-      "--remote",
-      "--file",
-      path.join(args.outputDir, "stage.sql"),
-      ...environmentArgs,
-    ]);
+    await stageBundle(database, environmentArgs, args.outputDir);
   }
   await verifyPublication(database, environmentArgs, args.version, "STAGED");
   if (!activate) {
@@ -361,18 +364,59 @@ async function publish(
     );
     return;
   }
-  await wrangler([
-    "d1",
-    "execute",
-    database,
-    "--remote",
-    "--file",
-    path.join(args.outputDir, "activate.sql"),
-    ...environmentArgs,
-  ]);
+  await activateBundle(database, environmentArgs, args.outputDir);
   await applySupportWindow(database, environmentArgs);
   console.log(
     `Published and activated TPF ${args.version} in ${args.environment}.`,
+  );
+}
+
+async function stageBundle(
+  database: string,
+  environmentArgs: string[],
+  outputDir: string,
+): Promise<void> {
+  const chunks = JSON.parse(
+    readFileSync(path.join(outputDir, "stage-chunks.json"), "utf8"),
+  ) as string[];
+  for (const chunk of chunks) {
+    const sql = readFileSync(path.join(outputDir, chunk), "utf8");
+    await wrangler(
+      [
+        "d1",
+        "execute",
+        database,
+        "--remote",
+        "--yes",
+        "--command",
+        sql,
+        ...environmentArgs,
+      ],
+      false,
+      true,
+    );
+  }
+}
+
+async function activateBundle(
+  database: string,
+  environmentArgs: string[],
+  outputDir: string,
+): Promise<void> {
+  const sql = readFileSync(path.join(outputDir, "activate.sql"), "utf8");
+  await wrangler(
+    [
+      "d1",
+      "execute",
+      database,
+      "--remote",
+      "--yes",
+      "--command",
+      sql,
+      ...environmentArgs,
+    ],
+    true,
+    true,
   );
 }
 
@@ -403,6 +447,7 @@ async function uploadBundle(
           ...environmentArgs,
         ],
         false,
+        true,
       ),
   );
 }
@@ -465,16 +510,45 @@ async function applySupportWindow(
     ]);
 }
 
-async function wrangler(values: string[], inherit = true): Promise<string> {
-  const result = await execute(wranglerExecutable, values, {
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  if (inherit && result.stdout) process.stdout.write(result.stdout);
-  return result.stdout;
+async function wrangler(
+  values: string[],
+  inherit = true,
+  retryTransientFailure = false,
+): Promise<string> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const result = await execute(wranglerExecutable, values, {
+        maxBuffer: 64 * 1024 * 1024,
+        timeout: WRANGLER_TIMEOUT_MILLISECONDS,
+      });
+      if (inherit && result.stdout) process.stdout.write(result.stdout);
+      return result.stdout;
+    } catch (error) {
+      if (
+        !retryTransientFailure ||
+        attempt >= WRANGLER_RETRY_ATTEMPTS ||
+        !isTransientWranglerFailure(error)
+      )
+        throw error;
+      await delay(1_000 * 2 ** (attempt - 1));
+    }
+  }
 }
 
 async function wranglerJson(values: string[]): Promise<unknown> {
-  return JSON.parse(await wrangler([...values, "--json"], false));
+  return JSON.parse(await wrangler([...values, "--json"], false, true));
+}
+
+function isTransientWranglerFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const details = [
+    error.message,
+    "stdout" in error ? String(error.stdout) : "",
+    "stderr" in error ? String(error.stderr) : "",
+  ].join("\n");
+  return /EAI_AGAIN|ECONNRESET|ETIMEDOUT|fetch failed|network connectivity|socket hang up|timed out|Unable to resolve Cloudflare's API hostname/i.test(
+    details,
+  );
 }
 
 async function mapConcurrent<T>(
