@@ -380,7 +380,6 @@ async function stageBundle(
     readFileSync(path.join(outputDir, "stage-chunks.json"), "utf8"),
   ) as string[];
   for (const chunk of chunks) {
-    const sql = readFileSync(path.join(outputDir, chunk), "utf8");
     await wrangler(
       [
         "d1",
@@ -388,8 +387,8 @@ async function stageBundle(
         database,
         "--remote",
         "--yes",
-        "--command",
-        sql,
+        "--file",
+        path.join(outputDir, chunk),
         ...environmentArgs,
       ],
       false,
@@ -403,7 +402,6 @@ async function activateBundle(
   environmentArgs: string[],
   outputDir: string,
 ): Promise<void> {
-  const sql = readFileSync(path.join(outputDir, "activate.sql"), "utf8");
   await wrangler(
     [
       "d1",
@@ -411,8 +409,8 @@ async function activateBundle(
       database,
       "--remote",
       "--yes",
-      "--command",
-      sql,
+      "--file",
+      path.join(outputDir, "activate.sql"),
       ...environmentArgs,
     ],
     true,
