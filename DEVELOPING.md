@@ -40,7 +40,11 @@ The test suite covers service limits, exact-version errors, author-scope filteri
 
 ## Automatic Repowise input
 
-TPF's existing Repowise post-commit update remains background and non-blocking. Install the MCP continuation once in one stable, clean `main` checkout per maintainer clone that may prepare knowledge:
+This automation is **machine-local**. The scripts are versioned here, but Git does not
+version or distribute the installed files under the TPF clone's `.git/hooks/` directory.
+Cloning either repository on another machine does not install them. Install the
+continuation once in one stable, clean `main` checkout per maintainer clone that may
+prepare knowledge:
 
 ```shell
 npm run install:repowise-upload-hook -- \
@@ -48,7 +52,101 @@ npm run install:repowise-upload-hook -- \
   --environment production
 ```
 
-Git hooks are shared across worktrees in the same clone, so every MCP-managed block first verifies that the event occurred in the exact checkout passed through `--framework-dir`; feature-worktree activity cannot trigger MCP export or delivery. The installer extends the existing post-commit update and adds two bounded hooks. `post-merge` refreshes Repowise for a newly pulled or merged `main`; `post-checkout` retries pending deliveries without re-indexing. After each successful update, the continuation verifies a clean checkout, exact indexed commit, and zero stale pages, then runs the pinned full JSON export.
+The installed hooks embed the absolute paths of both checkouts. On the maintainer machine
+they therefore continue to point at the particular MCP checkout from which the installer
+was run; moving either checkout breaks that installation until the command is rerun. Use
+the following to inspect the effective local installation:
+
+```shell
+git -C /path/to/pipelineframework rev-parse --git-path hooks/post-commit
+git -C /path/to/pipelineframework rev-parse --git-path hooks/post-merge
+git -C /path/to/pipelineframework rev-parse --git-path hooks/post-checkout
+```
+
+Git hooks are shared across worktrees in the same clone, so every MCP-managed block first
+verifies that the event occurred in the exact checkout passed through `--framework-dir`;
+feature-worktree activity cannot trigger MCP export or delivery. The installer extends
+Repowise's background post-commit update and adds bounded merge and checkout handling:
+
+- a commit, pull, or merge updates Repowise and then attempts an exact-commit export;
+- a checkout retries queued Cloudflare delivery without rebuilding the index;
+- all work runs in the background and therefore does not make `git pull` wait;
+- output goes to `/path/to/pipelineframework/.repowise/.update.log`.
+
+The hook is convenience automation, not proof of success. Before relying on a prepared
+input, verify both commit equality and store health explicitly:
+
+```shell
+cd /path/to/pipelineframework
+test "$(git rev-parse HEAD)" = "$(jq -r .last_sync_commit .repowise/state.json)"
+repowise doctor --no-workspace
+```
+
+The equality check is mandatory. Repowise 0.47 can report all doctor checks healthy even
+when `state.json` still names an older commit. The doctor report must additionally show
+zero stale pages and synchronized SQL/vector, SQL/FTS, and coordinator counts.
+
+### Known Repowise 0.47 stale-page failure
+
+[Repowise issue #1744](https://github.com/repowise-dev/repowise/issues/1744)
+remains reproducible in 0.47: incremental update can leave stale structural file pages
+while reporting the repository current. In the observed TPF failure, `doctor --repair`
+did nothing and `init --force` retained stale rows. Neither command is an accepted
+recovery for publication.
+
+Publication remains fail-closed. A commit mismatch, any stale page, or an inconsistent
+SQL/vector/FTS store prevents export and upload; it cannot replace the currently active
+MCP snapshot. Inspect `.repowise/.update.log` for the actionable failure.
+
+The proven recovery is a genuinely empty, model-free structural rebuild. Run it only from
+a clean TPF `main` checkout. Preserve the old index outside the repository rather than
+deleting it, retain only its local configuration, and do not modify `AGENTS.md`:
+
+```shell
+cd /path/to/pipelineframework
+test -z "$(git status --porcelain)"
+
+backup_dir="$(mktemp -d "${TMPDIR:-/tmp}/tpf-repowise-backup.XXXXXX")"
+mv .repowise "$backup_dir/index"
+mkdir -m 700 .repowise
+cp "$backup_dir/index/config.yaml" .repowise/config.yaml
+if test -f "$backup_dir/index/.env"; then
+  cp "$backup_dir/index/.env" .repowise/.env
+  chmod 600 .repowise/.env
+fi
+
+REPOWISE_SKIP_EDITOR_SETUP=1 repowise init \
+  --yes \
+  --no-workspace \
+  --no-agents \
+  --no-codex \
+  --no-distill-hook \
+  --no-prose \
+  --no-seed
+
+test "$(git rev-parse HEAD)" = "$(jq -r .last_sync_commit .repowise/state.json)"
+repowise doctor --no-workspace
+```
+
+`--no-prose` makes no LLM calls. The measured TPF recovery on 31 August 2026 generated
+4,117 structural pages in 15 minutes 5 seconds with zero model tokens. It still consumes
+local CPU, Ollama embedding time, memory, and disk. Keep the backup until the replacement
+has passed both validations and uploaded successfully.
+
+After recovery, queue and deliver the exact input explicitly from the installed MCP
+checkout:
+
+```shell
+cd /path/to/tpf-mcp-bridge
+npm run upload:repowise-input -- \
+  --framework-dir /path/to/pipelineframework \
+  --environment production \
+  --attempts 4
+```
+
+Automating an isolated candidate index, seeded recovery, and promotion is intentionally
+deferred to [issue #53](https://github.com/The-Pipeline-Framework/tpf-mcp-bridge/issues/53)
+until its time and maintenance costs are justified.
 
 The export and provenance manifest are written first to the durable local outbox at `.repowise/tpf-mcp-upload-queue/<commit>/`. Cloudflare delivery is a separate retryable step. Only after both immutable R2 objects exist under `inputs/repowise/<commit>/` is the local entry removed. Network or Cloudflare failures leave it queued, retry four times with bounded backoff, and are attempted again by later Git activity. A manual retry, which performs no indexing, is also safe:
 
