@@ -44,7 +44,9 @@ This automation is **machine-local**. The scripts are versioned here, but Git do
 version or distribute the installed files under the TPF clone's `.git/hooks/` directory.
 Cloning either repository on another machine does not install them. Install the
 continuation once in one stable, clean `main` checkout per maintainer clone that may
-prepare knowledge:
+prepare snapshot knowledge. This hook checkout is not the immutable-release checkout:
+manual release recovery must use a separate clean checkout at the intended exact
+`vX.Y.Z` tag, as described below.
 
 ```shell
 npm run install:repowise-upload-hook -- \
@@ -77,7 +79,13 @@ The hook is convenience automation, not proof of success. Before relying on a pr
 input, verify both commit equality and store health explicitly:
 
 ```shell
-cd /path/to/pipelineframework
+set -eu
+framework_dir=/path/to/pipelineframework
+cd "$framework_dir"
+test "$(git symbolic-ref --quiet --short HEAD)" = main
+expected_commit="$(git rev-parse origin/main)"
+test "$(git rev-parse HEAD)" = "$expected_commit"
+test -z "$(git status --porcelain)"
 test "$(git rev-parse HEAD)" = "$(jq -r .last_sync_commit .repowise/state.json)"
 repowise doctor --no-workspace
 ```
@@ -98,15 +106,49 @@ Publication remains fail-closed. A commit mismatch, any stale page, or an incons
 SQL/vector/FTS store prevents export and upload; it cannot replace the currently active
 MCP snapshot. Inspect `.repowise/.update.log` for the actionable failure.
 
-The proven recovery is a genuinely empty, model-free structural rebuild. Run it only from
-a clean TPF `main` checkout. Preserve the old index outside the repository rather than
-deleting it, retain only its local configuration, and do not modify `AGENTS.md`:
+The proven recovery is a genuinely empty, model-free structural rebuild. For snapshot
+recovery, use the installed clean `main` checkout and set `expected_commit` from
+`origin/main` as above. For immutable release recovery, use a separate external checkout,
+set `version=X.Y.Z`, and establish the intended exact tagged commit before continuing:
 
 ```shell
-cd /path/to/pipelineframework
+set -eu
+framework_dir=/path/to/pipelineframework-release
+cd "$framework_dir"
+version=X.Y.Z
+expected_commit="$(git rev-list -n 1 "v$version")"
+test "$(git rev-parse HEAD)" = "$expected_commit"
+test "$(git describe --tags --exact-match HEAD)" = "v$version"
 test -z "$(git status --porcelain)"
+```
+
+Then preserve the old index outside the repository rather than deleting it, retain only
+its local configuration, and do not modify `AGENTS.md`. The following common procedure
+requires `expected_commit` to have been set by one of the two preparations above:
+
+```shell
+set -eu
+test -n "${framework_dir:-}"
+cd "$framework_dir"
+test -n "${expected_commit:-}"
+test "$(git rev-parse HEAD)" = "$expected_commit"
+test -z "$(git status --porcelain)"
+test -d .repowise
+test -f .repowise/config.yaml
+
+queue=.repowise/tpf-mcp-upload-queue
+if test -d "$queue" && test -n "$(find "$queue" -mindepth 1 -maxdepth 1 -print -quit)"; then
+  echo "Refusing recovery while Repowise inputs remain queued" >&2
+  exit 1
+fi
 
 backup_dir="$(mktemp -d "${TMPDIR:-/tmp}/tpf-repowise-backup.XXXXXX")"
+repo_root="$(pwd -P)"
+backup_dir="$(cd "$backup_dir" && pwd -P)"
+case "$backup_dir/" in
+  "$repo_root/"*) echo "Backup directory must be outside the repository" >&2; exit 1 ;;
+esac
+test ! -e "$backup_dir/index"
 mv .repowise "$backup_dir/index"
 mkdir -m 700 .repowise
 cp "$backup_dir/index/config.yaml" .repowise/config.yaml
@@ -124,7 +166,8 @@ REPOWISE_SKIP_EDITOR_SETUP=1 repowise init \
   --no-prose \
   --no-seed
 
-test "$(git rev-parse HEAD)" = "$(jq -r .last_sync_commit .repowise/state.json)"
+test "$(git rev-parse HEAD)" = "$expected_commit"
+test "$expected_commit" = "$(jq -r .last_sync_commit .repowise/state.json)"
 repowise doctor --no-workspace
 ```
 
@@ -137,9 +180,17 @@ After recovery, queue and deliver the exact input explicitly from the installed 
 checkout:
 
 ```shell
+set -eu
+framework_dir=/path/to/pipelineframework
+test -n "${expected_commit:-}"
+test "$(git -C "$framework_dir" rev-parse HEAD)" = "$expected_commit"
+test "$expected_commit" = "$(jq -r .last_sync_commit "$framework_dir/.repowise/state.json")"
+test -z "$(git -C "$framework_dir" status --porcelain)"
+repowise doctor --no-workspace "$framework_dir"
+
 cd /path/to/tpf-mcp-bridge
 npm run upload:repowise-input -- \
-  --framework-dir /path/to/pipelineframework \
+  --framework-dir "$framework_dir" \
   --environment production \
   --attempts 4
 ```
@@ -160,17 +211,25 @@ npm run upload:repowise-input -- \
 
 Repeated uploads of the same checksum are no-ops and a different export for an existing commit is rejected. Any authorized maintainer with a healthy index for the exact commit can produce the same immutable input; the release is not bound to one named workstation. Maintainers can authenticate Wrangler with a narrowly scoped Cloudflare API token instead of sharing a personal login.
 
-The hooks contain the absolute path of this TPF Author Knowledge MCP checkout, distinct from the TPF checkout passed through `--framework-dir`. Re-run the installer only if the MCP checkout moves or Repowise's post-commit hook is reinstalled. Update and upload failures are recorded in `.repowise/.update.log` and do not block commits, merges, or checkouts. The outbox is ignored by Git and survives process termination and network loss.
+The hooks contain the absolute path of this TPF Author Knowledge MCP checkout, distinct from the TPF checkout passed through `--framework-dir`. Re-run the installer if either checkout moves or if Repowise's post-commit hook is reinstalled. Update and upload failures are recorded in `.repowise/.update.log` and do not block commits, merges, or checkouts. The outbox is ignored by Git and survives process termination and network loss.
 
 ## Compile a release locally
 
 For local or staging validation, publication requires a clean `pipelineframework` checkout whose HEAD is the exact `vX.Y.Z` tag and whose Repowise report is healthy at that commit:
 
 ```shell
+set -eu
+version=X.Y.Z
+framework_dir=/path/to/pipelineframework-release
+expected_commit="$(git -C "$framework_dir" rev-list -n 1 "v$version")"
+test "$(git -C "$framework_dir" rev-parse HEAD)" = "$expected_commit"
+test "$(git -C "$framework_dir" describe --tags --exact-match HEAD)" = "v$version"
+test -z "$(git -C "$framework_dir" status --porcelain)"
+
 npm run publish:knowledge -- \
-  --framework-dir /path/to/pipelineframework-release \
-  --version X.Y.Z \
-  --output .publication/X.Y.Z
+  --framework-dir "$framework_dir" \
+  --version "$version" \
+  --output ".publication/$version"
 ```
 
 The compiler applies the author-scope allowlist, collects approved tagged source, and writes:
