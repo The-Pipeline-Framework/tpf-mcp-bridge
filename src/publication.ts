@@ -466,11 +466,11 @@ function renderStageStatementGroups(bundle: CompiledBundle): string[][] {
   const groups: string[][] = [
     [
       `INSERT OR IGNORE INTO releases (version, publication_kind, framework_commit, published_at, bundle_checksum, repowise_version, repowise_export_checksum, status, supported, document_count, source_count) VALUES (${sqlLiteral(manifest.datasetVersion)}, ${sqlLiteral(manifest.kind)}, ${sqlLiteral(manifest.frameworkCommit)}, ${sqlLiteral(manifest.publishedAt)}, ${sqlLiteral(manifest.bundleChecksum)}, ${sqlLiteral(manifest.repowiseVersion)}, ${sqlLiteral(manifest.repowiseExportChecksum)}, 'STAGED', 0, ${manifest.documentCount}, ${manifest.sourceCount});`,
+      `DELETE FROM documents_fts WHERE version = ${sqlLiteral(manifest.datasetVersion)};`,
     ],
   ];
   for (const document of bundle.documents) {
     groups.push([
-      `DELETE FROM documents_fts WHERE version = ${sqlLiteral(manifest.datasetVersion)} AND id = ${sqlLiteral(document.id)};`,
       `INSERT OR REPLACE INTO documents (version, id, scope, title, path, object_key, content_checksum) VALUES (${sqlLiteral(manifest.datasetVersion)}, ${sqlLiteral(document.id)}, ${sqlLiteral(document.scope)}, ${sqlLiteral(document.title)}, ${sqlLiteral(document.path)}, ${sqlLiteral(document.objectKey)}, ${sqlLiteral(document.contentChecksum)});`,
       `INSERT INTO documents_fts (version, id, scope, title, content, path) VALUES (${sqlLiteral(manifest.datasetVersion)}, ${sqlLiteral(document.id)}, ${sqlLiteral(document.scope)}, ${sqlLiteral(document.title)}, ${sqlLiteral(document.content)}, ${sqlLiteral(document.path)});`,
     ]);

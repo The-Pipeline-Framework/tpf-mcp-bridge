@@ -31,6 +31,7 @@
     "migrate:staging": "wrangler d1 migrations apply TPF_MCP_KNOWLEDGE --env staging --remote",
     "migrate:production": "wrangler d1 migrations apply TPF_MCP_KNOWLEDGE --remote",
     "publish:knowledge": "tsx scripts/publish-knowledge.ts",
+    "refresh:repowise": "tsx scripts/refresh-repowise.ts",
     "test": "vitest run --config vitest.config.ts && vitest run --config vitest.worker.config.ts",
     "test:watch": "vitest",
     "upload:repowise-input": "tsx scripts/upload-repowise-input.ts"
