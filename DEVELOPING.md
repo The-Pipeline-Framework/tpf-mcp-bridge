@@ -42,22 +42,22 @@ The test suite covers service limits, exact-version errors, author-scope filteri
 
 This automation is **machine-local**. The scripts are versioned here, but Git does not
 version or distribute the installed files under the TPF clone's `.git/hooks/` directory.
-Cloning either repository on another machine does not install them. Install the
-continuation once in one stable, clean `main` checkout per maintainer clone that may
-prepare snapshot knowledge. This hook checkout is not the immutable-release checkout:
-manual release recovery must use a separate clean checkout at the intended exact
-`vX.Y.Z` tag, as described below.
+Install it once from a stable checkout of this repository. The installer creates an
+independent TPF clone plus a candidate worktree under the state directory; active
+development branches and dirty working trees are never indexed or published.
 
 ```shell
 npm run install:repowise-upload-hook -- \
   --framework-dir /path/to/pipelineframework \
+  --state-dir "$HOME/.local/state/tpf-author-mcp/repowise" \
   --environment production
 ```
 
-The installed hooks embed the absolute paths of both checkouts. On the maintainer machine
-they therefore continue to point at the particular MCP checkout from which the installer
-was run; moving either checkout breaks that installation until the command is rerun. Use
-the following to inspect the effective local installation:
+The state directory contains `framework/` (the last healthy promoted index),
+`candidate/` (the isolated update candidate), a single-flight request/lock, completion
+metadata, the previous healthy index, and `refresh.log`. The installed hooks embed the
+absolute paths of the active TPF checkout, this MCP checkout, and the state directory.
+Re-run the installer after moving either repository. Inspect the effective hooks with:
 
 ```shell
 git -C /path/to/pipelineframework rev-parse --git-path hooks/post-commit
@@ -65,29 +65,35 @@ git -C /path/to/pipelineframework rev-parse --git-path hooks/post-merge
 git -C /path/to/pipelineframework rev-parse --git-path hooks/post-checkout
 ```
 
-Git hooks are shared across worktrees in the same clone, so every MCP-managed block first
-verifies that the event occurred in the exact checkout passed through `--framework-dir`;
-feature-worktree activity cannot trigger MCP export or delivery. The installer extends
-Repowise's background post-commit update and adds bounded merge and checkout handling:
+Git hooks are shared across worktrees in the same clone. Every managed block therefore
+verifies both the exact configured checkout and the `main` branch. It queues the full
+commit and starts the refresh runner in the background:
 
-- a commit, pull, or merge updates Repowise and then attempts an exact-commit export;
-- a checkout retries queued Cloudflare delivery without rebuilding the index;
+- requests are single-flight and a newer commit replaces an older queued request;
+- the candidate starts from the last healthy index and runs a zero-model incremental
+  structural update;
+- success requires exact commit equality, zero stale pages, and every doctor check;
+- an invalid incremental candidate is discarded and rebuilt from a genuinely empty
+  store with `--no-seed --no-prose --provider mock --model mock`; it never replaces or
+  uploads over the healthy index;
+- only a validated candidate is promoted and exported;
+- Cloudflare failures retain the existing durable upload queue for a later request;
 - all work runs in the background and therefore does not make `git pull` wait;
-- output goes to `/path/to/pipelineframework/.repowise/.update.log`.
+- output and measured recovery mode/time go to `<state-dir>/refresh.log` and
+  `completed-refresh.json`.
 
 The hook is convenience automation, not proof of success. Before relying on a prepared
 input, verify both commit equality and store health explicitly:
 
 ```shell
 set -eu
-framework_dir=/path/to/pipelineframework
-cd "$framework_dir"
-test "$(git symbolic-ref --quiet --short HEAD)" = main
-expected_commit="$(git rev-parse origin/main)"
-test "$(git rev-parse HEAD)" = "$expected_commit"
-test -z "$(git status --porcelain)"
-test "$(git rev-parse HEAD)" = "$(jq -r .last_sync_commit .repowise/state.json)"
-repowise doctor --no-workspace
+state_dir="$HOME/.local/state/tpf-author-mcp/repowise"
+framework_dir="$state_dir/framework"
+expected_commit="$(git -C "$framework_dir" rev-parse HEAD)"
+test "$expected_commit" = "$(jq -r .last_sync_commit "$framework_dir/.repowise/state.json")"
+test -z "$(git -C "$framework_dir" status --porcelain)"
+(cd "$framework_dir" && repowise doctor --no-workspace)
+jq . "$state_dir/completed-refresh.json"
 ```
 
 The equality check is mandatory. Repowise 0.47 can report all doctor checks healthy even
@@ -103,13 +109,28 @@ did nothing and `init --force` retained stale rows. Neither command is an accept
 recovery for publication.
 
 Publication remains fail-closed. A commit mismatch, any stale page, or an inconsistent
-SQL/vector/FTS store prevents export and upload; it cannot replace the currently active
-MCP snapshot. Inspect `.repowise/.update.log` for the actionable failure.
+SQL/vector/FTS store prevents candidate promotion, export, and upload; it cannot replace
+the last healthy local index or currently active MCP snapshot. The installed runner
+automatically attempts the empty-store recovery below with a no-prose/mock-provider
+policy and preserves the previous healthy index. Inspect
+`<state-dir>/refresh.log` for an actionable failure.
 
-The proven recovery is a genuinely empty, model-free structural rebuild. For snapshot
-recovery, use the installed clean `main` checkout and set `expected_commit` from
-`origin/main` as above. For immutable release recovery, use a separate external checkout,
-set `version=X.Y.Z`, and establish the intended exact tagged commit before continuing:
+A failed commit is recorded once rather than retried by every hook. After correcting the
+reported cause, retry that exact commit explicitly:
+
+```shell
+set -eu
+state_dir="$HOME/.local/state/tpf-author-mcp/repowise"
+rm -f "$state_dir/failed-refresh.json"
+npm run refresh:repowise -- \
+  --state-dir "$state_dir" \
+  --commit "$(git -C "$state_dir/framework" rev-parse origin/main)"
+```
+
+The proven fallback is a genuinely empty, model-free structural rebuild. It is automatic
+for snapshot refreshes. The following manual procedure remains only for diagnostics or
+immutable release recovery from a separate external checkout. Set `version=X.Y.Z` and
+establish the intended exact tagged commit before continuing:
 
 ```shell
 set -eu
@@ -164,17 +185,20 @@ REPOWISE_SKIP_EDITOR_SETUP=1 repowise init \
   --no-codex \
   --no-distill-hook \
   --no-prose \
-  --no-seed
+  --no-seed \
+  --provider mock \
+  --model mock
 
 test "$(git rev-parse HEAD)" = "$expected_commit"
 test "$expected_commit" = "$(jq -r .last_sync_commit .repowise/state.json)"
 repowise doctor --no-workspace
 ```
 
-`--no-prose` makes no LLM calls. The measured TPF recovery on 31 August 2026 generated
-4,117 structural pages in 15 minutes 5 seconds with zero model tokens. It still consumes
-local CPU, Ollama embedding time, memory, and disk. Keep the backup until the replacement
-has passed both validations and uploaded successfully.
+Repowise 0.47 can still start decision extraction despite `--no-prose`; forcing the mock
+provider is therefore required. Measured TPF empty rebuilds generated 4,117–4,193
+structural pages in 11 minutes 50 seconds to 15 minutes 5 seconds with zero external model
+calls or tokens. They still consume local CPU, Ollama/Nomic embedding time, memory, and
+disk. Keep the backup until the replacement has passed both validations and uploaded.
 
 After recovery, queue and deliver the exact input explicitly from the installed MCP
 checkout:
@@ -195,15 +219,11 @@ npm run upload:repowise-input -- \
   --attempts 4
 ```
 
-Automating an isolated candidate index, seeded recovery, and promotion is intentionally
-deferred to [issue #53](https://github.com/The-Pipeline-Framework/tpf-mcp-bridge/issues/53)
-until its time and maintenance costs are justified.
-
 The export and provenance manifest are written first to the durable local outbox at `.repowise/tpf-mcp-upload-queue/<commit>/`. Cloudflare delivery is a separate retryable step. Only after both immutable R2 objects exist under `inputs/repowise/<commit>/` is the local entry removed. Network or Cloudflare failures leave it queued, retry four times with bounded backoff, and are attempted again by later Git activity. A manual retry, which performs no indexing, is also safe:
 
 ```shell
 npm run upload:repowise-input -- \
-  --framework-dir /path/to/pipelineframework \
+  --framework-dir "$HOME/.local/state/tpf-author-mcp/repowise/framework" \
   --environment production \
   --retry-only \
   --attempts 4
@@ -211,7 +231,13 @@ npm run upload:repowise-input -- \
 
 Repeated uploads of the same checksum are no-ops and a different export for an existing commit is rejected. Any authorized maintainer with a healthy index for the exact commit can produce the same immutable input; the release is not bound to one named workstation. Maintainers can authenticate Wrangler with a narrowly scoped Cloudflare API token instead of sharing a personal login.
 
-The hooks contain the absolute path of this TPF Author Knowledge MCP checkout, distinct from the TPF checkout passed through `--framework-dir`. Re-run the installer if either checkout moves or if Repowise's post-commit hook is reinstalled. Update and upload failures are recorded in `.repowise/.update.log` and do not block commits, merges, or checkouts. The outbox is ignored by Git and survives process termination and network loss.
+The hooks contain the absolute paths of this TPF Author Knowledge MCP checkout, the
+configured active TPF checkout, and the dedicated state directory. Re-run the installer
+if either repository or the state directory moves. The managed block is placed before
+pre-existing hook content, so a later `exec` in a third-party hook cannot bypass it.
+Refresh and upload failures are recorded in `<state-dir>/refresh.log` and do not block
+commits, merges, or checkouts. The outbox is ignored by Git and survives process
+termination and network loss.
 
 ## Compile a release locally
 
@@ -239,6 +265,33 @@ The compiler applies the author-scope allowlist, collects approved tagged source
 - `stage.sql` and `activate.sql` for D1.
 
 Generated publication data is local build output and is not committed.
+
+### D1 cost guardrail
+
+Cloudflare charges D1 by rows scanned, including rows examined by a statement that
+returns or deletes nothing. `documents_fts.version` and `documents_fts.id` are FTS5
+`UNINDEXED` metadata, so publication must never delete one FTS row at a time using those
+columns. Staging performs exactly one dataset-level FTS cleanup before inserting the
+complete immutable candidate. A retry clears only that staged dataset once and then
+replays every chunk before activation.
+
+This invariant is covered by the bundle tests. It was added after per-document cleanup
+generated 34,026,086 rows read in seven days—98.7% of all D1 reads—while ordinary
+search and verification used 438,299. Inspect production query costs after changing
+publication SQL:
+
+```shell
+npx wrangler d1 insights tpf-mcp-knowledge \
+  --time-period 7d \
+  --sort-type sum \
+  --sort-by reads \
+  --sort-direction DESC \
+  --limit 20
+```
+
+Do not repeatedly rerun a failed publisher until its highest-read statement is
+understood. The Workers Free allowance is account-wide; reaching it makes every D1-backed
+knowledge call fail until the daily reset.
 
 ## Publish current main as a snapshot
 

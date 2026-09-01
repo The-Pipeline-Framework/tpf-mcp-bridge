@@ -1,6 +1,16 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -27,6 +37,13 @@ import {
   removeQueuedRepowiseInput,
   stageRepowiseInput,
 } from "../src/repowise-queue.js";
+import {
+  acquireRefreshLock,
+  readRequestedRefresh,
+  requestRepowiseRefresh,
+  validateRepowiseHealth,
+  writeRefreshConfiguration,
+} from "../src/repowise-refresh.js";
 
 describe("author knowledge publication", () => {
   it("admits author surfaces and rejects maintainer material", () => {
@@ -276,15 +293,23 @@ describe("author knowledge publication", () => {
     ) as string[];
     expect(stage).toContain("INSERT OR IGNORE INTO releases");
     expect(stage).toContain("DELETE FROM documents_fts");
+    expect(stage.match(/DELETE FROM documents_fts/g)).toHaveLength(1);
+    expect(stage).toContain(
+      `DELETE FROM documents_fts WHERE version = '${bundle.manifest.datasetVersion}';`,
+    );
+    expect(stage).not.toMatch(/DELETE FROM documents_fts[^;]+\bAND\s+id\b/);
     expect(stage).toContain("INSERT OR REPLACE INTO documents");
     expect(stage).toContain("'SNAPSHOT'");
     expect(stage).toContain("'STAGED', 0");
     expect(chunks.length).toBeGreaterThan(0);
+    const chunkSql = chunks.map((chunk) =>
+      readFileSync(path.join(output, chunk), "utf8"),
+    );
+    expect(chunkSql.every((sql) => sql.endsWith("\n"))).toBe(true);
     expect(
-      chunks.every((chunk) =>
-        readFileSync(path.join(output, chunk), "utf8").endsWith("\n"),
-      ),
-    ).toBe(true);
+      chunkSql.join("\n").match(/DELETE FROM documents_fts/g),
+    ).toHaveLength(1);
+    expect(chunkSql[0]).toContain("DELETE FROM documents_fts");
     expect(activate).toContain(bundle.manifest.datasetVersion);
     expect(activate).toContain(
       `VALUES ('26.8.2-SNAPSHOT', '${bundle.manifest.datasetVersion}')`,
@@ -419,9 +444,47 @@ describe("author knowledge publication", () => {
     const frameworkDir = mkdtempSync(
       path.join(os.tmpdir(), "tpf-hook-install-test-"),
     );
-    execFileSync("git", ["init", "-q"], { cwd: frameworkDir });
+    const gitEnvironment = {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: path.join(frameworkDir, "missing-global-gitconfig"),
+      GIT_CONFIG_SYSTEM: path.join(frameworkDir, "missing-system-gitconfig"),
+    };
+    execFileSync("git", ["init", "-q", "--initial-branch=main"], {
+      cwd: frameworkDir,
+      env: gitEnvironment,
+    });
+    writeFileSync(path.join(frameworkDir, "README.md"), "fixture\n");
+    execFileSync("git", ["add", "README.md"], {
+      cwd: frameworkDir,
+      env: gitEnvironment,
+    });
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "--no-gpg-sign",
+        "-qm",
+        "fixture",
+      ],
+      { cwd: frameworkDir, env: gitEnvironment },
+    );
     const hooks = path.join(frameworkDir, ".git", "hooks");
+    const stateDir = mkdtempSync(
+      path.join(os.tmpdir(), "tpf-refresh-state-test-"),
+    );
     const postCommit = path.join(hooks, "post-commit");
+    writeFileSync(
+      path.join(hooks, "post-merge"),
+      "#!/bin/sh\nexec /bin/true\n",
+      { mode: 0o755 },
+    );
+    writeFileSync(path.join(hooks, "post-checkout"), "#!/bin/sh\n", {
+      mode: 0o644,
+    });
     writeFileSync(
       postCommit,
       [
@@ -441,7 +504,7 @@ describe("author knowledge publication", () => {
       { mode: 0o755 },
     );
     const installer = path.resolve("node_modules", "tsx", "dist", "cli.mjs");
-    const install = () =>
+    const install = (targetStateDir = stateDir) =>
       execFileSync(
         process.execPath,
         [
@@ -451,11 +514,21 @@ describe("author knowledge publication", () => {
           frameworkDir,
           "--environment",
           "staging",
+          "--state-dir",
+          targetStateDir,
         ],
-        { cwd: path.resolve("."), stdio: "pipe" },
+        {
+          cwd: path.resolve("."),
+          stdio: "pipe",
+          env: gitEnvironment,
+        },
       );
 
     install();
+    install();
+    const candidateDir = path.join(realpathSync(stateDir), "candidate");
+    rmSync(candidateDir, { recursive: true, force: true });
+    mkdirSync(candidateDir);
     install();
     const commitHook = readFileSync(postCommit, "utf8");
     const mergeHook = readFileSync(path.join(hooks, "post-merge"), "utf8");
@@ -463,24 +536,169 @@ describe("author knowledge publication", () => {
       path.join(hooks, "post-checkout"),
       "utf8",
     );
-    expect(commitHook.match(/# tpf-mcp-upload-start/g)).toHaveLength(1);
-    expect(commitHook).toContain("--environment staging --attempts 4");
-    expect(commitHook).toContain(`if [ "$ROOT" = '${frameworkDir}' ]; then`);
-    expect(mergeHook.match(/# tpf-mcp-post-merge-start/g)).toHaveLength(1);
+    expect(commitHook.match(/# tpf-mcp-refresh-start/g)).toHaveLength(1);
+    expect(commitHook).toContain("scripts/refresh-repowise.ts");
+    expect(commitHook).toContain(`--state-dir '${realpathSync(stateDir)}'`);
+    expect(commitHook).toContain(`--commit "$HEAD"`);
+    expect(commitHook).not.toContain("# tpf-mcp-upload-start");
+    expect(mergeHook.match(/# tpf-mcp-refresh-start/g)).toHaveLength(1);
     expect(mergeHook).toContain(
-      "repowise update --workspace --repo pipelineframework",
+      `[ "$ROOT" = '${realpathSync(frameworkDir)}' ] || exit 0`,
     );
-    expect(mergeHook).toContain(`[ "$ROOT" = '${frameworkDir}' ] || exit 0`);
-    expect(checkoutHook.match(/# tpf-mcp-post-checkout-start/g)).toHaveLength(
-      1,
+    expect(mergeHook.indexOf("# tpf-mcp-refresh-start")).toBeLessThan(
+      mergeHook.indexOf("exec /bin/true"),
     );
-    expect(checkoutHook).toContain("--retry-only --attempts 2");
+    expect(checkoutHook.match(/# tpf-mcp-refresh-start/g)).toHaveLength(1);
+    expect(checkoutHook).toContain(`[ "\${3:-0}" = '1' ] || exit 0`);
+    expect(existsSync(path.join(stateDir, "framework", ".git"))).toBe(true);
+    expect(existsSync(path.join(stateDir, "candidate", ".git"))).toBe(true);
+    expect(
+      JSON.parse(
+        readFileSync(path.join(stateDir, "refresh-config.json"), "utf8"),
+      ),
+    ).toMatchObject({ environment: "staging" });
     for (const hook of [
       postCommit,
       path.join(hooks, "post-merge"),
       path.join(hooks, "post-checkout"),
-    ])
+    ]) {
       execFileSync("sh", ["-n", hook]);
+      expect(statSync(hook).mode & 0o111).toBe(0o111);
+    }
+
+    const invalidStateDir = path.join(frameworkDir, ".repowise-refresh");
+    expect(() => install(invalidStateDir)).toThrow();
+    expect(existsSync(invalidStateDir)).toBe(false);
+    expect(() => install(path.dirname(realpathSync(frameworkDir)))).toThrow();
+  });
+
+  it("does not replace a healthy completion with an older refresh", () => {
+    const frameworkDir = fixtureRepository(false);
+    const olderCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: frameworkDir,
+      encoding: "utf8",
+    }).trim();
+    writeFileSync(path.join(frameworkDir, "newer.txt"), "newer\n");
+    execFileSync("git", ["add", "newer.txt"], { cwd: frameworkDir });
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "--no-gpg-sign",
+        "-qm",
+        "newer",
+      ],
+      { cwd: frameworkDir },
+    );
+    const completedCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: frameworkDir,
+      encoding: "utf8",
+    }).trim();
+    const stateDir = mkdtempSync(
+      path.join(os.tmpdir(), "tpf-refresh-order-test-"),
+    );
+    writeRefreshConfiguration(stateDir, {
+      schemaVersion: 1,
+      bridgeDir: path.resolve("."),
+      healthyDir: frameworkDir,
+      candidateDir: path.join(stateDir, "candidate"),
+      environment: "staging",
+    });
+    writeFileSync(
+      path.join(stateDir, "completed-refresh.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        commit: completedCommit,
+        completedAt: new Date().toISOString(),
+        durationSeconds: 1,
+        recovery: "incremental",
+        modelPolicy: { prose: false, provider: "mock", model: "mock" },
+      })}\n`,
+    );
+
+    expect(() => requestRepowiseRefresh(stateDir, olderCommit)).toThrow(
+      "Refusing to refresh older commit",
+    );
+    expect(readRequestedRefresh(stateDir)).toBeUndefined();
+    expect(() =>
+      requestRepowiseRefresh(stateDir, completedCommit),
+    ).not.toThrow();
+    expect(readRequestedRefresh(stateDir)).toBeUndefined();
+  });
+
+  it("coalesces refresh requests behind a single-flight lock", () => {
+    const stateDir = mkdtempSync(
+      path.join(os.tmpdir(), "tpf-refresh-queue-test-"),
+    );
+    const first = "a".repeat(40);
+    const latest = "b".repeat(40);
+    requestRepowiseRefresh(stateDir, first);
+    const release = acquireRefreshLock(stateDir);
+    expect(release).toBeTypeOf("function");
+    requestRepowiseRefresh(stateDir, latest);
+    expect(acquireRefreshLock(stateDir)).toBeUndefined();
+    expect(readRequestedRefresh(stateDir)?.commit).toBe(latest);
+    release?.();
+    const releaseAgain = acquireRefreshLock(stateDir);
+    expect(releaseAgain).toBeTypeOf("function");
+    releaseAgain?.();
+    writeFileSync(
+      path.join(stateDir, "refresh.lock"),
+      `${JSON.stringify({ pid: 999999999, createdAt: new Date().toISOString() })}\n`,
+    );
+    const releaseStaleOwner = acquireRefreshLock(stateDir);
+    expect(releaseStaleOwner).toBeTypeOf("function");
+    releaseStaleOwner?.();
+    writeFileSync(path.join(stateDir, "refresh.lock"), "");
+    expect(acquireRefreshLock(stateDir)).toBeUndefined();
+    const expired = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    utimesSync(path.join(stateDir, "refresh.lock"), expired, expired);
+    expect(acquireRefreshLock(stateDir)).toBeTypeOf("function");
+  });
+
+  it("requires exact commit and every doctor check before promotion", () => {
+    const commit = "c".repeat(40);
+    const healthy = {
+      ok: true,
+      checks: [
+        { name: "Stale pages", ok: true, detail: "0 stale" },
+        { name: "SQL ↔ Vector Store", ok: true, detail: "in sync" },
+        { name: "SQL ↔ FTS Index", ok: true, detail: "in sync" },
+      ],
+    };
+    expect(() => validateRepowiseHealth(healthy, commit, commit)).not.toThrow();
+    expect(() =>
+      validateRepowiseHealth(healthy, "d".repeat(40), commit),
+    ).toThrow("commit mismatch");
+    expect(() =>
+      validateRepowiseHealth(
+        {
+          ok: false,
+          checks: [{ name: "Stale pages", ok: false, detail: "404 stale" }],
+        },
+        commit,
+        commit,
+      ),
+    ).toThrow("Stale pages: 404 stale");
+    expect(() => validateRepowiseHealth({}, commit, commit)).toThrow(
+      "invalid doctor response",
+    );
+    expect(() =>
+      validateRepowiseHealth(
+        {
+          ok: true,
+          checks: [{ name: "Stale pages", ok: false, detail: "1 stale" }],
+        },
+        commit,
+        commit,
+      ),
+    ).toThrow("Stale pages: 1 stale");
   });
 });
 
