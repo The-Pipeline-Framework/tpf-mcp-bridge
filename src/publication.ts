@@ -5,7 +5,7 @@ import path from "node:path";
 
 import type { KnowledgeScope, KnowledgeVersionKind } from "./types.js";
 
-const D1_STATEMENTS_PER_CHUNK = 50;
+const D1_STAGE_CHUNK_BYTES = 1024 * 1024;
 
 export interface RepowisePage {
   page_id?: string;
@@ -311,6 +311,20 @@ export function validateImmutableRelease(
   throw new Error("Release already exists with a different immutable checksum");
 }
 
+export function planImmutableReleasePublication(
+  existingChecksums: string[],
+  existingStatuses: string[],
+  requestedChecksum: string,
+  activate: boolean,
+): "CREATE" | "NOOP" | "RESTAGE" {
+  if (
+    validateImmutableRelease(existingChecksums, requestedChecksum) === "CREATE"
+  )
+    return "CREATE";
+  if (!activate || existingStatuses.includes("ACTIVE")) return "NOOP";
+  return "RESTAGE";
+}
+
 export function verifyFrameworkRelease(
   frameworkDir: string,
   version: string,
@@ -486,15 +500,22 @@ function renderStageStatementGroups(bundle: CompiledBundle): string[][] {
 function chunkStatementGroups(groups: string[][]): string[][] {
   const chunks: string[][] = [];
   let current: string[] = [];
+  let currentBytes = 0;
   for (const group of groups) {
+    const groupBytes = Buffer.byteLength(renderSql(group));
+    if (groupBytes > D1_STAGE_CHUNK_BYTES) {
+      throw new Error("A staging statement group exceeds the D1 chunk limit");
+    }
     if (
       current.length > 0 &&
-      current.length + group.length > D1_STATEMENTS_PER_CHUNK
+      currentBytes + groupBytes > D1_STAGE_CHUNK_BYTES
     ) {
       chunks.push(current);
       current = [];
+      currentBytes = 0;
     }
     current.push(...group);
+    currentBytes += groupBytes;
   }
   if (current.length > 0) chunks.push(current);
   return chunks;

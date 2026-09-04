@@ -6,9 +6,9 @@ import { promisify } from "node:util";
 
 import {
   compileBundle,
+  planImmutableReleasePublication,
   sqlLiteral,
   supportedMinorLines,
-  validateImmutableRelease,
   verifyFrameworkRelease,
   verifyFrameworkSnapshot,
   writeBundle,
@@ -345,18 +345,26 @@ async function publish(
     );
     return;
   }
-  if (validateImmutableRelease(checksums, checksum) === "EXISTS") {
-    const statuses = collectValues(existing, new Set(["status"]));
-    if (!activate || statuses.includes("ACTIVE")) {
-      console.log(
-        `Release ${args.version} already exists with the same checksum; ${activate ? "publication" : "staging"} is a no-op.`,
-      );
-      return;
-    }
-  } else {
-    await uploadBundle(args, bucket);
-    await stageBundle(database, environmentArgs, args.outputDir);
+  const releasePlan = planImmutableReleasePublication(
+    checksums,
+    collectValues(existing, new Set(["status"])),
+    checksum,
+    activate,
+  );
+  if (releasePlan === "NOOP") {
+    console.log(
+      `Release ${args.version} already exists with the same checksum; ${activate ? "publication" : "staging"} is a no-op.`,
+    );
+    return;
   }
+  if (releasePlan === "CREATE") {
+    await uploadBundle(args, bucket);
+  } else {
+    console.log(
+      `Release ${args.version} is staged with the same checksum; replaying idempotent staging before activation.`,
+    );
+  }
+  await stageBundle(database, environmentArgs, args.outputDir);
   await verifyPublication(database, environmentArgs, args.version, "STAGED");
   if (!activate) {
     console.log(

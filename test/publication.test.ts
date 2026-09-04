@@ -19,6 +19,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyAuthorPath,
   compileBundle,
+  planImmutableReleasePublication,
   supportedMinorLines,
   validateImmutableRelease,
   verifyFrameworkRelease,
@@ -135,6 +136,71 @@ describe("author knowledge publication", () => {
     expect(readFileSync(path.join(output, "stage.sql"), "utf8")).not.toMatch(
       /\b(?:BEGIN|COMMIT)\b/,
     );
+  });
+
+  it("bounds staging chunks by bytes without splitting document statements", () => {
+    const frameworkDir = fixtureRepository();
+    const pages = Array.from({ length: 120 }, (_, index) => ({
+      page_id: `page-${index}`,
+      title: `Page ${index}`,
+      content: `${String(index).padStart(3, "0")}:${"x".repeat(16_000)}`,
+      target_path: "docs/develop/author.md",
+    }));
+    const bundle = compileBundle({
+      frameworkDir,
+      version: "26.7.1",
+      frameworkCommit: "b".repeat(40),
+      publishedAt: "2026-07-01T00:00:00Z",
+      repowiseVersion: "0.43.0",
+      repowiseExportBytes: Buffer.from(JSON.stringify({ pages })),
+    });
+    const output = path.join(frameworkDir, "byte-bounded-bundle");
+
+    writeBundle(bundle, output);
+
+    const chunks = JSON.parse(
+      readFileSync(path.join(output, "stage-chunks.json"), "utf8"),
+    ) as string[];
+    const chunkSql = chunks.map((chunk) =>
+      readFileSync(path.join(output, chunk), "utf8"),
+    );
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.length).toBeLessThan(10);
+    expect(chunkSql.every((sql) => Buffer.byteLength(sql) <= 1024 * 1024)).toBe(
+      true,
+    );
+    for (const sql of chunkSql) {
+      expect(sql.match(/INSERT OR REPLACE INTO documents /g)?.length ?? 0).toBe(
+        sql.match(/INSERT INTO documents_fts /g)?.length ?? 0,
+      );
+    }
+  });
+
+  it("rejects a staging statement group larger than one chunk", () => {
+    const frameworkDir = fixtureRepository();
+    const bundle = compileBundle({
+      frameworkDir,
+      version: "26.7.1",
+      frameworkCommit: "c".repeat(40),
+      publishedAt: "2026-07-01T00:00:00Z",
+      repowiseVersion: "0.43.0",
+      repowiseExportBytes: Buffer.from(
+        JSON.stringify({
+          pages: [
+            {
+              page_id: "oversized",
+              title: "Oversized page",
+              content: "x".repeat(1024 * 1024),
+              target_path: "docs/develop/author.md",
+            },
+          ],
+        }),
+      ),
+    });
+
+    expect(() =>
+      writeBundle(bundle, path.join(frameworkDir, "oversized-bundle")),
+    ).toThrow("A staging statement group exceeds the D1 chunk limit");
   });
 
   it("indexes authoritative author docs and skill Markdown when Repowise emits no pages", () => {
@@ -399,6 +465,22 @@ describe("author knowledge publication", () => {
     expect(() => readRepowiseInput(file, "0.43.0", "0".repeat(64))).toThrow(
       "does not match declared",
     );
+  });
+
+  it("restages an incomplete immutable release before activation", () => {
+    expect(planImmutableReleasePublication([], [], "one", true)).toBe("CREATE");
+    expect(
+      planImmutableReleasePublication(["one"], ["STAGED"], "one", true),
+    ).toBe("RESTAGE");
+    expect(
+      planImmutableReleasePublication(["one"], ["ACTIVE"], "one", true),
+    ).toBe("NOOP");
+    expect(
+      planImmutableReleasePublication(["one"], ["STAGED"], "one", false),
+    ).toBe("NOOP");
+    expect(() =>
+      planImmutableReleasePublication(["different"], ["STAGED"], "one", true),
+    ).toThrow("different immutable checksum");
   });
 
   it("durably queues immutable exports until delivery succeeds", () => {
