@@ -330,7 +330,7 @@ npm run publish:knowledge -- \
   --publish
 ```
 
-The staging publisher applies migrations, rejects an existing version with a different checksum, uploads immutable R2 objects, stages D1 data, verifies it, activates the release, and retains the newest three minor lines as supported.
+The staging publisher applies migrations, rejects an existing version with a different checksum, uploads immutable R2 objects, stages D1 data in byte-bounded chunks, verifies it, activates the release, and retains the newest three minor lines as supported. If a run stops after creating the same-checksum `STAGED` release, a retry replays the idempotent staging chunks before activation; it never treats the early release row as proof that every chunk was applied.
 
 The TPF repository's `.github/workflows/publish.yml` remains the production release authority. After Maven Central and the GitHub release succeed, its final step dispatches `.github/workflows/publish-knowledge.yml` with the exact version, tag, and full release commit. The MCP workflow checks out that tag and waits for up to ten minutes for only the R2 input for the same commit. It then verifies the export checksum, compiles the author-only bundle, publishes it, verifies it, and activates it. There is no per-release MCP preparation command. A missing or mismatched input fails clearly rather than rebuilding with model credentials or substituting stale knowledge. After a delayed queued upload succeeds, rerun only the MCP publication workflow; Maven Central and GitHub release publication are not repeated.
 
