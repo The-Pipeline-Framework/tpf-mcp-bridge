@@ -503,6 +503,9 @@ function chunkStatementGroups(groups: string[][]): string[][] {
   let currentBytes = 0;
   for (const group of groups) {
     const groupBytes = Buffer.byteLength(renderSql(group));
+    if (groupBytes > D1_STAGE_CHUNK_BYTES) {
+      throw new Error("A staging statement group exceeds the D1 chunk limit");
+    }
     if (
       current.length > 0 &&
       currentBytes + groupBytes > D1_STAGE_CHUNK_BYTES

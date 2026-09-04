@@ -176,6 +176,33 @@ describe("author knowledge publication", () => {
     }
   });
 
+  it("rejects a staging statement group larger than one chunk", () => {
+    const frameworkDir = fixtureRepository();
+    const bundle = compileBundle({
+      frameworkDir,
+      version: "26.7.1",
+      frameworkCommit: "c".repeat(40),
+      publishedAt: "2026-07-01T00:00:00Z",
+      repowiseVersion: "0.43.0",
+      repowiseExportBytes: Buffer.from(
+        JSON.stringify({
+          pages: [
+            {
+              page_id: "oversized",
+              title: "Oversized page",
+              content: "x".repeat(1024 * 1024),
+              target_path: "docs/develop/author.md",
+            },
+          ],
+        }),
+      ),
+    });
+
+    expect(() =>
+      writeBundle(bundle, path.join(frameworkDir, "oversized-bundle")),
+    ).toThrow("A staging statement group exceeds the D1 chunk limit");
+  });
+
   it("indexes authoritative author docs and skill Markdown when Repowise emits no pages", () => {
     const frameworkDir = fixtureRepository();
     mkdirSync(path.join(frameworkDir, ".agents/skills/tpf-authoring"), {
