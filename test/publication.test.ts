@@ -13,6 +13,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 import { describe, expect, it } from "vitest";
 
@@ -40,9 +41,13 @@ import {
 } from "../src/repowise-queue.js";
 import {
   acquireRefreshLock,
+  ensureRepowiseEmbeddingConfiguration,
   readRequestedRefresh,
+  relinkRepowiseIndex,
   requestRepowiseRefresh,
   validateRepowiseHealth,
+  validateRepowiseEmbeddingConfiguration,
+  validateRepowiseIndexLocation,
   writeRefreshConfiguration,
 } from "../src/repowise-refresh.js";
 
@@ -781,6 +786,92 @@ describe("author knowledge publication", () => {
         commit,
       ),
     ).toThrow("Stale pages: 1 stale");
+  });
+
+  it("relinks path-bound Repowise metadata when promoting an index", () => {
+    const indexDirectory = mkdtempSync(
+      path.join(os.tmpdir(), "tpf-repowise-relink-test-"),
+    );
+    const source = path.join(indexDirectory, "candidate");
+    const target = path.join(indexDirectory, "framework");
+    const database = new DatabaseSync(path.join(indexDirectory, "wiki.db"));
+    database.exec(
+      "CREATE TABLE repositories (id TEXT PRIMARY KEY, local_path TEXT NOT NULL)",
+    );
+    database
+      .prepare("INSERT INTO repositories (id, local_path) VALUES (?, ?)")
+      .run("fixture", source);
+    database.close();
+    writeFileSync(
+      path.join(indexDirectory, "mcp.json"),
+      `${JSON.stringify({ mcpServers: { repowise: { args: ["mcp", source] } } })}\n`,
+    );
+
+    relinkRepowiseIndex(indexDirectory, source, target);
+
+    expect(() =>
+      validateRepowiseIndexLocation(indexDirectory, target),
+    ).not.toThrow();
+    expect(
+      readFileSync(path.join(indexDirectory, "mcp.json"), "utf8"),
+    ).toContain(target);
+    expect(() => validateRepowiseIndexLocation(indexDirectory, source)).toThrow(
+      "Repowise index location mismatch",
+    );
+  });
+
+  it("rejects a third stale repository path in Repowise MCP metadata", () => {
+    const indexDirectory = mkdtempSync(
+      path.join(os.tmpdir(), "tpf-repowise-stale-mcp-test-"),
+    );
+    const source = path.join(indexDirectory, "candidate");
+    const target = path.join(indexDirectory, "framework");
+    const stale = path.join(indexDirectory, "retired-checkout");
+    const database = new DatabaseSync(path.join(indexDirectory, "wiki.db"));
+    database.exec(
+      "CREATE TABLE repositories (id TEXT PRIMARY KEY, local_path TEXT NOT NULL)",
+    );
+    database
+      .prepare("INSERT INTO repositories (id, local_path) VALUES (?, ?)")
+      .run("fixture", source);
+    database.close();
+    writeFileSync(
+      path.join(indexDirectory, "mcp.json"),
+      `${JSON.stringify({ mcpServers: { repowise: { args: ["mcp", stale] } } })}\n`,
+    );
+
+    expect(() => relinkRepowiseIndex(indexDirectory, source, target)).toThrow(
+      `Repowise MCP index location mismatch: expected ${target}, found ${stale}`,
+    );
+  });
+
+  it("keeps model-free refreshes semantically searchable with local embeddings", () => {
+    const indexDirectory = mkdtempSync(
+      path.join(os.tmpdir(), "tpf-repowise-embedding-test-"),
+    );
+    const configuration = path.join(indexDirectory, "config.yaml");
+    writeFileSync(
+      configuration,
+      "editor_files:\n  agents_md: false\nembedder: mock\n",
+    );
+
+    ensureRepowiseEmbeddingConfiguration(indexDirectory);
+
+    expect(readFileSync(configuration, "utf8")).toContain("embedder: ollama");
+    expect(readFileSync(configuration, "utf8")).toContain(
+      "embedding_model: nomic-embed-text",
+    );
+    expect(readFileSync(path.join(indexDirectory, ".env"), "utf8")).toBe(
+      "OLLAMA_EMBEDDING_MODEL=nomic-embed-text\n",
+    );
+    expect(() =>
+      validateRepowiseEmbeddingConfiguration(indexDirectory),
+    ).not.toThrow();
+
+    writeFileSync(configuration, "embedder: mock\nembedding_model: mock\n");
+    expect(() =>
+      validateRepowiseEmbeddingConfiguration(indexDirectory),
+    ).toThrow("Repowise semantic search requires ollama/nomic-embed-text");
   });
 });
 

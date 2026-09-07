@@ -14,6 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 export type RefreshEnvironment = "staging" | "production";
 
@@ -42,6 +43,10 @@ export interface RefreshCompletion {
     provider: "mock";
     model: "mock";
   };
+  embeddingPolicy?: {
+    provider: "ollama";
+    model: "nomic-embed-text";
+  };
 }
 
 interface DoctorReport {
@@ -56,6 +61,8 @@ const FAILURE_FILE = "failed-refresh.json";
 const LOCK_FILE = "refresh.lock";
 const PARTIAL_LOCK_GRACE_MS = 60 * 60 * 1000;
 const LOCK_ACQUIRE_ATTEMPTS = 8;
+const EMBEDDING_PROVIDER = "ollama";
+const EMBEDDING_MODEL = "nomic-embed-text";
 
 export function writeRefreshConfiguration(
   stateDir: string,
@@ -345,6 +352,7 @@ function refreshCommit(
   let recovery: RefreshCompletion["recovery"] = "incremental";
   if (existsSync(healthyIndex)) {
     cpSync(healthyIndex, candidateIndex, { recursive: true });
+    relinkRepowiseIndex(candidateIndex, healthyDir, candidateDir);
     const previousCommit = readIndexedCommit(candidateIndex);
     try {
       runIncrementalRefresh(candidateDir, previousCommit);
@@ -389,6 +397,10 @@ function refreshCommit(
     durationSeconds: Math.round((Date.now() - started) / 1000),
     recovery,
     modelPolicy: { prose: false, provider: "mock", model: "mock" },
+    embeddingPolicy: {
+      provider: EMBEDDING_PROVIDER,
+      model: EMBEDDING_MODEL,
+    },
   };
   writeJsonAtomically(path.join(stateDir, COMPLETION_FILE), completion);
 
@@ -412,7 +424,7 @@ function refreshCommit(
   }
   appendLog(
     stateDir,
-    `healthy ${commit} via ${recovery} in ${completion.durationSeconds}s; model policy no-prose/mock`,
+    `healthy ${commit} via ${recovery} in ${completion.durationSeconds}s; model policy no-prose/mock; embeddings ${EMBEDDING_PROVIDER}/${EMBEDDING_MODEL}`,
   );
 }
 
@@ -420,6 +432,7 @@ function runIncrementalRefresh(
   directory: string,
   previousCommit: string,
 ): void {
+  ensureRepowiseEmbeddingConfiguration(path.join(directory, ".repowise"));
   command(
     directory,
     "repowise",
@@ -435,7 +448,10 @@ function runIncrementalRefresh(
       "--since",
       previousCommit,
     ],
-    { REPOWISE_SKIP_EDITOR_SETUP: "1" },
+    {
+      REPOWISE_SKIP_EDITOR_SETUP: "1",
+      OLLAMA_EMBEDDING_MODEL: EMBEDDING_MODEL,
+    },
   );
 }
 
@@ -444,6 +460,7 @@ function runEmptyRebuild(directory: string, sourceIndex?: string): void {
   rmSync(index, { recursive: true, force: true });
   mkdirSync(index, { recursive: true, mode: 0o700 });
   if (sourceIndex !== undefined) copyRepowiseConfiguration(sourceIndex, index);
+  ensureRepowiseEmbeddingConfiguration(index);
   command(
     directory,
     "repowise",
@@ -460,13 +477,19 @@ function runEmptyRebuild(directory: string, sourceIndex?: string): void {
       "mock",
       "--model",
       "mock",
+      "--embedder",
+      EMBEDDING_PROVIDER,
       "--progress",
       "json",
     ],
-    { REPOWISE_SKIP_EDITOR_SETUP: "1" },
+    {
+      REPOWISE_SKIP_EDITOR_SETUP: "1",
+      OLLAMA_EMBEDDING_MODEL: EMBEDDING_MODEL,
+    },
   );
   if (sourceIndex !== undefined) {
     copyRepowiseConfiguration(sourceIndex, index);
+    ensureRepowiseEmbeddingConfiguration(index);
     copyDurableUploadQueue(sourceIndex, index);
   }
 }
@@ -485,6 +508,137 @@ function validateCandidate(directory: string, expectedCommit: string): void {
     readIndexedCommit(path.join(directory, ".repowise")),
     expectedCommit,
   );
+  validateRepowiseEmbeddingConfiguration(path.join(directory, ".repowise"));
+  validateRepowiseIndexLocation(path.join(directory, ".repowise"), directory);
+}
+
+export function ensureRepowiseEmbeddingConfiguration(
+  indexDirectory: string,
+): void {
+  const configuration = path.join(indexDirectory, "config.yaml");
+  const existing = existsSync(configuration)
+    ? readFileSync(configuration, "utf8")
+    : "";
+  const configured = setTopLevelYamlValue(
+    setTopLevelYamlValue(existing, "embedder", EMBEDDING_PROVIDER),
+    "embedding_model",
+    EMBEDDING_MODEL,
+  );
+  writeFileSync(configuration, configured);
+
+  const environment = path.join(indexDirectory, ".env");
+  const existingEnvironment = existsSync(environment)
+    ? readFileSync(environment, "utf8")
+    : "";
+  writeFileSync(
+    environment,
+    setEnvironmentValue(
+      existingEnvironment,
+      "OLLAMA_EMBEDDING_MODEL",
+      EMBEDDING_MODEL,
+    ),
+    { mode: 0o600 },
+  );
+  chmodSync(environment, 0o600);
+}
+
+export function validateRepowiseEmbeddingConfiguration(
+  indexDirectory: string,
+): void {
+  const configuration = path.join(indexDirectory, "config.yaml");
+  if (!existsSync(configuration)) {
+    throw new Error(
+      `Repowise embedding configuration is missing: ${configuration}`,
+    );
+  }
+  const content = readFileSync(configuration, "utf8");
+  const embedder = readTopLevelYamlValue(content, "embedder");
+  const model = readTopLevelYamlValue(content, "embedding_model");
+  if (embedder !== EMBEDDING_PROVIDER || model !== EMBEDDING_MODEL) {
+    throw new Error(
+      `Repowise semantic search requires ${EMBEDDING_PROVIDER}/${EMBEDDING_MODEL}; found ${embedder ?? "missing"}/${model ?? "missing"}`,
+    );
+  }
+  const environment = path.join(indexDirectory, ".env");
+  const environmentContent = existsSync(environment)
+    ? readFileSync(environment, "utf8")
+    : "";
+  if (
+    readEnvironmentValue(environmentContent, "OLLAMA_EMBEDDING_MODEL") !==
+    EMBEDDING_MODEL
+  ) {
+    throw new Error(
+      `Repowise environment must pin OLLAMA_EMBEDDING_MODEL=${EMBEDDING_MODEL}`,
+    );
+  }
+}
+
+function setTopLevelYamlValue(
+  content: string,
+  key: string,
+  value: string,
+): string {
+  const lines = content.split(/\r?\n/);
+  const matching = lines
+    .map((line, index) => ({ line, index }))
+    .filter(({ line }) => line.startsWith(`${key}:`));
+  if (matching.length > 1) {
+    throw new Error(`Repowise config contains duplicate ${key} settings`);
+  }
+  if (matching.length === 1) {
+    lines[matching[0].index] = `${key}: ${value}`;
+  } else {
+    while (lines.at(-1) === "") lines.pop();
+    lines.push(`${key}: ${value}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function readTopLevelYamlValue(
+  content: string,
+  key: string,
+): string | undefined {
+  const matching = content
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith(`${key}:`));
+  if (matching.length > 1) {
+    throw new Error(`Repowise config contains duplicate ${key} settings`);
+  }
+  return matching[0]?.slice(key.length + 1).trim();
+}
+
+function setEnvironmentValue(
+  content: string,
+  key: string,
+  value: string,
+): string {
+  const lines = content.split(/\r?\n/);
+  const matching = lines
+    .map((line, index) => ({ line, index }))
+    .filter(({ line }) => line.startsWith(`${key}=`));
+  if (matching.length > 1) {
+    throw new Error(`Repowise environment contains duplicate ${key} settings`);
+  }
+  if (matching.length === 1) {
+    lines[matching[0].index] = `${key}=${value}`;
+  } else {
+    while (lines.at(-1) === "") lines.pop();
+    lines.push(`${key}=${value}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function readEnvironmentValue(
+  content: string,
+  key: string,
+): string | undefined {
+  const matching = content
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith(`${key}=`));
+  if (matching.length > 1) {
+    throw new Error(`Repowise environment contains duplicate ${key} settings`);
+  }
+  return matching[0]?.slice(key.length + 1).trim();
 }
 
 function promoteCandidateIndex(
@@ -497,16 +651,180 @@ function promoteCandidateIndex(
   const rejectedIndex = path.join(stateDir, "rejected-index");
   copyDurableUploadQueue(healthyIndex, candidateIndex);
   copyDurableUploadQueue(rejectedIndex, candidateIndex);
+  relinkRepowiseIndex(
+    candidateIndex,
+    configuration.candidateDir,
+    configuration.healthyDir,
+  );
   rmSync(previousIndex, { recursive: true, force: true });
   if (existsSync(healthyIndex)) renameSync(healthyIndex, previousIndex);
   try {
     renameSync(candidateIndex, healthyIndex);
   } catch (error) {
+    relinkRepowiseIndex(
+      candidateIndex,
+      configuration.healthyDir,
+      configuration.candidateDir,
+    );
     if (!existsSync(healthyIndex) && existsSync(previousIndex)) {
       renameSync(previousIndex, healthyIndex);
     }
     throw error;
   }
+}
+
+export function relinkRepowiseIndex(
+  indexDirectory: string,
+  sourceDirectory: string,
+  targetDirectory: string,
+): void {
+  const source = path.resolve(sourceDirectory);
+  const target = path.resolve(targetDirectory);
+  if (source === target) return;
+
+  const mcpConfiguration = path.join(indexDirectory, "mcp.json");
+  const relocatedMcpConfiguration = existsSync(mcpConfiguration)
+    ? replaceExactString(readJson(mcpConfiguration), source, target)
+    : undefined;
+  if (relocatedMcpConfiguration !== undefined) {
+    validateRepowiseMcpIndexLocation(
+      relocatedMcpConfiguration,
+      target,
+      mcpConfiguration,
+    );
+  }
+
+  const database = new DatabaseSync(path.join(indexDirectory, "wiki.db"));
+  try {
+    const repository = readSingleRepowiseRepository(database, indexDirectory);
+    if (repository.localPath !== source && repository.localPath !== target) {
+      throw new Error(
+        `Repowise index location mismatch: expected ${source}, found ${repository.localPath}`,
+      );
+    }
+    if (repository.localPath === source) {
+      const result = database
+        .prepare(
+          "UPDATE repositories SET local_path = ? WHERE id = ? AND local_path = ?",
+        )
+        .run(target, repository.id, source);
+      if (result.changes !== 1) {
+        throw new Error("Repowise index location update changed no repository");
+      }
+    }
+  } finally {
+    database.close();
+  }
+
+  if (relocatedMcpConfiguration !== undefined) {
+    writeJsonAtomically(mcpConfiguration, relocatedMcpConfiguration);
+  }
+  validateRepowiseIndexLocation(indexDirectory, target);
+}
+
+export function validateRepowiseIndexLocation(
+  indexDirectory: string,
+  expectedDirectory: string,
+): void {
+  const expected = path.resolve(expectedDirectory);
+  const database = new DatabaseSync(path.join(indexDirectory, "wiki.db"), {
+    readOnly: true,
+  });
+  try {
+    const repository = readSingleRepowiseRepository(database, indexDirectory);
+    if (repository.localPath !== expected) {
+      throw new Error(
+        `Repowise index location mismatch: expected ${expected}, found ${repository.localPath}`,
+      );
+    }
+  } finally {
+    database.close();
+  }
+
+  const mcpConfiguration = path.join(indexDirectory, "mcp.json");
+  if (existsSync(mcpConfiguration)) {
+    validateRepowiseMcpIndexLocation(
+      readJson(mcpConfiguration),
+      expected,
+      mcpConfiguration,
+    );
+  }
+}
+
+function validateRepowiseMcpIndexLocation(
+  configuration: unknown,
+  expectedDirectory: string,
+  configurationPath: string,
+): void {
+  if (!isRecord(configuration)) {
+    throw new Error(
+      `Repowise MCP configuration is invalid: ${configurationPath}`,
+    );
+  }
+  const servers = configuration.mcpServers;
+  const repowise = isRecord(servers) ? servers.repowise : undefined;
+  const args = isRecord(repowise) ? repowise.args : undefined;
+  if (
+    !Array.isArray(args) ||
+    args.some((argument) => typeof argument !== "string")
+  ) {
+    throw new Error(
+      `Repowise MCP configuration is invalid: ${configurationPath}`,
+    );
+  }
+  const commandIndex = args.indexOf("mcp");
+  const repositoryPath = args[commandIndex + 1];
+  if (commandIndex < 0 || typeof repositoryPath !== "string") {
+    throw new Error(
+      `Repowise MCP configuration is invalid: ${configurationPath}`,
+    );
+  }
+  const expected = path.resolve(expectedDirectory);
+  const actual = path.resolve(repositoryPath);
+  if (actual !== expected) {
+    throw new Error(
+      `Repowise MCP index location mismatch: expected ${expected}, found ${actual}`,
+    );
+  }
+}
+
+function readSingleRepowiseRepository(
+  database: DatabaseSync,
+  indexDirectory: string,
+): { id: string; localPath: string } {
+  const rows = database
+    .prepare("SELECT id, local_path FROM repositories")
+    .all() as Array<Record<string, unknown>>;
+  if (
+    rows.length !== 1 ||
+    typeof rows[0]?.id !== "string" ||
+    typeof rows[0]?.local_path !== "string"
+  ) {
+    throw new Error(
+      `Repowise index must contain exactly one valid repository: ${indexDirectory}`,
+    );
+  }
+  return { id: rows[0].id, localPath: rows[0].local_path };
+}
+
+function replaceExactString(
+  value: unknown,
+  source: string,
+  target: string,
+): unknown {
+  if (value === source) return target;
+  if (Array.isArray(value)) {
+    return value.map((entry) => replaceExactString(entry, source, target));
+  }
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        replaceExactString(entry, source, target),
+      ]),
+    );
+  }
+  return value;
 }
 
 function rollbackPromotion(
@@ -668,7 +986,11 @@ function readRefreshCompletion(
     !isRecord(value.modelPolicy) ||
     value.modelPolicy.prose !== false ||
     value.modelPolicy.provider !== "mock" ||
-    value.modelPolicy.model !== "mock"
+    value.modelPolicy.model !== "mock" ||
+    (value.embeddingPolicy !== undefined &&
+      (!isRecord(value.embeddingPolicy) ||
+        value.embeddingPolicy.provider !== EMBEDDING_PROVIDER ||
+        value.embeddingPolicy.model !== EMBEDDING_MODEL))
   ) {
     throw new Error(`Invalid completed refresh record in ${stateDir}`);
   }

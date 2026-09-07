@@ -71,12 +71,18 @@ commit and starts the refresh runner in the background:
 
 - requests are single-flight and a newer commit replaces an older queued request;
 - the candidate starts from the last healthy index and runs a zero-model incremental
-  structural update;
+  structural update while retaining local Ollama `nomic-embed-text` embeddings;
 - success requires exact commit equality, zero stale pages, and every doctor check;
 - an invalid incremental candidate is discarded and rebuilt from a genuinely empty
-  store with `--no-seed --no-prose --provider mock --model mock`; it never replaces or
-  uploads over the healthy index;
+  store with `--no-seed --no-prose --provider mock --model mock` and
+  `--embedder ollama`; it never replaces or uploads over the healthy index;
+- the runner pins `OLLAMA_EMBEDDING_MODEL=nomic-embed-text` explicitly because
+  Repowise 0.47's reindex/update construction does not read `embedding_model` from
+  `config.yaml` consistently; the same non-secret pin is retained in `.repowise/.env`
+  so local MCP processes use the intended model too;
 - only a validated candidate is promoted and exported;
+- promotion relinks Repowise path-bound repository metadata from the candidate worktree
+  to the canonical checkout before the export health gate;
 - Cloudflare failures retain the existing durable upload queue for a later request;
 - all work runs in the background and therefore does not make `git pull` wait;
 - output and measured recovery mode/time go to `<state-dir>/refresh.log` and
@@ -178,7 +184,7 @@ if test -f "$backup_dir/index/.env"; then
   chmod 600 .repowise/.env
 fi
 
-REPOWISE_SKIP_EDITOR_SETUP=1 repowise init \
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text REPOWISE_SKIP_EDITOR_SETUP=1 repowise init \
   --yes \
   --no-workspace \
   --no-agents \
@@ -187,7 +193,17 @@ REPOWISE_SKIP_EDITOR_SETUP=1 repowise init \
   --no-prose \
   --no-seed \
   --provider mock \
-  --model mock
+  --model mock \
+  --embedder ollama
+
+env_file=.repowise/.env
+env_tmp="$(mktemp "${TMPDIR:-/tmp}/tpf-repowise-env.XXXXXX")"
+if test -f "$env_file"; then
+  sed '/^OLLAMA_EMBEDDING_MODEL=/d' "$env_file" > "$env_tmp"
+fi
+printf '%s\n' 'OLLAMA_EMBEDDING_MODEL=nomic-embed-text' >> "$env_tmp"
+mv "$env_tmp" "$env_file"
+chmod 600 "$env_file"
 
 test "$(git rev-parse HEAD)" = "$expected_commit"
 test "$expected_commit" = "$(jq -r .last_sync_commit .repowise/state.json)"
