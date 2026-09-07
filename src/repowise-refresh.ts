@@ -682,6 +682,18 @@ export function relinkRepowiseIndex(
   const target = path.resolve(targetDirectory);
   if (source === target) return;
 
+  const mcpConfiguration = path.join(indexDirectory, "mcp.json");
+  const relocatedMcpConfiguration = existsSync(mcpConfiguration)
+    ? replaceExactString(readJson(mcpConfiguration), source, target)
+    : undefined;
+  if (relocatedMcpConfiguration !== undefined) {
+    validateRepowiseMcpIndexLocation(
+      relocatedMcpConfiguration,
+      target,
+      mcpConfiguration,
+    );
+  }
+
   const database = new DatabaseSync(path.join(indexDirectory, "wiki.db"));
   try {
     const repository = readSingleRepowiseRepository(database, indexDirectory);
@@ -704,25 +716,22 @@ export function relinkRepowiseIndex(
     database.close();
   }
 
-  const mcpConfiguration = path.join(indexDirectory, "mcp.json");
-  if (existsSync(mcpConfiguration)) {
-    writeJsonAtomically(
-      mcpConfiguration,
-      replaceExactString(readJson(mcpConfiguration), source, target),
-    );
+  if (relocatedMcpConfiguration !== undefined) {
+    writeJsonAtomically(mcpConfiguration, relocatedMcpConfiguration);
   }
+  validateRepowiseIndexLocation(indexDirectory, target);
 }
 
 export function validateRepowiseIndexLocation(
   indexDirectory: string,
   expectedDirectory: string,
 ): void {
+  const expected = path.resolve(expectedDirectory);
   const database = new DatabaseSync(path.join(indexDirectory, "wiki.db"), {
     readOnly: true,
   });
   try {
     const repository = readSingleRepowiseRepository(database, indexDirectory);
-    const expected = path.resolve(expectedDirectory);
     if (repository.localPath !== expected) {
       throw new Error(
         `Repowise index location mismatch: expected ${expected}, found ${repository.localPath}`,
@@ -730,6 +739,52 @@ export function validateRepowiseIndexLocation(
     }
   } finally {
     database.close();
+  }
+
+  const mcpConfiguration = path.join(indexDirectory, "mcp.json");
+  if (existsSync(mcpConfiguration)) {
+    validateRepowiseMcpIndexLocation(
+      readJson(mcpConfiguration),
+      expected,
+      mcpConfiguration,
+    );
+  }
+}
+
+function validateRepowiseMcpIndexLocation(
+  configuration: unknown,
+  expectedDirectory: string,
+  configurationPath: string,
+): void {
+  if (!isRecord(configuration)) {
+    throw new Error(
+      `Repowise MCP configuration is invalid: ${configurationPath}`,
+    );
+  }
+  const servers = configuration.mcpServers;
+  const repowise = isRecord(servers) ? servers.repowise : undefined;
+  const args = isRecord(repowise) ? repowise.args : undefined;
+  if (
+    !Array.isArray(args) ||
+    args.some((argument) => typeof argument !== "string")
+  ) {
+    throw new Error(
+      `Repowise MCP configuration is invalid: ${configurationPath}`,
+    );
+  }
+  const commandIndex = args.indexOf("mcp");
+  const repositoryPath = args[commandIndex + 1];
+  if (commandIndex < 0 || typeof repositoryPath !== "string") {
+    throw new Error(
+      `Repowise MCP configuration is invalid: ${configurationPath}`,
+    );
+  }
+  const expected = path.resolve(expectedDirectory);
+  const actual = path.resolve(repositoryPath);
+  if (actual !== expected) {
+    throw new Error(
+      `Repowise MCP index location mismatch: expected ${expected}, found ${actual}`,
+    );
   }
 }
 

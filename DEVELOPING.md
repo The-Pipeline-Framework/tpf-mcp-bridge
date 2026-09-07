@@ -196,6 +196,15 @@ OLLAMA_EMBEDDING_MODEL=nomic-embed-text REPOWISE_SKIP_EDITOR_SETUP=1 repowise in
   --model mock \
   --embedder ollama
 
+env_file=.repowise/.env
+env_tmp="$(mktemp "${TMPDIR:-/tmp}/tpf-repowise-env.XXXXXX")"
+if test -f "$env_file"; then
+  sed '/^OLLAMA_EMBEDDING_MODEL=/d' "$env_file" > "$env_tmp"
+fi
+printf '%s\n' 'OLLAMA_EMBEDDING_MODEL=nomic-embed-text' >> "$env_tmp"
+mv "$env_tmp" "$env_file"
+chmod 600 "$env_file"
+
 test "$(git rev-parse HEAD)" = "$expected_commit"
 test "$expected_commit" = "$(jq -r .last_sync_commit .repowise/state.json)"
 repowise doctor --no-workspace

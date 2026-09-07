@@ -820,6 +820,31 @@ describe("author knowledge publication", () => {
     );
   });
 
+  it("rejects a third stale repository path in Repowise MCP metadata", () => {
+    const indexDirectory = mkdtempSync(
+      path.join(os.tmpdir(), "tpf-repowise-stale-mcp-test-"),
+    );
+    const source = path.join(indexDirectory, "candidate");
+    const target = path.join(indexDirectory, "framework");
+    const stale = path.join(indexDirectory, "retired-checkout");
+    const database = new DatabaseSync(path.join(indexDirectory, "wiki.db"));
+    database.exec(
+      "CREATE TABLE repositories (id TEXT PRIMARY KEY, local_path TEXT NOT NULL)",
+    );
+    database
+      .prepare("INSERT INTO repositories (id, local_path) VALUES (?, ?)")
+      .run("fixture", source);
+    database.close();
+    writeFileSync(
+      path.join(indexDirectory, "mcp.json"),
+      `${JSON.stringify({ mcpServers: { repowise: { args: ["mcp", stale] } } })}\n`,
+    );
+
+    expect(() => relinkRepowiseIndex(indexDirectory, source, target)).toThrow(
+      `Repowise MCP index location mismatch: expected ${target}, found ${stale}`,
+    );
+  });
+
   it("keeps model-free refreshes semantically searchable with local embeddings", () => {
     const indexDirectory = mkdtempSync(
       path.join(os.tmpdir(), "tpf-repowise-embedding-test-"),
